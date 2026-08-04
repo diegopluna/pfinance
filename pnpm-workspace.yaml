@@ -11,6 +11,7 @@ catalog:
   '@effect/platform-node': 4.0.0-beta.102
   '@types/node': ^24
   alchemy: 2.0.0-beta.67
+  better-auth: ^1.6.25
   class-variance-authority: ^0.7.1
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4

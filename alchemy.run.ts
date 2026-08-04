@@ -8,6 +8,7 @@ import * as GitHub from 'alchemy/GitHub'
 import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
+import * as Redacted from 'effect/Redacted'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
 // pending migration SQL on deploy whenever the schema drifts.
@@ -29,7 +30,15 @@ export const database = Cloudflare.D1.Database(
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
   compatibility: { flags: ['nodejs_compat'] },
-  env: { DB: database },
+  env: {
+    DB: database,
+    // Signs Better Auth session cookies. The fallback keeps dev/test
+    // zero-config; real deployments must set BETTER_AUTH_SECRET (rotating it
+    // signs everyone out).
+    BETTER_AUTH_SECRET: Redacted.make(
+      process.env.BETTER_AUTH_SECRET ?? 'dev-only-secret-set-BETTER_AUTH_SECRET',
+    ),
+  },
   dev: {
     port: 3001,
   },

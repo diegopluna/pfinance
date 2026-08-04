@@ -3,6 +3,7 @@
   "type": "module",
   "dependencies": {
     "@pfinance/db": "workspace:*",
+    "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.13.0"
   },
