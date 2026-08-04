@@ -53,7 +53,7 @@ Rules of the pattern:
 - Deploy once in `beforeAll`; every test in the file shares that deployment.
 - Use `Test.getWhenReady` (or `Test.executeWhenReady`) for the first request to a freshly deployed worker — it retries through the workers.dev cold-start window.
 - **Destroy only in CI** (`afterAll.skipIf(!process.env.CI)`). Locally the `test` stage is kept between runs, so re-runs are fast no-op deploys (~20s instead of ~90s).
-- CI sets `TEST_STAGE` to a per-PR stage (`test-pr-N`, see `.github/workflows/test.yml`) so concurrent PRs never share resources; `deploy.yml`'s cleanup job destroys it as a safety net on PR close.
+- CI runs the suite as the `test` job in `.github/workflows/deploy.yml`; the `deploy` job `needs: test`, so previews and prod only deploy when checks and tests pass. `TEST_STAGE` is per-PR (`test-pr-N`) so concurrent PRs never share resources, and the cleanup job destroys it as a safety net on PR close.
 - Test files run sequentially (`fileParallelism: false` in `vite.config.ts`) because each file deploys/destroys the shared stage. Prefer adding tests to an existing file over adding files — each new file costs a deploy cycle in CI.
 
 **Adding a feature ticket's tests:** add the endpoint to `apps/server`, add a migration if the schema changes, then add HTTP tests to `test/integ.test.ts` (or a new file when the suite grows a distinct area). A test that writes through one endpoint and reads through another proves the worker + D1 + migration path end to end.

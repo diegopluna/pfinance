@@ -15,9 +15,34 @@ env:
     ${{ github.event_name == 'pull_request'
       && format('pr-{0}', github.event.number)
       || (github.ref == 'refs/heads/main' && 'prod' || github.ref_name) }}
+  # Per-ref stage for the integration test suite, isolated from the preview/
+  # prod stage so concurrent PRs never share test resources. The suite deploys
+  # it in beforeAll and destroys it in afterAll (CI only — locally the stage
+  # is kept between runs).
+  TEST_STAGE: >-
+    ${{ github.event_name == 'pull_request'
+      && format('test-pr-{0}', github.event.number)
+      || 'test-master' }}
 
 jobs:
+  test:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp install
+      - run: vp check
+      - name: Integration tests
+        run: vp test
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   deploy:
+    needs: test
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
