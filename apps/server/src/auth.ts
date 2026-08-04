@@ -2,8 +2,11 @@ import { authAccount, createDb, household, member, session, user, verification }
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import type { ServerEnv } from '../../../alchemy.run.ts'
+import { trustedOrigins } from './origins.ts'
 
 // Email+password only, no verification, no reset (docs/adr/0005).
+// Self-serve sign-up gating (SIGNUPS_ENABLED + bootstrap exception, ADR 0004)
+// lands with issue #4 — until then sign-up is open.
 // baseURL comes from the incoming request: the worker doesn't know its own
 // URL at deploy time (workers.dev subdomain vs custom domain).
 export const createAuth = (env: ServerEnv, baseURL: string) => {
@@ -22,7 +25,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
     // The web app runs on its own origin (localhost:3000 in dev, its own
     // workers.dev domain deployed), so its origin must be trusted and the
     // session cookie must survive cross-site requests.
-    trustedOrigins: ['http://localhost:3000', 'https://*.workers.dev'],
+    trustedOrigins: trustedOrigins(env),
     advanced: {
       defaultCookieAttributes: { sameSite: 'none', secure: true },
     },
@@ -30,7 +33,10 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
       user: {
         create: {
           // Sign-up creates the User's Household with them as owner, in one
-          // flow. db.batch is a single atomic D1 transaction.
+          // flow. db.batch is a single atomic D1 transaction. Known limit:
+          // the User insert itself is a separate operation, so if this hook
+          // fails a User exists without a Membership and the session
+          // middleware rejects them (401) — recovery is deployer-side today.
           after: async (newUser) => {
             const now = new Date()
             const householdId = crypto.randomUUID()

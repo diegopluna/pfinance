@@ -49,11 +49,11 @@ export function AuthScreen() {
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{mode === 'sign-in' ? 'Sign in' : 'Create your household'}</CardTitle>
+          <CardTitle>{mode === 'sign-in' ? 'Sign in' : 'Create your Household'}</CardTitle>
           <CardDescription>
             {mode === 'sign-in'
               ? 'Welcome back to pfinance.'
-              : 'Signing up creates your account and its Household.'}
+              : 'Signing up creates you and your Household.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -87,7 +87,7 @@ export function AuthScreen() {
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {mode === 'sign-in' ? (
               <>
-                No account?{' '}
+                New here?{' '}
                 <button
                   type="button"
                   className="text-primary underline-offset-4 hover:underline"
@@ -98,7 +98,7 @@ export function AuthScreen() {
               </>
             ) : (
               <>
-                Already have an account?{' '}
+                Already signed up?{' '}
                 <button
                   type="button"
                   className="text-primary underline-offset-4 hover:underline"

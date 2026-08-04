@@ -173,10 +173,14 @@ test(
     const me = yield* Test.executeWhenReady(HttpClientRequest.get(`${apiUrl}/api/me`))
     expect(me.status).toBe(401)
 
-    // A bogus session token is rejected the same way.
+    // A bogus session token is rejected the same way (both cookie names,
+    // since the prefix depends on http vs https).
     const forged = yield* Test.executeWhenReady(
       HttpClientRequest.get(`${apiUrl}/api/me`).pipe(
-        HttpClientRequest.setHeader('cookie', 'better-auth.session_token=forged'),
+        HttpClientRequest.setHeader(
+          'cookie',
+          'better-auth.session_token=forged; __Secure-better-auth.session_token=forged',
+        ),
       ),
     )
     expect(forged.status).toBe(401)

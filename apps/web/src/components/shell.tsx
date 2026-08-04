@@ -5,7 +5,7 @@ import { authClient } from '@/lib/auth-client'
 interface Me {
   user: { id: string; email: string; name: string }
   household: { id: string; name: string }
-  role: string
+  role: 'owner' | 'member'
 }
 
 // The signed-in frame every feature screen will render inside.

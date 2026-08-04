@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { ServerEnv } from '../../../alchemy.run.ts'
 import { createAuth } from './auth.ts'
+import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 
 type SessionUser = { id: string; email: string; name: string }
 
@@ -14,15 +15,19 @@ type Variables = {
 
 const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
 
-// The web app calls from its own origin with credentials; allow localhost
-// (local dev) and workers.dev (deployed) origins only.
-const allowedOrigin = (origin: string) =>
-  /^http:\/\/localhost(:\d+)?$/.test(origin) ||
-  /^https:\/\/[\w-]+(\.[\w-]+)*\.workers\.dev$/.test(origin)
-    ? origin
-    : undefined
+const authFor = (c: { env: ServerEnv; req: { url: string } }) =>
+  createAuth(c.env, new URL(c.req.url).origin)
 
-app.use('*', cors({ origin: allowedOrigin, credentials: true }))
+// The web app calls from its own origin with credentials; reflect only the
+// origins the auth config trusts (see origins.ts).
+app.use(
+  '*',
+  cors({
+    origin: (origin, c) =>
+      matchesTrustedOrigin(origin, trustedOrigins(c.env)) ? origin : undefined,
+    credentials: true,
+  }),
+)
 
 app.get('/health', async (c) => {
   const db = createDb(c.env.DB)
@@ -34,15 +39,12 @@ app.get('/health', async (c) => {
 
 // Better Auth owns everything under /api/auth/* (sign-up, sign-in, sign-out,
 // get-session). Registered before the session middleware, so it stays public.
-app.on(['GET', 'POST'], '/api/auth/*', (c) =>
-  createAuth(c.env, new URL(c.req.url).origin).handler(c.req.raw),
-)
+app.on(['GET', 'POST'], '/api/auth/*', (c) => authFor(c).handler(c.req.raw))
 
 // Every other /api route requires a session; the caller's Membership is
 // resolved here so handlers scope all data access to c.var.membership.householdId.
 app.use('/api/*', async (c, next) => {
-  const auth = createAuth(c.env, new URL(c.req.url).origin)
-  const sessionData = await auth.api.getSession({ headers: c.req.raw.headers })
+  const sessionData = await authFor(c).api.getSession({ headers: c.req.raw.headers })
   if (!sessionData) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
@@ -64,16 +66,16 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/me', async (c) => {
   const db = createDb(c.env.DB)
   const { householdId, role } = c.var.membership
-  const [home] = await db
+  const [householdRow] = await db
     .select({ id: household.id, name: household.name })
     .from(household)
     .where(eq(household.id, householdId))
     .limit(1)
-  if (!home) {
+  if (!householdRow) {
     return c.json({ error: 'Household not found' }, 500)
   }
   const { id, email, name } = c.var.user
-  return c.json({ user: { id, email, name }, household: home, role })
+  return c.json({ user: { id, email, name }, household: householdRow, role })
 })
 
 export default app

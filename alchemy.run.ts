@@ -38,6 +38,10 @@ export const server = Cloudflare.Worker('Server', {
     BETTER_AUTH_SECRET: Redacted.make(
       process.env.BETTER_AUTH_SECRET ?? 'dev-only-secret-set-BETTER_AUTH_SECRET',
     ),
+    // Pins the browser origin trusted for credentialed requests (see
+    // apps/server/src/origins.ts). Unset ('') falls back to trusting
+    // workers.dev broadly — fine for dev/previews, set it in production.
+    WEB_ORIGIN: process.env.WEB_ORIGIN ?? '',
   },
   dev: {
     port: 3001,
