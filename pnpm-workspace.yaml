@@ -6,6 +6,7 @@ packages:
 catalogMode: prefer
 
 catalog:
+  '@cloudflare/workers-types': ^5.20260801.1
   '@effect/platform-node': 4.0.0-beta.102
   '@types/node': ^24
   alchemy: 2.0.0-beta.67
