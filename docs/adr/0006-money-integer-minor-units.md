@@ -12,4 +12,3 @@ Every money amount in the ledger — transaction amounts, opening balances, deri
 
 - CSV import (and any user input) must parse decimal strings into minor units at the boundary — never via float multiplication.
 - Currencies with a non-2 minor-unit exponent (JPY: 0, BHD: 3) are handled by formatting metadata, not by the storage format.
-- Recorded in the database itself: `meta.ledger_amount_units = 'minor'` (seeded by `packages/db/seed.sql`), which `/health` reports.

@@ -1,5 +1,4 @@
 import { createDb, meta } from '@pfinance/db'
-import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { ServerEnv } from '../../../alchemy.run.ts'
 
@@ -11,15 +10,10 @@ app.get('/', (c) => {
 
 app.get('/health', async (c) => {
   const db = createDb(c.env.DB)
-  const units = await db
-    .select({ value: meta.value })
-    .from(meta)
-    .where(eq(meta.key, 'ledger_amount_units'))
-    .get()
-  return c.json({
-    ok: units?.value === 'minor',
-    ledgerAmountUnits: units?.value ?? null,
-  })
+  // Querying a migrated table proves the schema was applied to the bound
+  // database — the query throws (→ 500) if the migration never ran.
+  await db.select({ key: meta.key }).from(meta).limit(1)
+  return c.json({ ok: true })
 })
 
 export default app

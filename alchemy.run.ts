@@ -11,26 +11,25 @@ import * as Effect from 'effect/Effect'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
 // pending migration SQL on deploy whenever the schema drifts.
-const schema = Drizzle.Schema('Schema', {
+export const schema = Drizzle.Schema('Schema', {
   schema: './packages/db/src/schema.ts',
   out: './packages/db/migrations',
   dialect: 'sqlite',
 })
 
-const db = Cloudflare.D1.Database(
+export const database = Cloudflare.D1.Database(
   'DB',
   // Depending on schema.out (not a literal path) makes migration
   // generation run before the database applies pending files.
   Effect.map(schema, (s) => ({
     migrationsDir: s.out,
-    importFiles: ['./packages/db/seed.sql'],
   })),
 )
 
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
   compatibility: { flags: ['nodejs_compat'] },
-  env: { DB: db },
+  env: { DB: database },
   dev: {
     port: 3001,
   },
