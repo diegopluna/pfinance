@@ -9,7 +9,13 @@ app.get('/', (c) => {
 
 app.get('/health', async (c) => {
   const result = await c.env.DB.prepare('select 1 as ok').first<{ ok: number }>()
-  return c.json({ ok: result?.ok === 1 })
+  const units = await c.env.DB.prepare(
+    "select value from meta where key = 'ledger_amount_units'",
+  ).first<{ value: string }>()
+  return c.json({
+    ok: result?.ok === 1,
+    ledgerAmountUnits: units?.value ?? null,
+  })
 })
 
 export default app

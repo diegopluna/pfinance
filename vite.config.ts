@@ -16,4 +16,12 @@ export default defineConfig({
   run: {
     cache: true,
   },
+  test: {
+    include: ['test/**/*.test.ts'],
+    testTimeout: 120_000,
+    hookTimeout: 600_000,
+    // Test files deploy/destroy the shared test stage; running them in
+    // parallel would race on the same stack state.
+    fileParallelism: false,
+  },
 })

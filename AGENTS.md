@@ -32,3 +32,7 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Migrations & integration tests
+
+D1 schema changes go in `migrations/*.sql`; API behavior is verified by HTTP-seam integration tests in `test/` run with `vp test`. Copy the patterns in `docs/migrations-and-tests.md`. Money amounts are integers in minor units (`docs/adr/0006-money-integer-minor-units.md`).

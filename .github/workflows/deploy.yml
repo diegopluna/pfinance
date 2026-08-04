@@ -63,3 +63,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PULL_REQUEST: ${{ github.event.number }}
+      - name: Destroy Test Stage
+        # Safety net: the integration suite destroys its own test-pr-N stage
+        # at the end of each CI run, but a cancelled/crashed run can leave it
+        # behind. Destroying an already-clean stage is a no-op.
+        continue-on-error: true
+        run: vpx alchemy destroy --stage test-pr-${{ github.event.number }} --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

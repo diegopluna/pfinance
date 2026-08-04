@@ -1,0 +1,39 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+# Queue rather than cancel: interrupting a run mid-deploy would leave the
+# test stage half-applied with no destroy.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Per-ref test stage so concurrent PRs never share resources. The
+  # integration suite deploys this stage in beforeAll and destroys it in
+  # afterAll (CI only — locally the stage is kept between runs).
+  TEST_STAGE: >-
+    ${{ github.event_name == 'pull_request'
+      && format('test-pr-{0}', github.event.number)
+      || 'test-master' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp install
+      - run: vp check
+      - name: Integration tests
+        run: vp test
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

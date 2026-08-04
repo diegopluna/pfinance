@@ -5,7 +5,9 @@ import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
 
-const db = Cloudflare.D1.Database('DB')
+const db = Cloudflare.D1.Database('DB', {
+  migrationsDir: './migrations',
+})
 
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
