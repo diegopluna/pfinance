@@ -1,4 +1,5 @@
 import * as Cloudflare from 'alchemy/Cloudflare'
+import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as GitHub from 'alchemy/GitHub'
 import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
@@ -10,7 +11,7 @@ import Stack from '../alchemy.run.ts'
 // "test" — shared and kept alive between local runs; CI sets TEST_STAGE to a
 // per-PR stage so concurrent runs don't fight over the same resources.
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
-  providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
+  providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers(), drizzleProviders()),
   state: Cloudflare.state(),
   stage: process.env.TEST_STAGE ?? 'test',
 })

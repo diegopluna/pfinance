@@ -12,6 +12,8 @@ catalog:
   '@types/node': ^24
   alchemy: 2.0.0-beta.67
   class-variance-authority: ^0.7.1
+  drizzle-kit: 1.0.0-rc.4
+  drizzle-orm: 1.0.0-rc.4
   effect: 4.0.0-beta.102
   lucide-react: ^0.539.0
   shadcn: ^3.8.5

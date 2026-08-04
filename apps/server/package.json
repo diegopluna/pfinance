@@ -2,6 +2,8 @@
   "name": "server",
   "type": "module",
   "dependencies": {
+    "@pfinance/db": "workspace:*",
+    "drizzle-orm": "catalog:",
     "hono": "^4.13.0"
   },
   "devDependencies": {
