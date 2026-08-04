@@ -214,6 +214,9 @@ catalogs:
     '@effect/platform-node':
       specifier: 4.0.0-beta.102
       version: 4.0.0-beta.102
+    '@types/node':
+      specifier: ^24
+      version: 24.13.3
     alchemy:
       specifier: 2.0.0-beta.67
       version: 2.0.0-beta.67
@@ -285,7 +288,7 @@ importers:
         version: link:../../packages/db
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@24.13.3))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3)
       hono:
         specifier: ^4.13.0
         version: 4.13.0
@@ -293,6 +296,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
         version: 5.20260801.1
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
 
   apps/web:
     dependencies:
@@ -9395,6 +9401,18 @@ snapshots:
       get-tsconfig: 4.14.1
       jiti: 2.7.0
 
+  drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@24.13.3))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3):
+    optionalDependencies:
+      '@cloudflare/workers-types': 5.20260801.1
+      '@effect/sql-d1': 4.0.0-beta.102(effect@4.0.0-beta.102)
+      '@electric-sql/pglite': 0.3.15
+      '@libsql/client': 0.17.4
+      effect: 4.0.0-beta.102
+      mysql2: 3.23.2(@types/node@24.13.3)
+      pg: 8.22.0
+      valibot: 1.2.0(typescript@7.0.2)
+      zod: 4.4.3
+
   drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260801.1
@@ -11085,6 +11103,19 @@ snapshots:
   multipasta@0.2.8: {}
 
   mute-stream@3.0.0: {}
+
+  mysql2@3.23.2(@types/node@24.13.3):
+    dependencies:
+      '@types/node': 24.13.3
+      aws-ssl-profiles: 1.1.2
+      denque: 2.1.0
+      generate-function: 2.3.1
+      iconv-lite: 0.7.3
+      long: 5.3.2
+      lru.min: 1.1.4
+      named-placeholders: 1.1.6
+      sql-escaper: 1.5.1
+    optional: true
 
   mysql2@3.23.2(@types/node@26.1.2):
     dependencies:

@@ -20,7 +20,10 @@ export default defineConfig({
     cache: true,
   },
   test: {
-    include: ['test/**/*.test.ts'],
+    // Integration suites live next to the app they assert on, but run under
+    // this root config: the runner's cwd must be the workspace root so the
+    // stack's cwd-relative paths (migrations, worker entrypoints) resolve.
+    include: ['apps/*/test/**/*.test.ts'],
     testTimeout: 120_000,
     hookTimeout: 600_000,
     // Test files deploy/destroy the shared test stage; running them in

@@ -21,7 +21,7 @@ If drizzle-kit can't decide something non-interactively (rename vs create, destr
 
 ## Integration tests over HTTP
 
-Tests live in `test/*.test.ts` at the repo root and run with `vp test`. They follow the [Alchemy testing tutorial](https://alchemy.run/tutorial/part-3): deploy the real stack once per file, then assert against the live worker over HTTP — the same seam every client uses, with the worker's real D1 binding behind it. Skeleton (see `test/integ.test.ts` for the full version):
+Tests live next to the app they assert on (`apps/server/test/*.test.ts`) and run with `vp test` **from the workspace root** — the root `vite.config.ts` owns the test config, and the runner's cwd must be the root so the stack's cwd-relative paths (worker entrypoints, `packages/db/...`) resolve. They follow the [Alchemy testing tutorial](https://alchemy.run/tutorial/part-3): deploy the real stack once per file, then assert against the live worker over HTTP — the same seam every client uses, with the worker's real D1 binding behind it. Skeleton (see `apps/server/test/integ.test.ts` for the full version):
 
 ```ts
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
@@ -52,4 +52,6 @@ Rules of the pattern:
 - CI runs the suite as the `test` job in `.github/workflows/deploy.yml`; the `deploy` job `needs: test`, so previews and prod only deploy when checks and tests pass. `TEST_STAGE` is per-PR (`test-pr-N`) so concurrent PRs never share resources, and the cleanup job destroys it as a safety net on PR close.
 - Test files run sequentially (`fileParallelism: false` in `vite.config.ts`) because each file deploys/destroys the shared stage. Prefer adding tests to an existing file over adding files — each new file costs a deploy cycle in CI.
 
-**Adding a feature ticket's tests:** add the endpoint to `apps/server`, add a migration if the schema changes, then add HTTP tests to `test/integ.test.ts` (or a new file when the suite grows a distinct area). A test that writes through one endpoint and reads through another proves the worker + D1 + migration path end to end.
+**Adding a feature ticket's tests:** add the endpoint to `apps/server`, edit the schema if it changes, then add HTTP tests to `apps/server/test/integ.test.ts` (or a new file when the suite grows a distinct area). A test that writes through one endpoint and reads through another proves the worker + D1 + migration path end to end.
+
+Two harness details worth knowing: `apps/server/test/tsconfig.json` extends the server tsconfig and adds Node types (the tests run under Node, the worker code stays workers-typed), and the harness imports (`alchemy`, `effect`) resolve from the workspace root's dependencies — the suite belongs to the root runner, it's just co-located with the server.

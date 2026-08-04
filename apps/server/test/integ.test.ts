@@ -5,7 +5,7 @@ import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { expect } from 'vite-plus/test'
-import Stack from '../alchemy.run.ts'
+import Stack from '../../../alchemy.run.ts'
 
 // Same providers/state as the main Stack (alchemy.run.ts). Stage defaults to
 // "test" — shared and kept alive between local runs; CI sets TEST_STAGE to a

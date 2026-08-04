@@ -35,4 +35,4 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ### Database & integration tests
 
-The Drizzle schema in `packages/db/src/schema.ts` is the source of truth; migration SQL is generated and applied automatically on deploy/dev, and workers query through `@pfinance/db`. API behavior is verified by HTTP-seam integration tests in `test/` run with `vp test`. Copy the patterns in `docs/migrations-and-tests.md`. Money amounts are integers in minor units (`docs/adr/0006-money-integer-minor-units.md`).
+The Drizzle schema in `packages/db/src/schema.ts` is the source of truth; migration SQL is generated and applied automatically on deploy/dev, and workers query through `@pfinance/db`. API behavior is verified by HTTP-seam integration tests in `apps/server/test/`, run with `vp test` from the workspace root. Copy the patterns in `docs/migrations-and-tests.md`. Money amounts are integers in minor units (`docs/adr/0006-money-integer-minor-units.md`).
