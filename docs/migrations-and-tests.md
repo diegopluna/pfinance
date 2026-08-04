@@ -28,6 +28,7 @@ const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
   state: Cloudflare.state(),
   stage: process.env.TEST_STAGE ?? 'test',
+  dev: process.env.ALCHEMY_DEV !== undefined ? undefined : !process.env.CI,
 })
 
 const stack = beforeAll(deploy(Stack), { timeout: 600_000 })
@@ -48,7 +49,8 @@ Rules of the pattern:
 - `Test.make` uses the **same providers and state** as the main Stack in `alchemy.run.ts`.
 - Deploy once in `beforeAll`; every test in the file shares that deployment.
 - Use `Test.getWhenReady` (or `Test.executeWhenReady`) for the first request to a freshly deployed worker — it retries through the workers.dev cold-start window.
-- **Destroy only in CI** (`afterAll.skipIf(!process.env.CI)`). Locally the `test` stage is kept between runs, so re-runs are fast no-op deploys (~20s instead of ~90s).
+- **Local runs are fully emulated** (`dev: !process.env.CI` in `Test.make`): the whole stack runs in workerd on your machine and **nothing is created on Cloudflare**. Set `ALCHEMY_DEV=0 vp test` to force a real cloud run locally (then clean up with `vpx alchemy destroy --stage test --yes`), or `ALCHEMY_DEV=1` in an environment where `CI` is set.
+- **Destroy only in CI** (`afterAll.skipIf(!process.env.CI)`). Locally the emulated stack's state is kept between runs, so re-runs are fast no-op deploys; there are no cloud resources to leak.
 - CI runs the suite as the `test` job in `.github/workflows/deploy.yml`; the `deploy` job `needs: test`, so previews and prod only deploy when checks and tests pass. `TEST_STAGE` is per-PR (`test-pr-N`) so concurrent PRs never share resources, and the cleanup job destroys it as a safety net on PR close.
 - Test files run sequentially (`fileParallelism: false` in `vite.config.ts`) because each file deploys/destroys the shared stage. Prefer adding tests to an existing file over adding files — each new file costs a deploy cycle in CI.
 

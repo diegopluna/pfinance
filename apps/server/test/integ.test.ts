@@ -8,20 +8,25 @@ import { expect } from 'vite-plus/test'
 import Stack from '../../../alchemy.run.ts'
 
 // Same providers/state as the main Stack (alchemy.run.ts). Stage defaults to
-// "test" — shared and kept alive between local runs; CI sets TEST_STAGE to a
-// per-PR stage so concurrent runs don't fight over the same resources.
+// "test"; CI sets TEST_STAGE to a per-PR stage so concurrent runs don't
+// fight over the same resources.
+//
+// Local runs emulate the whole stack in workerd (dev mode) — nothing is
+// created on Cloudflare. CI runs against real cloud resources and destroys
+// them afterwards. Set ALCHEMY_DEV=1/0 to override either way.
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers(), drizzleProviders()),
   state: Cloudflare.state(),
   stage: process.env.TEST_STAGE ?? 'test',
+  dev: process.env.ALCHEMY_DEV !== undefined ? undefined : !process.env.CI,
 })
 
-// Deploy once for the whole file. Locally the stack persists between runs, so
-// re-runs are fast no-op deploys; only changed resources are updated.
+// Deploy once for the whole file. Locally the emulated stack's state persists
+// between runs, so re-runs are fast no-op deploys.
 const stack = beforeAll(deploy(Stack), { timeout: 600_000 })
 
-// Tear down only in CI (GitHub Actions sets CI=true) so local iteration keeps
-// the deployed test stack between runs.
+// Tear down only in CI (GitHub Actions sets CI=true); local dev-mode runs
+// keep their state for fast iteration and hold no cloud resources anyway.
 afterAll.skipIf(!process.env.CI)(destroy(Stack), { timeout: 600_000 })
 
 test(
