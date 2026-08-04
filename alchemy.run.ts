@@ -1,6 +1,7 @@
 import * as Alchemy from 'alchemy'
 import * as Cloudflare from 'alchemy/Cloudflare'
 import * as GitHub from 'alchemy/GitHub'
+import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
 
@@ -33,6 +34,20 @@ export default Alchemy.Stack(
         port: 3000,
       },
     })
+
+    if (process.env.PULL_REQUEST) {
+      yield* GitHub.Comment('preview-comment', {
+        owner: 'diegopluna',
+        repository: 'pfinance',
+        issueNumber: Number(process.env.PULL_REQUEST),
+        body: Output.interpolate`
+          ## Preview Deployed
+          
+          **Web Deployment URL:** ${web.url}
+          **Server Deployment URL:** ${api.url}
+        `,
+      })
+    }
 
     return {
       webUrl: web.url,
