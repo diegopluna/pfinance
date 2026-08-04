@@ -8,6 +8,11 @@
     "dev": "vp run -r dev",
     "prepare": "vp config"
   },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "alchemy": "catalog:",
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "vite": "catalog:",
     "vite-plus": "catalog:"
