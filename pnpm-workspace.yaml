@@ -6,11 +6,15 @@ packages:
 catalogMode: prefer
 
 catalog:
+  '@base-ui/react': ^1.6.0
   '@cloudflare/workers-types': ^5.20260801.1
   '@effect/platform-node': 4.0.0-beta.102
   '@types/node': ^24
   alchemy: 2.0.0-beta.67
+  class-variance-authority: ^0.7.1
   effect: 4.0.0-beta.102
+  lucide-react: ^0.539.0
+  shadcn: ^3.8.5
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@0.2.7
   vite-plus: 0.2.7
@@ -26,5 +30,6 @@ minimumReleaseAgeExclude:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  msw: false
   sharp: true
   workerd: true

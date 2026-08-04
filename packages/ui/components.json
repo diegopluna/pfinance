@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-luma",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@pfinance/ui/components",
+    "ui": "@pfinance/ui/components",
+    "utils": "@pfinance/ui/lib/utils",
+    "lib": "@pfinance/ui/lib",
+    "hooks": "@pfinance/ui/hooks"
+  }
+}
