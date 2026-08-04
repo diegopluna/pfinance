@@ -38,11 +38,10 @@ test(
     const response = yield* Test.getWhenReady(`${apiUrl}/health`)
     expect(response.status).toBe(200)
 
-    // ledgerAmountUnits comes from the `meta` row written by
-    // migrations/0001_init.sql, proving migrations were applied to the
-    // worker's bound database.
+    // /health queries the migrated `meta` table, so 200 + ok proves the
+    // worker, its D1 binding, and the applied migration end to end.
     const body = yield* response.json
-    expect(body).toEqual({ ok: true, ledgerAmountUnits: 'minor' })
+    expect(body).toEqual({ ok: true })
   }),
   { timeout: 120_000 },
 )

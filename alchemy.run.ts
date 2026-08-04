@@ -20,11 +20,9 @@ export const schema = Drizzle.Schema('Schema', {
 export const database = Cloudflare.D1.Database(
   'DB',
   // Depending on schema.out (not a literal path) makes migration
-  // generation run before the database applies pending files. The seed
-  // applies after migrations and re-runs only when the file changes.
+  // generation run before the database applies pending files.
   Effect.map(schema, (s) => ({
     migrationsDir: s.out,
-    importFiles: ['./packages/db/seed.sql'],
   })),
 )
 
