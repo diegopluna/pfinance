@@ -34,6 +34,18 @@ export default Alchemy.Stack(
         port: 3000,
       },
     })
+    const docs = yield* Cloudflare.Website.StaticSite('Docs', {
+      cwd: './apps/docs',
+      command: 'vp run build',
+      outdir: 'dist',
+      compatibility: {
+        flags: ['nodejs_compat'],
+      },
+      dev: {
+        cwd: './apps/docs',
+        command: 'vp run dev',
+      },
+    })
 
     if (process.env.PULL_REQUEST) {
       yield* GitHub.Comment('preview-comment', {
@@ -45,6 +57,7 @@ export default Alchemy.Stack(
           
           **Web Deployment URL:** ${web.url}
           **Server Deployment URL:** ${api.url}
+          **Docs Deployment URL:** ${docs.url}
         `,
       })
     }
@@ -52,6 +65,7 @@ export default Alchemy.Stack(
     return {
       webUrl: web.url,
       apiUrl: api.url,
+      docsUrl: docs.url,
     }
   }),
 )
