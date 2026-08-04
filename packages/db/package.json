@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema.ts",
-    "./deploy": "./src/deploy.ts"
+    "./schema": "./src/schema.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:"

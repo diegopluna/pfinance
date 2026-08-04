@@ -1,13 +1,32 @@
-import { database } from '@pfinance/db/deploy'
 import * as Alchemy from 'alchemy'
 import * as Cloudflare from 'alchemy/Cloudflare'
-// Deep import: the alchemy/Drizzle barrel re-exports Postgres support,
+// Deep imports: the alchemy/Drizzle barrel re-exports Postgres support,
 // which requires the optional @effect/sql-pg peer we don't install.
 import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
+import * as Drizzle from 'alchemy/Drizzle/Schema'
 import * as GitHub from 'alchemy/GitHub'
 import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
+
+// Drizzle schema (packages/db) is the source of truth; alchemy regenerates
+// pending migration SQL on deploy whenever the schema drifts.
+export const schema = Drizzle.Schema('Schema', {
+  schema: './packages/db/src/schema.ts',
+  out: './packages/db/migrations',
+  dialect: 'sqlite',
+})
+
+export const database = Cloudflare.D1.Database(
+  'DB',
+  // Depending on schema.out (not a literal path) makes migration
+  // generation run before the database applies pending files. The seed
+  // applies after migrations and re-runs only when the file changes.
+  Effect.map(schema, (s) => ({
+    migrationsDir: s.out,
+    importFiles: ['./packages/db/seed.sql'],
+  })),
+)
 
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
