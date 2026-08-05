@@ -1,11 +1,18 @@
-import { account, createDb, household, invite, member, meta, user } from '@pfinance/db'
+import { account, createDb, household, invite, member, meta, transaction, user } from '@pfinance/db'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
 import { validator } from 'hono/validator'
 import type { ServerEnv } from './env.ts'
-import { accountView, parseAccountPatch, parseNewAccount, setAccountArchived } from './accounts.ts'
+import {
+  accountView,
+  ledgerSum,
+  ledgerSumExpr,
+  parseAccountPatch,
+  parseNewAccount,
+  setAccountArchived,
+} from './accounts.ts'
 import { createAuth } from './auth.ts'
 import {
   findInvite,
@@ -16,6 +23,15 @@ import {
 } from './invites.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
+import {
+  accountInHousehold,
+  findTransaction,
+  listTransactions,
+  parseNewTransaction,
+  parseTransactionFilters,
+  parseTransactionPatch,
+  transactionView,
+} from './transactions.ts'
 
 type SessionUser = { id: string; email: string; name: string }
 
@@ -139,17 +155,21 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const db = createDb(c.env.DB)
       const { includeArchived } = c.req.valid('query')
       const rows = await db
-        .select()
+        // One grouped query derives every Balance: the ledger sum joins in
+        // (ADR 0001), zero for Accounts with no Transactions yet.
+        .select({ row: account, ledgerTotal: ledgerSumExpr })
         .from(account)
+        .leftJoin(transaction, eq(transaction.accountId, account.id))
         .where(
           and(
             eq(account.householdId, c.var.membership.householdId),
             ...(includeArchived ? [] : [isNull(account.archivedAt)]),
           ),
         )
+        .groupBy(account.id)
         // Name breaks the tie within a second so the order is stable.
         .orderBy(asc(account.createdAt), asc(account.name), asc(account.id))
-      return c.json({ accounts: rows.map(accountView) })
+      return c.json({ accounts: rows.map(({ row, ledgerTotal }) => accountView(row, ledgerTotal)) })
     },
   )
   .post(
@@ -168,7 +188,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         createdAt: new Date(),
       }
       await db.insert(account).values(row)
-      return c.json({ account: accountView(row) })
+      // A brand-new Account has no Transactions: the ledger sum is zero.
+      return c.json({ account: accountView(row, 0) })
     },
   )
   .patch(
@@ -192,7 +213,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       if (updated === undefined) {
         return c.json({ error: 'Account not found.' }, 404)
       }
-      return c.json({ account: accountView(updated) })
+      return c.json({ account: accountView(updated, await ledgerSum(db, updated.id)) })
     },
   )
   // Archiving hides an Account that closed in real life; unarchiving is the
@@ -205,7 +226,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
-    return c.json({ account: accountView(row) })
+    return c.json({ account: accountView(row, await ledgerSum(db, row.id)) })
   })
   .post('/api/accounts/:id/unarchive', async (c) => {
     const db = createDb(c.env.DB)
@@ -213,7 +234,82 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
-    return c.json({ account: accountView(row) })
+    return c.json({ account: accountView(row, await ledgerSum(db, row.id)) })
+  })
+  // --- Transactions (issue #8) — member-level like Accounts: the ledger is
+  // every Member's to read and write (CONTEXT.md). Tenancy rides on the
+  // Account: writes verify the target Account belongs to the caller's
+  // Household, reads join through it (transactions.ts).
+  .get(
+    '/api/transactions',
+    validator('query', (value, c) => {
+      const parsed = parseTransactionFilters(value as Record<string, string | undefined>)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const transactions = await listTransactions(
+        db,
+        c.var.membership.householdId,
+        c.req.valid('query'),
+      )
+      return c.json({ transactions })
+    },
+  )
+  .post(
+    '/api/transactions',
+    validator('json', (value, c) => {
+      const parsed = parseNewTransaction(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const fields = c.req.valid('json')
+      if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
+        return c.json({ error: 'Unknown account.' }, 400)
+      }
+      const row = {
+        id: crypto.randomUUID(),
+        ...fields,
+        createdBy: c.var.user.id,
+        createdAt: new Date(),
+      }
+      await db.insert(transaction).values(row)
+      return c.json({ transaction: transactionView(row, c.var.user.name) })
+    },
+  )
+  .patch(
+    '/api/transactions/:id',
+    validator('json', (value, c) => {
+      const parsed = parseTransactionPatch(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
+      if (existing === undefined) {
+        return c.json({ error: 'Transaction not found.' }, 404)
+      }
+      const patch = c.req.valid('json')
+      if (
+        patch.accountId !== undefined &&
+        !(await accountInHousehold(db, c.var.membership.householdId, patch.accountId))
+      ) {
+        return c.json({ error: 'Unknown account.' }, 400)
+      }
+      await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
+      // enteredBy stays the creator: editing a row doesn't re-attribute it.
+      return c.json({ transaction: { ...existing, ...patch } })
+    },
+  )
+  .delete('/api/transactions/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
+    if (existing === undefined) {
+      return c.json({ error: 'Transaction not found.' }, 404)
+    }
+    await db.delete(transaction).where(eq(transaction.id, existing.id))
+    return c.json({ ok: true })
   })
   // --- Member & Invite management (issue #6) — owner-only, so the guard
   // middleware covers both resources. Non-owner Members get a 403.

@@ -117,6 +117,27 @@ export const account = sqliteTable('account', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
+// A Transaction is the atom of the ledger (CONTEXT.md; issue #8): a signed
+// movement of money on exactly one Account. Its Household is the Account's —
+// no denormalized householdId, so a Transaction can never disagree with its
+// Account about tenancy. The date is a calendar date stored as an ISO
+// `YYYY-MM-DD` TEXT column, never a timestamp: no timezone can shift it, and
+// lexicographic order is chronological order for range filters.
+export const transaction = sqliteTable('transaction', {
+  id: text('id').primaryKey(),
+  accountId: text('account_id')
+    .notNull()
+    .references(() => account.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
+  // Signed integer minor units (ADR 0006): negative = money out.
+  amount: integer('amount').notNull(),
+  description: text('description').notNull(),
+  // The Member who entered it, kept for attribution; set null if that User
+  // is removed so the ledger row survives (a User holds no financial data).
+  createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
 export const member = sqliteTable('member', {
   id: text('id').primaryKey(),
   // Unique: a User belongs to exactly one Household in the MVP.

@@ -17,8 +17,10 @@
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@tanstack/react-table": "catalog:",
     "better-auth": "catalog:",
     "hono": "catalog:",
+    "lucide-react": "catalog:",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

@@ -61,6 +61,14 @@ export function Shell() {
                     Accounts
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith('/transactions')}
+                    render={<Link to="/transactions" />}
+                  >
+                    Transactions
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
                 {me?.role === 'owner' && (
                   <SidebarMenuItem>
                     <SidebarMenuButton

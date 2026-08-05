@@ -4,6 +4,7 @@ import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import { expect } from 'vite-plus/test'
@@ -101,6 +102,48 @@ export const cookieHeader = (response: HttpClientResponse) =>
   Object.values(response.cookies.cookies)
     .map((cookie) => `${cookie.name}=${cookie.value}`)
     .join('; ')
+
+// Plain execute, no cold-start retry: executeWhenReady treats 404 as "edge
+// not converged yet" and retries it away, so a test that ASSERTS a 404 must
+// hit the (by then long warm) worker directly.
+export const executeWarm = (request: HttpClientRequest.HttpClientRequest) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    return yield* client.execute(request)
+  })
+
+// --- Accounts helpers shared by the ledger suites ---
+
+export interface AccountView {
+  id: string
+  name: string
+  type: string
+  kind: string
+  openingBalance: number
+  balance: number
+  archivedAt: string | null
+  createdAt: string
+}
+
+export const readAccount = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => (body as unknown as { account: AccountView }).account)
+
+export const readAccounts = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => (body as unknown as { accounts: AccountView[] }).accounts)
+
+export const createAccount = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/accounts`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    ),
+  )
+
+export const listAccounts = (apiUrl: string, cookie: string, query = '') =>
+  Test.executeWhenReady(
+    HttpClientRequest.get(`${apiUrl}/api/accounts${query}`).pipe(withCookie(cookie)),
+  )
 
 // Bootstrap an owner on a fresh instance and return their cookie + household.
 export const signUpOwner = (
