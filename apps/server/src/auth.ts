@@ -1,7 +1,7 @@
 import { authAccount, createDb, household, member, session, user, verification } from '@pfinance/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import type { ServerEnv } from '../../../alchemy.run.ts'
+import type { ServerEnv } from './env.ts'
 import { trustedOrigins } from './origins.ts'
 
 // Email+password only, no verification, no reset (docs/adr/0005).

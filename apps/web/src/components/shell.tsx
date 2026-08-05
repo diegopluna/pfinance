@@ -1,32 +1,25 @@
-import { useEffect, useState } from 'react'
 import { Outlet, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@pfinance/ui/components/button'
+import { api } from '@/lib/api'
 import { authClient } from '@/lib/auth-client'
-
-interface Me {
-  user: { id: string; email: string; name: string }
-  household: { id: string; name: string }
-  role: 'owner' | 'member'
-}
 
 // The signed-in frame every feature screen renders inside (the /_authed
 // layout); child routes land in the Outlet.
 export function Shell() {
   const navigate = useNavigate()
   const { data: session } = authClient.useSession()
-  const [me, setMe] = useState<Me | null>(null)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch(`${import.meta.env.VITE_API_URL}/api/me`, {
-      credentials: 'include',
-      signal: controller.signal,
-    })
-      .then((response) => (response.ok ? (response.json() as Promise<Me>) : null))
-      .then(setMe)
-      .catch(() => {})
-    return () => controller.abort()
-  }, [])
+  const { data: me } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const response = await api.api.me.$get()
+      if (!response.ok) {
+        throw new Error('Failed to load household')
+      }
+      return response.json()
+    },
+  })
 
   const handleSignOut = async () => {
     await authClient.signOut()

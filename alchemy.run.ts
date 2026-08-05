@@ -9,6 +9,7 @@ import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
 import * as Redacted from 'effect/Redacted'
+import type { ServerEnv } from './apps/server/src/env.ts'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
 // pending migration SQL on deploy whenever the schema drifts.
@@ -48,7 +49,15 @@ export const server = Cloudflare.Worker('Server', {
   },
 })
 
-export type ServerEnv = Cloudflare.InferEnv<typeof server>
+// The worker declares its own env type (apps/server/src/env.ts) so its code
+// never imports this infra file; these assertions fail to compile if the
+// declared type drifts from the env deployed above, in either direction.
+type InferredEnv = Cloudflare.InferEnv<typeof server>
+type _AssertEnvDeclared = [
+  InferredEnv extends ServerEnv ? true : never,
+  ServerEnv extends InferredEnv ? true : never,
+][number]
+const _envMatches: _AssertEnvDeclared = true
 
 export default Alchemy.Stack(
   'PFinance',

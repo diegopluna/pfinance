@@ -1,11 +1,16 @@
 {
-  "name": "server",
+  "name": "@pfinance/server",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@pfinance/db": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "^4.13.0"
+    "hono": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
