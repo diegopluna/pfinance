@@ -1,29 +1,24 @@
-import * as Alchemy from 'alchemy'
-import * as Cloudflare from 'alchemy/Cloudflare'
-import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import { expect } from 'vite-plus/test'
-import { schema } from '../../../alchemy.run.ts'
 import Stack from '../../../stacks/backend.ts'
-
-// Same providers/state as the backend stack (stacks/backend.ts) — the
-// server tests deploy only Schema → D1 → Worker, not the full product
-// stack. Stage defaults to "test"; CI sets TEST_STAGE to a per-PR stage so
-// concurrent runs don't fight over the same resources.
-//
-// Local runs emulate the whole stack in workerd (dev mode) — nothing is
-// created on Cloudflare. CI runs against real cloud resources and destroys
-// them afterwards. Set ALCHEMY_DEV=1/0 to override either way.
-const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
-  providers: Layer.mergeAll(Cloudflare.providers(), drizzleProviders()),
-  state: Cloudflare.state(),
-  stage: process.env.TEST_STAGE ?? 'test',
-  dev: process.env.ALCHEMY_DEV !== undefined ? undefined : !process.env.CI,
-})
+import {
+  afterAll,
+  beforeAll,
+  cookieHeader,
+  deploy,
+  destroy,
+  freshApiUrl,
+  readMe,
+  signInRequest,
+  signUpOwner,
+  signUpRequest,
+  test,
+  trustedOrigin,
+  withCookie,
+} from './harness.ts'
 
 // Deploy once for the whole file. Locally the emulated stack's state persists
 // between runs, so re-runs are fast no-op deploys. Only tests that never mint
@@ -78,57 +73,8 @@ test(
 // Self-serve sign-up is locked the moment a User exists, so every test that
 // mints one deploys its own pristine worker + D1 through `test.provider`'s
 // scratch stack: private in-memory state guarantees a zero-User database on
-// every run, torn down afterwards even on failure. The declarations below
-// deploy once per test — each scratch stack is keyed by its test title, so
-// the instances never share state, and fixed emails are safe.
-
-interface Me {
-  user: { id: string; email: string; name: string }
-  household: { id: string; name: string; currency: string }
-  role: string
-}
-
-// Better Auth's CSRF protection requires a trusted Origin on credentialed
-// POSTs (Node's fetch sends sec-fetch-mode, which forces the check), so the
-// tests send one exactly like a browser client would.
-const trustedOrigin = HttpClientRequest.setHeader('origin', 'http://localhost:3000')
-
-const signUpRequest = (
-  apiUrl: string,
-  email: string,
-  name: string,
-  // currency: null omits the field to prove the server requires it.
-  options: { householdName?: string; currency?: string | null; inviteToken?: string } = {},
-) => {
-  const { householdName, currency = 'USD', inviteToken } = options
-  return HttpClientRequest.post(`${apiUrl}/api/auth/sign-up/email`).pipe(
-    trustedOrigin,
-    HttpClientRequest.bodyJsonUnsafe({
-      email,
-      name,
-      password: 'correct-horse-battery',
-      ...(householdName !== undefined && { householdName }),
-      ...(currency !== null && { currency }),
-      ...(inviteToken !== undefined && { inviteToken }),
-    }),
-  )
-}
-
-const signInRequest = (apiUrl: string, email: string) =>
-  HttpClientRequest.post(`${apiUrl}/api/auth/sign-in/email`).pipe(
-    trustedOrigin,
-    HttpClientRequest.bodyJsonUnsafe({ email, password: 'correct-horse-battery' }),
-  )
-
-const readMe = (response: HttpClientResponse) =>
-  Effect.map(response.json, (body) => body as unknown as Me)
-
-// Echo every cookie the server set (name is prefix-dependent in Better Auth,
-// so don't hardcode it).
-const cookieHeader = (response: HttpClientResponse) =>
-  Object.values(response.cookies.cookies)
-    .map((cookie) => `${cookie.name}=${cookie.value}`)
-    .join('; ')
+// every run, torn down afterwards even on failure (freshApiUrl and the
+// request helpers live in harness.ts, shared with the other test files).
 
 const signUpStatus = (apiUrl: string) =>
   Effect.flatMap(
@@ -138,23 +84,6 @@ const signUpStatus = (apiUrl: string) =>
       return Effect.map(response.json, (body) => body as { allowed: boolean })
     },
   )
-
-const freshDatabase = Cloudflare.D1.Database(
-  'FreshDB',
-  Effect.map(schema, (s) => ({ migrationsDir: s.out })),
-)
-
-const freshServer = Cloudflare.Worker('FreshServer', {
-  main: './apps/server/src/index.ts',
-  compatibility: { flags: ['nodejs_compat'] },
-  env: {
-    DB: freshDatabase,
-    BETTER_AUTH_SECRET: Alchemy.makeRandom('FreshBetterAuthSecret'),
-    WEB_ORIGIN: '',
-  },
-})
-
-const freshApiUrl = Effect.map(freshServer, (worker) => ({ apiUrl: worker.url }))
 
 test.provider(
   'sign-up creates a session and a Household owned by the new user',
@@ -344,8 +273,6 @@ interface CreatedInvite {
   invite: { id: string; token: string; expiresAt: string; createdAt: string }
 }
 
-const withCookie = (cookie: string) => HttpClientRequest.setHeader('cookie', cookie)
-
 const createInvite = (apiUrl: string, cookie: string, expiresInSeconds?: number) =>
   Test.executeWhenReady(
     HttpClientRequest.post(`${apiUrl}/api/invites`).pipe(
@@ -368,22 +295,6 @@ const inviteInfo = (apiUrl: string, token: string) =>
       return Effect.map(response.json, (body) => body as unknown as InviteInfo)
     },
   )
-
-// Bootstrap an owner and return their cookie + household id.
-const signUpOwner = (apiUrl: string, email: string) =>
-  Effect.gen(function* () {
-    const signUp = yield* Test.executeWhenReady(
-      signUpRequest(apiUrl, email, 'Owner', { householdName: 'Invite House' }),
-    )
-    expect(signUp.status).toBe(200)
-    const cookie = cookieHeader(signUp)
-    const me = yield* readMe(
-      yield* Test.executeWhenReady(
-        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
-      ),
-    )
-    return { cookie, householdId: me.household.id }
-  })
 
 test.provider(
   'a valid Invite registers a Member while sign-ups are locked, exactly once',

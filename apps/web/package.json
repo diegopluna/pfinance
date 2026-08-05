@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@pfinance/currency": "workspace:*",
+    "@pfinance/db": "workspace:*",
     "@pfinance/server": "workspace:*",
     "@pfinance/ui": "workspace:*",
     "@tanstack/react-form": "catalog:",

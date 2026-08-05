@@ -21,9 +21,7 @@ export function Shell() {
         <div className="flex items-baseline gap-3">
           <span className="text-lg font-semibold">pfinance</span>
           {me && <span className="text-sm text-muted-foreground">{me.household.name}</span>}
-          {/* Managing Members and Invites is owner-only (issue #6), so the
-              nav entry only shows for the owner. */}
-          {me?.role === 'owner' && (
+          {me && (
             <nav className="ml-3 flex items-baseline gap-3 text-sm">
               <Link
                 to="/"
@@ -31,12 +29,23 @@ export function Shell() {
               >
                 Overview
               </Link>
+              {/* The ledger is every Member's (CONTEXT.md), so Accounts shows
+                  for all; managing Members and Invites is owner-only (issue
+                  #6), so that entry only shows for the owner. */}
               <Link
-                to="/members"
+                to="/accounts"
                 className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
               >
-                Members
+                Accounts
               </Link>
+              {me.role === 'owner' && (
+                <Link
+                  to="/members"
+                  className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+                >
+                  Members
+                </Link>
+              )}
             </nav>
           )}
         </div>

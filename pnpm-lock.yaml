@@ -329,6 +329,9 @@ importers:
       '@pfinance/currency':
         specifier: workspace:*
         version: link:../../packages/currency
+      '@pfinance/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@pfinance/server':
         specifier: workspace:*
         version: link:../server
