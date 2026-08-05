@@ -43,8 +43,8 @@ function SignUpScreen() {
         <CardHeader>
           <CardTitle>Sign-ups are closed</CardTitle>
           <CardDescription>
-            This pfinance instance isn&apos;t accepting new sign-ups. Ask whoever runs it to invite
-            you or to enable sign-ups.
+            This pfinance instance isn&apos;t accepting new sign-ups. Ask whoever runs it to enable
+            them.
           </CardDescription>
         </CardHeader>
         <CardContent>
