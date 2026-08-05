@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@pfinance/currency": "workspace:*",
     "@pfinance/db": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",

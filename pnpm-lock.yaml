@@ -301,6 +301,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@pfinance/currency':
+        specifier: workspace:*
+        version: link:../../packages/currency
       '@pfinance/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -323,6 +326,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@pfinance/currency':
+        specifier: workspace:*
+        version: link:../../packages/currency
       '@pfinance/server':
         specifier: workspace:*
         version: link:../server
@@ -393,6 +399,12 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.7(@types/node@24.13.3)(@voidzero-dev/vite-plus-core@0.2.7(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@6.0.3)(yaml@2.9.0))(esbuild@0.28.1)(jiti@2.7.0)(msw@2.15.0(@types/node@24.13.3)(typescript@6.0.3))(typescript@6.0.3)(yaml@2.9.0)
+
+  packages/currency:
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
 
   packages/db:
     dependencies:

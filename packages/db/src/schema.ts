@@ -67,6 +67,11 @@ export const verification = sqliteTable('verification', {
 export const household = sqliteTable('household', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // ISO 4217 code, chosen once at creation and immutable in the MVP (ADR
+  // 0002); validated against @pfinance/currency at sign-up. The default
+  // exists only so the column can be added to pre-currency rows — the app
+  // always writes it explicitly.
+  currency: text('currency').notNull().default('USD'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
