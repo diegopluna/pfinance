@@ -1,5 +1,19 @@
-import { Link, Outlet, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { Button } from '@pfinance/ui/components/button'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@pfinance/ui/components/sidebar'
 import { authClient } from '@/lib/auth-client'
 import { useMe } from '@/hooks/use-me'
 
@@ -10,14 +24,13 @@ const initials = (name: string) =>
     .map((word) => word[0]?.toUpperCase() ?? '')
     .join('')
 
-const navLinkClass =
-  'rounded-lg px-2.5 py-1.5 text-[13.5px] font-medium text-muted-foreground hover:text-foreground [&.active]:bg-muted [&.active]:font-semibold [&.active]:text-foreground'
-
 // The signed-in frame every feature screen renders inside (the /_authed
-// layout); child routes land in the Outlet. Sidebar shell per Claude Design
-// 2a–2f: logo + nav on the left, household identity pinned to the bottom.
+// layout); child routes land in the Outlet. shadcn sidebar in the Claude
+// Design 2a–2f arrangement: logo up top, nav, household identity pinned to
+// the bottom.
 export function Shell() {
   const navigate = useNavigate()
+  const pathname = useLocation({ select: (location) => location.pathname })
   const { data: session } = authClient.useSession()
   const { data: me } = useMe()
 
@@ -27,30 +40,50 @@ export function Shell() {
   }
 
   return (
-    <div className="flex min-h-dvh bg-background">
-      <aside className="flex w-[232px] shrink-0 flex-col border-r border-border bg-sidebar px-3 pt-5 pb-4">
-        <div className="flex items-center gap-2.5 px-2.5 pb-4 text-[15px] font-semibold tracking-tight">
-          <span className="size-5 rounded-md bg-foreground" />
-          pfinance
-        </div>
-        <nav className="flex flex-col gap-0.5">
-          <Link to="/" className={navLinkClass}>
-            Dashboard
-          </Link>
-          {/* The ledger is every Member's (CONTEXT.md); managing Members and
-              Invites is owner-only (issue #6). */}
-          <Link to="/accounts" className={navLinkClass}>
-            Accounts
-          </Link>
-          {me?.role === 'owner' && (
-            <Link to="/members" className={navLinkClass}>
-              Members
-            </Link>
-          )}
-        </nav>
-        <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
-          <div className="flex items-center gap-2.5 px-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-[10.5px] font-semibold text-muted-foreground">
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarHeader>
+          <div className="flex items-center gap-2.5 px-2 py-1 text-[15px] font-semibold tracking-tight">
+            <span className="size-5 rounded-md bg-sidebar-foreground" />
+            pfinance
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={pathname === '/'} render={<Link to="/" />}>
+                    Dashboard
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {/* The ledger is every Member's (CONTEXT.md); managing
+                    Members and Invites is owner-only (issue #6). */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith('/accounts')}
+                    render={<Link to="/accounts" />}
+                  >
+                    Accounts
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {me?.role === 'owner' && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname.startsWith('/members')}
+                      render={<Link to="/members" />}
+                    >
+                      Members
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <div className="flex items-center gap-2.5 border-t border-sidebar-border px-2 pt-3">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-[10.5px] font-semibold text-muted-foreground">
               {initials(session?.user.name ?? '')}
             </span>
             <span className="flex min-w-0 flex-col">
@@ -63,16 +96,21 @@ export function Shell() {
           <Button
             variant="ghost"
             size="sm"
-            className="justify-start px-2.5 text-muted-foreground"
+            className="justify-start px-2 text-muted-foreground"
             onClick={() => void handleSignOut()}
           >
             Sign out
           </Button>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset>
+        <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+          <SidebarTrigger className="-ml-1" />
+        </header>
+        <div className="flex-1 px-6 pb-6">
+          <Outlet />
         </div>
-      </aside>
-      <main className="min-w-0 flex-1 p-6">
-        <Outlet />
-      </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
