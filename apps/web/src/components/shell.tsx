@@ -1,5 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { Button } from '@pfinance/ui/components/button'
+import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import {
   Sidebar,
   SidebarContent,
@@ -16,13 +17,6 @@ import {
 } from '@pfinance/ui/components/sidebar'
 import { authClient } from '@/lib/auth-client'
 import { useMe } from '@/hooks/use-me'
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? '')
-    .join('')
 
 // The signed-in frame every feature screen renders inside (the /_authed
 // layout); child routes land in the Outlet. shadcn sidebar in the Claude
@@ -83,9 +77,10 @@ export function Shell() {
         </SidebarContent>
         <SidebarFooter>
           <div className="flex items-center gap-2.5 border-t border-sidebar-border px-2 pt-3">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-[10.5px] font-semibold text-muted-foreground">
-              {initials(session?.user.name ?? '')}
-            </span>
+            <InitialsAvatar
+              name={session?.user.name ?? ''}
+              className="border-sidebar-border bg-sidebar-accent"
+            />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[12.5px] font-semibold">{me?.household.name}</span>
               <span className="truncate text-[11px] text-muted-foreground">

@@ -6,10 +6,12 @@ import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
 import {
   formatAmount,
   fromMinorUnits,
+  getCurrency,
   isSupportedCurrency,
   toMinorUnits,
   type CurrencyCode,
 } from '@pfinance/currency'
+import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import {
@@ -22,7 +24,7 @@ import {
 } from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
 import { api } from '@/lib/api'
-import { useAppForm } from '@/hooks/form'
+import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/accounts')({
@@ -37,6 +39,14 @@ const typeOptions = ACCOUNT_TYPES.map(({ type, label, kind }) => ({
 }))
 
 const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) => [type, label]))
+
+// Format guidance in the Household Currency: "1234.56" for BRL, "1234" for
+// JPY, "1234.567" for BHD — the example must be an amount the currency's
+// minor-unit exponent actually accepts (ADR 0006).
+const amountExample = (currency: CurrencyCode) => {
+  const { minorUnitExponent } = getCurrency(currency)
+  return minorUnitExponent === 0 ? '1234' : `1234.${'5678'.slice(0, minorUnitExponent)}`
+}
 
 const archivedLabel = (iso: string | null) =>
   iso === null
@@ -53,8 +63,14 @@ function AccountsScreen() {
   const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [showArchived, setShowArchived] = useState(false)
-  // Closed, creating, or editing one Account (the dialog form below).
-  const [dialog, setDialog] = useState<{ entry: AccountEntry | null } | null>(null)
+  // The dialog's target outlives `open` so the closing popup keeps its
+  // content while Base UI animates out and restores focus; the nonce forces
+  // a fresh form mount per open (see the `key` below).
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [target, setTarget] = useState<{ entry: AccountEntry | null; nonce: number }>({
+    entry: null,
+    nonce: 0,
+  })
 
   // Every amount is entered and shown in the Household Currency (ADR 0002).
   // The USD fallback only covers the frame before /api/me resolves — the
@@ -89,7 +105,7 @@ function AccountsScreen() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setDialog(null)
+      setDialogOpen(false)
     },
   })
 
@@ -108,7 +124,8 @@ function AccountsScreen() {
 
   const openDialog = (entry: AccountEntry | null) => {
     saveAccount.reset()
-    setDialog({ entry })
+    setTarget((current) => ({ entry, nonce: current.nonce + 1 }))
+    setDialogOpen(true)
   }
 
   const accounts = accountsQuery.data?.accounts ?? []
@@ -130,34 +147,34 @@ function AccountsScreen() {
         </Button>
       </div>
 
-      {/* Keyed by target so the form mounts with the right defaults — a
-          reused form instance gets its pristine fields stomped back to the
-          previous defaults on re-render. */}
-      {dialog !== null && (
-        <AccountFormDialog
-          key={dialog.entry?.id ?? 'new'}
-          entry={dialog.entry}
-          householdName={me?.household.name}
-          currency={currency}
-          error={saveAccount.isError ? saveAccount.error.message : null}
-          onSubmit={(fields) =>
-            saveAccount
-              .mutateAsync({ id: dialog.entry?.id ?? null, fields })
-              // The mutation records failures for the dialog's error line;
-              // swallow the rejection so the form doesn't also throw.
-              .then(
-                () => undefined,
-                () => undefined,
-              )
-          }
-          onClose={() => setDialog(null)}
-        />
-      )}
+      <AccountFormDialog
+        key={target.nonce}
+        open={dialogOpen}
+        entry={target.entry}
+        householdName={me?.household.name}
+        currency={currency}
+        error={saveAccount.isError ? saveAccount.error.message : null}
+        onSubmit={(fields) =>
+          saveAccount
+            .mutateAsync({ id: target.entry?.id ?? null, fields })
+            // The mutation records failures for the dialog's error line;
+            // swallow the rejection so the form doesn't also throw.
+            .then(
+              () => undefined,
+              () => undefined,
+            )
+        }
+        onClose={() => setDialogOpen(false)}
+      />
 
       {accountsQuery.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
       ) : accountsQuery.isError ? (
-        <p className="text-sm text-destructive">Couldn&apos;t load accounts.</p>
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t load accounts.
+        </p>
       ) : active.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No accounts yet — create one to start the ledger.
@@ -172,11 +189,11 @@ function AccountsScreen() {
               <CardContent className="flex flex-col">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{entry.name}</span>
-                  <span className="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                  <Badge>
                     {entry.kind === 'liability'
-                      ? 'LIABILITY'
-                      : (typeLabels.get(entry.type) ?? entry.type).toUpperCase()}
-                  </span>
+                      ? 'Liability'
+                      : (typeLabels.get(entry.type) ?? entry.type)}
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {typeLabels.get(entry.type) ?? entry.type}
@@ -212,7 +229,9 @@ function AccountsScreen() {
         </div>
       )}
       {setArchived.isError && (
-        <p className="text-sm text-destructive">Couldn&apos;t update that account.</p>
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t update that account.
+        </p>
       )}
 
       {/* Archived section per Claude Design 2c — dimmed, history preserved —
@@ -278,6 +297,7 @@ function AccountsScreen() {
 // the `key` at the call site), so defaultValues are simply the values being
 // edited and TanStack Form never fights a mid-life defaults change.
 function AccountFormDialog({
+  open,
   entry,
   householdName,
   currency,
@@ -285,6 +305,7 @@ function AccountFormDialog({
   onSubmit,
   onClose,
 }: {
+  open: boolean
   entry: AccountEntry | null
   householdName: string | undefined
   currency: CurrencyCode
@@ -298,6 +319,7 @@ function AccountFormDialog({
       type: entry?.type ?? '',
       openingBalance: entry === null ? '' : fromMinorUnits(entry.openingBalance, currency),
     },
+    onSubmitInvalid: focusFirstInvalid,
     onSubmit: async ({ value }) => {
       if (!isAccountType(value.type)) return
       await onSubmit({
@@ -319,7 +341,7 @@ function AccountFormDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{entry === null ? 'New account' : 'Edit account'}</DialogTitle>
@@ -337,7 +359,7 @@ function AccountFormDialog({
           }}
         >
           <FieldGroup>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <form.AppField
                 name="name"
                 validators={{
@@ -367,13 +389,15 @@ function AccountFormDialog({
               name="openingBalance"
               validators={{
                 onSubmit: ({ value }) =>
-                  validAmount(value) ? undefined : 'Enter an amount like 1234.56',
+                  validAmount(value)
+                    ? undefined
+                    : `Enter an amount like ${amountExample(currency)}`,
               }}
             >
               {(field) => (
                 <field.TextField
                   label={`Opening balance (${currency})`}
-                  placeholder="0.00"
+                  placeholder={fromMinorUnits(0, currency)}
                   inputMode="decimal"
                 />
               )}
@@ -383,7 +407,11 @@ function AccountFormDialog({
               Liability types (credit card, loan) count negatively toward net worth. The balance is
               derived from here on.
             </p>
-            {error !== null && <p className="text-sm text-destructive">{error}</p>}
+            {error !== null && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
