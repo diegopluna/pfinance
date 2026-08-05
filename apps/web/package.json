@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@pfinance/ui": "workspace:*",
+    "@tanstack/react-router": "catalog:",
     "better-auth": "catalog:",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -19,6 +20,7 @@
     "@babel/core": "^7.29.7",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.1.11",
+    "@tanstack/router-plugin": "catalog:",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",

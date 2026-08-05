@@ -7,14 +7,15 @@ export default defineConfig({
   fmt: {
     semi: false,
     singleQuote: true,
-    // Generated drizzle migration output — leave byte-for-byte as generated.
-    ignorePatterns: ['packages/db/migrations/**'],
+    // Generated output (drizzle migrations, TanStack route tree) — leave
+    // byte-for-byte as generated.
+    ignorePatterns: ['packages/db/migrations/**', 'apps/web/src/routeTree.gen.ts'],
   },
   lint: {
     jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
     rules: { 'vite-plus/prefer-vite-plus-imports': 'error' },
     options: { typeAware: true, typeCheck: true },
-    ignorePatterns: ['packages/db/migrations/**'],
+    ignorePatterns: ['packages/db/migrations/**', 'apps/web/src/routeTree.gen.ts'],
   },
   run: {
     cache: true,

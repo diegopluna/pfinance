@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@pfinance/ui/components/button'
 import {
   Card,
@@ -11,10 +12,8 @@ import { Input } from '@pfinance/ui/components/input'
 import { Label } from '@pfinance/ui/components/label'
 import { authClient } from '@/lib/auth-client'
 
-type Mode = 'sign-in' | 'sign-up'
-
-export function AuthScreen() {
-  const [mode, setMode] = useState<Mode>('sign-in')
+export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -36,13 +35,9 @@ export function AuthScreen() {
     if (authError) {
       setError(authError.message ?? 'Something went wrong')
       setSubmitting(false)
+      return
     }
-    // On success useSession refreshes and App switches to the shell.
-  }
-
-  const switchMode = (next: Mode) => {
-    setMode(next)
-    setError(null)
+    await navigate({ to: '/' })
   }
 
   return (
@@ -88,24 +83,16 @@ export function AuthScreen() {
             {mode === 'sign-in' ? (
               <>
                 New here?{' '}
-                <button
-                  type="button"
-                  className="text-primary underline-offset-4 hover:underline"
-                  onClick={() => switchMode('sign-up')}
-                >
+                <Link to="/sign-up" className="text-primary underline-offset-4 hover:underline">
                   Sign up
-                </button>
+                </Link>
               </>
             ) : (
               <>
                 Already signed up?{' '}
-                <button
-                  type="button"
-                  className="text-primary underline-offset-4 hover:underline"
-                  onClick={() => switchMode('sign-in')}
-                >
+                <Link to="/sign-in" className="text-primary underline-offset-4 hover:underline">
                   Sign in
-                </button>
+                </Link>
               </>
             )}
           </p>
