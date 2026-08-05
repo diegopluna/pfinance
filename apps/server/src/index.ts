@@ -1,4 +1,14 @@
-import { account, createDb, household, invite, member, meta, transaction, user } from '@pfinance/db'
+import {
+  account,
+  category,
+  createDb,
+  household,
+  invite,
+  member,
+  meta,
+  transaction,
+  user,
+} from '@pfinance/db'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -14,6 +24,13 @@ import {
   setAccountArchived,
 } from './accounts.ts'
 import { createAuth } from './auth.ts'
+import {
+  categoryOrder,
+  categoryView,
+  ensureSeededCategories,
+  parseCategoryFields,
+  setCategoryArchived,
+} from './categories.ts'
 import {
   findInvite,
   generateInviteToken,
@@ -310,6 +327,107 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }
     await db.delete(transaction).where(eq(transaction.id, existing.id))
     return c.json({ ok: true })
+  })
+  // --- Categories (issue #10, ADR 0003) — member-level like the rest of the
+  // ledger: the vocabulary is every Member's to shape (CONTEXT.md). A flat
+  // list; archiving retires a label from assignment (enforced when
+  // Transactions grow a category, issue #11) while history keeps it.
+  .get(
+    '/api/categories',
+    // Archived Categories are hidden by default; ?includeArchived=true shows
+    // the retired vocabulary so it can be renamed or brought back.
+    validator('query', (value) => ({ includeArchived: value.includeArchived === 'true' })),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      // Households created before seeding existed get the default set on
+      // first read — idempotent, so it happens exactly once (categories.ts).
+      await ensureSeededCategories(db, householdId)
+      const { includeArchived } = c.req.valid('query')
+      const rows = await db
+        .select()
+        .from(category)
+        .where(
+          and(
+            eq(category.householdId, householdId),
+            ...(includeArchived ? [] : [isNull(category.archivedAt)]),
+          ),
+        )
+        .orderBy(...categoryOrder)
+      return c.json({ categories: rows.map(categoryView) })
+    },
+  )
+  .post(
+    '/api/categories',
+    validator('json', (value, c) => {
+      const parsed = parseCategoryFields(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      // Backfill before the insert lands: otherwise a pre-seed Household
+      // whose first categories call is a create would gain a row and pass
+      // the zero-rows check forever, never receiving the defaults.
+      await ensureSeededCategories(db, householdId)
+      const row = {
+        id: crypto.randomUUID(),
+        householdId,
+        ...c.req.valid('json'),
+        archivedAt: null,
+        createdAt: new Date(),
+      }
+      await db.insert(category).values(row)
+      return c.json({ category: categoryView(row) })
+    },
+  )
+  // Rename — name is a Category's entire editable state.
+  .patch(
+    '/api/categories/:id',
+    validator('json', (value, c) => {
+      const parsed = parseCategoryFields(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const [updated] = await db
+        .update(category)
+        .set(c.req.valid('json'))
+        .where(
+          and(
+            eq(category.id, c.req.param('id')),
+            eq(category.householdId, c.var.membership.householdId),
+          ),
+        )
+        .returning()
+      if (updated === undefined) {
+        return c.json({ error: 'Category not found.' }, 404)
+      }
+      return c.json({ category: categoryView(updated) })
+    },
+  )
+  // Archive / unarchive mirror Accounts: rows are never deleted, and a
+  // repeat archive keeps the original archivedAt (setCategoryArchived).
+  .post('/api/categories/:id/archive', async (c) => {
+    const db = createDb(c.env.DB)
+    const row = await setCategoryArchived(db, c.var.membership.householdId, c.req.param('id'), true)
+    if (row === undefined) {
+      return c.json({ error: 'Category not found.' }, 404)
+    }
+    return c.json({ category: categoryView(row) })
+  })
+  .post('/api/categories/:id/unarchive', async (c) => {
+    const db = createDb(c.env.DB)
+    const row = await setCategoryArchived(
+      db,
+      c.var.membership.householdId,
+      c.req.param('id'),
+      false,
+    )
+    if (row === undefined) {
+      return c.json({ error: 'Category not found.' }, 404)
+    }
+    return c.json({ category: categoryView(row) })
   })
   // --- Member & Invite management (issue #6) — owner-only, so the guard
   // middleware covers both resources. Non-owner Members get a 403.

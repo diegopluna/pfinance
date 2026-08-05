@@ -1,6 +1,7 @@
 import { isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import {
   authAccount,
+  category,
   createDb,
   household,
   invite,
@@ -14,6 +15,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError } from 'better-auth/api'
 import { and, eq } from 'drizzle-orm'
 import type { ServerEnv } from './env.ts'
+import { seedCategoryRows } from './categories.ts'
 import { findInvite, inviteRejectionMessage, pendingInviteFilter } from './invites.ts'
 import { trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
@@ -152,6 +154,9 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
                 role: 'owner',
                 createdAt: now,
               }),
+              // The Household starts with the default Category vocabulary
+              // (ADR 0003, issue #10) in the same atomic batch.
+              db.insert(category).values(seedCategoryRows(householdId, now)),
             ])
           },
         },
