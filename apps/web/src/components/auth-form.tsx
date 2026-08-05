@@ -117,9 +117,11 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                       }}
                     >
                       {(field) => (
-                        <field.SelectField
+                        <field.ComboboxField
                           label="Currency"
                           placeholder="Choose"
+                          searchPlaceholder="Search currencies…"
+                          emptyText="No currency found."
                           options={currencyOptions}
                           // The closed trigger shows just the code, like the
                           // sidebar's "BRL · 2 members".
