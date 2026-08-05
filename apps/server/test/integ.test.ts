@@ -63,10 +63,15 @@ interface Me {
 // tests send one exactly like a browser client would.
 const trustedOrigin = HttpClientRequest.setHeader('origin', 'http://localhost:3000')
 
-const signUpRequest = (apiUrl: string, email: string, name: string) =>
+const signUpRequest = (apiUrl: string, email: string, name: string, householdName?: string) =>
   HttpClientRequest.post(`${apiUrl}/api/auth/sign-up/email`).pipe(
     trustedOrigin,
-    HttpClientRequest.bodyJsonUnsafe({ email, name, password: 'correct-horse-battery' }),
+    HttpClientRequest.bodyJsonUnsafe({
+      email,
+      name,
+      password: 'correct-horse-battery',
+      ...(householdName !== undefined && { householdName }),
+    }),
   )
 
 const signInRequest = (apiUrl: string, email: string) =>
@@ -93,7 +98,9 @@ test(
     const { apiUrl = '' } = yield* stack
     const email = uniqueEmail()
 
-    const signUp = yield* Test.executeWhenReady(signUpRequest(apiUrl, email, 'Test Owner'))
+    const signUp = yield* Test.executeWhenReady(
+      signUpRequest(apiUrl, email, 'Test Owner', 'Casa Test'),
+    )
     expect(signUp.status).toBe(200)
     const cookie = cookieHeader(signUp)
     expect(cookie).not.toBe('')
@@ -108,7 +115,8 @@ test(
     expect(body.user.email).toBe(email)
     expect(body.role).toBe('owner')
     expect(body.household.id).toBeTruthy()
-    expect(body.household.name).toBe("Test Owner's Household")
+    // The household carries the name chosen at sign-up.
+    expect(body.household.name).toBe('Casa Test')
   }),
   { timeout: 120_000 },
 )
@@ -128,6 +136,9 @@ test(
         ),
       ),
     )
+
+    // No householdName sent at sign-up, so the default name kicked in.
+    expect(firstMe.household.name).toBe("Returning Owner's Household")
 
     const signIn = yield* Test.executeWhenReady(signInRequest(apiUrl, email))
     expect(signIn.status).toBe(200)

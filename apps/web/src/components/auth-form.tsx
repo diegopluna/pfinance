@@ -16,12 +16,14 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [serverError, setServerError] = useState<string | null>(null)
 
   const form = useAppForm({
-    defaultValues: { name: '', email: '', password: '' },
+    defaultValues: { name: '', email: '', password: '', householdName: '' },
     onSubmit: async ({ value }) => {
       setServerError(null)
       const { error } =
         mode === 'sign-up'
-          ? await authClient.signUp.email(value)
+          ? // householdName is an extra sign-up field; the server's user-create
+            // hook names the new Household with it.
+            await authClient.signUp.email(value)
           : await authClient.signIn.email({ email: value.email, password: value.password })
       if (error) {
         setServerError(error.message ?? 'Something went wrong')
@@ -85,6 +87,16 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                   />
                 )}
               </form.AppField>
+              {mode === 'sign-up' && (
+                <form.AppField
+                  name="householdName"
+                  validators={{
+                    onSubmit: ({ value }) => (value.trim() ? undefined : 'Name your household'),
+                  }}
+                >
+                  {(field) => <field.TextField label="Household name" placeholder="Casa Peter" />}
+                </form.AppField>
+              )}
               {serverError && <p className="text-sm text-destructive">{serverError}</p>}
               <form.AppForm>
                 <form.SubmitButton>{mode === 'sign-in' ? 'Sign in' : 'Sign up'}</form.SubmitButton>

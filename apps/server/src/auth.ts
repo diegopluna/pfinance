@@ -37,13 +37,21 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
           // the User insert itself is a separate operation, so if this hook
           // fails a User exists without a Membership and the session
           // middleware rejects them (401) — recovery is deployer-side today.
-          after: async (newUser) => {
+          after: async (newUser, ctx) => {
+            // The user names their Household at sign-up (an extra field on
+            // the sign-up body, which Better Auth passes through untyped —
+            // hence the runtime guard); default keeps sign-up resilient.
+            const requested = ctx?.body?.householdName
+            const householdName =
+              typeof requested === 'string' && requested.trim() !== ''
+                ? requested.trim().slice(0, 120)
+                : `${newUser.name}'s Household`
             const now = new Date()
             const householdId = crypto.randomUUID()
             await db.batch([
               db.insert(household).values({
                 id: householdId,
-                name: `${newUser.name}'s Household`,
+                name: householdName,
                 createdAt: now,
               }),
               db.insert(member).values({
