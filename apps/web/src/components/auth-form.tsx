@@ -174,6 +174,11 @@ export function AuthForm({
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {mode === 'sign-in' ? (
               <>
+                {/* Invite links are how anyone joins a claimed instance
+                    (Claude Design 3a); the sign-up link still serves the
+                    unclaimed bootstrap state. */}
+                Have an invite link? Open it to join a household.
+                <br />
                 New here?{' '}
                 <Link to="/sign-up" className="text-primary underline-offset-4 hover:underline">
                   Sign up

@@ -11,6 +11,7 @@ import {
 } from '@pfinance/ui/components/card'
 import { Separator } from '@pfinance/ui/components/separator'
 import { api } from '@/lib/api'
+import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/members')({
   component: MembersScreen,
@@ -20,12 +21,33 @@ export const Route = createFileRoute('/_authed/members')({
 // (ADR 0005: no email anywhere).
 const inviteLink = (token: string) => `${window.location.origin}/sign-up?invite=${token}`
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+// Compact display of the link (Claude Design 2e): host + abbreviated secret.
+const inviteLinkLabel = (token: string) =>
+  `${window.location.host}/sign-up?invite=${token.slice(0, 4)}…${token.slice(-4)}`
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('')
+
+const joinedLabel = (iso: string) =>
+  `Joined ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+
+const expiryLabel = (iso: string) => {
+  const ms = new Date(iso).getTime() - Date.now()
+  if (ms <= 0) return 'expired'
+  const days = Math.round(ms / 86_400_000)
+  if (days >= 2) return `expires in ${days} days`
+  const hours = Math.round(ms / 3_600_000)
+  return hours >= 2 ? `expires in ${hours} hours` : 'expires within the hour'
+}
 
 function MembersScreen() {
   const queryClient = useQueryClient()
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const { data: me } = useMe()
 
   const membersQuery = useQuery({
     queryKey: ['members'],
@@ -97,7 +119,7 @@ function MembersScreen() {
   // everyone else, and this screen relays that instead of half-rendering.
   if (membersQuery.error?.message === 'forbidden' || invitesQuery.error?.message === 'forbidden') {
     return (
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-2xl">
         <CardHeader>
           <CardTitle>Members</CardTitle>
           <CardDescription>
@@ -108,115 +130,138 @@ function MembersScreen() {
     )
   }
 
+  // One card holding both the member list and the pending Invites, per
+  // Claude Design 2e ("Settings — household, members, invites").
   return (
-    <div className="flex w-full max-w-2xl flex-col gap-6">
-      <Card>
-        <CardHeader>
+    <Card className="w-full max-w-2xl">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div className="flex flex-col gap-1.5">
           <CardTitle>Members</CardTitle>
-          <CardDescription>Everyone in your household shares the same ledger.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {membersQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : membersQuery.isError ? (
-            <p className="text-sm text-destructive">Couldn&apos;t load members.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {membersQuery.data.members.map((entry, index) => (
-                <li key={entry.id}>
-                  {index > 0 && <Separator className="my-3" />}
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{entry.name}</p>
-                      <p className="truncate text-sm text-muted-foreground">{entry.email}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <span className="text-xs text-muted-foreground uppercase">{entry.role}</span>
-                      {entry.role !== 'owner' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={removeMember.isPending}
-                          onClick={() => {
-                            if (confirm(`Remove ${entry.name} from the household?`)) {
-                              removeMember.mutate(entry.id)
-                            }
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {removeMember.isError && (
-            <p className="mt-3 text-sm text-destructive">Couldn&apos;t remove that member.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Pending invites</CardTitle>
           <CardDescription>
-            An invite is a single-use link that lets one person join your household — even while
-            sign-ups are closed. Links expire after a week.
+            Everyone in the household sees and edits the same ledger.
           </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {invitesQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : invitesQuery.isError ? (
-            <p className="text-sm text-destructive">Couldn&apos;t load invites.</p>
-          ) : invitesQuery.data.invites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invites.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {invitesQuery.data.invites.map((entry, index) => (
-                <li key={entry.id}>
-                  {index > 0 && <Separator className="my-3" />}
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-muted-foreground">
-                      Expires {formatDate(entry.expiresAt)}
-                    </p>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void copyLink(entry.id, entry.token)}
-                      >
-                        {copiedId === entry.id ? 'Copied!' : 'Copy link'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={revokeInvite.isPending}
-                        onClick={() => revokeInvite.mutate(entry.id)}
-                      >
-                        Revoke
-                      </Button>
+        </div>
+        <Button
+          variant="outline"
+          disabled={createInvite.isPending}
+          onClick={() => createInvite.mutate()}
+        >
+          New invite
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {membersQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : membersQuery.isError ? (
+          <p className="text-sm text-destructive">Couldn&apos;t load members.</p>
+        ) : (
+          <ul className="flex flex-col">
+            {membersQuery.data.members.map((entry, index) => (
+              <li key={entry.id}>
+                {index > 0 && <Separator className="my-3" />}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-[10.5px] font-semibold text-muted-foreground">
+                      {initials(entry.name)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-sm font-medium">
+                        <span className="truncate">{entry.name}</span>
+                        {entry.role === 'owner' && (
+                          <span className="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                            OWNER
+                          </span>
+                        )}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {entry.email}
+                        {me?.user.id === entry.userId
+                          ? ' · you'
+                          : ` · ${joinedLabel(entry.createdAt)}`}
+                      </p>
                     </div>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {revokeInvite.isError && (
-            <p className="text-sm text-destructive">Couldn&apos;t revoke that invite.</p>
-          )}
-          {createInvite.isError && (
-            <p className="text-sm text-destructive">Couldn&apos;t create an invite.</p>
-          )}
-          <div>
-            <Button disabled={createInvite.isPending} onClick={() => createInvite.mutate()}>
-              New invite
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                  {entry.role !== 'owner' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-muted-foreground"
+                      disabled={removeMember.isPending}
+                      onClick={() => {
+                        if (confirm(`Remove ${entry.name} from the household?`)) {
+                          removeMember.mutate(entry.id)
+                        }
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {removeMember.isError && (
+          <p className="text-sm text-destructive">Couldn&apos;t remove that member.</p>
+        )}
+
+        <p className="mt-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Pending invites
+        </p>
+        {invitesQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : invitesQuery.isError ? (
+          <p className="text-sm text-destructive">Couldn&apos;t load invites.</p>
+        ) : invitesQuery.data.invites.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No pending invites.</p>
+        ) : (
+          <ul className="flex flex-col">
+            {invitesQuery.data.invites.map((entry, index) => (
+              <li key={entry.id}>
+                {index > 0 && <Separator className="my-3" />}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium tabular-nums">
+                      {inviteLinkLabel(entry.token)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Single-use · {expiryLabel(entry.expiresAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyLink(entry.id, entry.token)}
+                    >
+                      {copiedId === entry.id ? 'Copied!' : 'Copy link'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      disabled={revokeInvite.isPending}
+                      onClick={() => revokeInvite.mutate(entry.id)}
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {revokeInvite.isError && (
+          <p className="text-sm text-destructive">Couldn&apos;t revoke that invite.</p>
+        )}
+        {createInvite.isError && (
+          <p className="text-sm text-destructive">Couldn&apos;t create an invite.</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Invite links work even while sign-ups are disabled — issuing one is the consent. There is
+          no email sending; share the link yourself.
+        </p>
+      </CardContent>
+    </Card>
   )
 }

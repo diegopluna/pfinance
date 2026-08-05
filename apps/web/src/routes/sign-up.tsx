@@ -77,20 +77,26 @@ function SignUpScreen() {
   if (data.kind === 'self-serve' && data.allowed) {
     return <AuthForm mode="sign-up" />
   }
+  // Locked-instance copy follows Claude Design 3c ("Sign-ups are disabled"),
+  // minus its stale SIGNUPS_ENABLED mention — that switch was dropped when
+  // ADR 0004 was revised; invites are the only way in now.
   const closedCopy =
-    data.kind === 'dead-invite'
-      ? deadInviteCopy[data.reason]
-      : "This pfinance instance already has its owner and isn't accepting new sign-ups."
+    data.kind === 'dead-invite' ? deadInviteCopy[data.reason] : 'This instance is invite-only.'
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>
-            {data.kind === 'dead-invite' ? 'This invite no longer works' : 'Sign-ups are closed'}
+            {data.kind === 'dead-invite' ? 'This invite no longer works' : 'Sign-ups are disabled'}
           </CardTitle>
           <CardDescription>{closedCopy}</CardDescription>
         </CardHeader>
         <CardContent>
+          {data.kind !== 'dead-invite' && (
+            <p className="mb-4 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+              Ask the household owner for an invite link — invites work even while sign-ups are off.
+            </p>
+          )}
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link to="/sign-in" className="text-primary underline-offset-4 hover:underline">

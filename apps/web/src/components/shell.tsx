@@ -1,25 +1,14 @@
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { Button } from '@pfinance/ui/components/button'
-import { api } from '@/lib/api'
 import { authClient } from '@/lib/auth-client'
+import { useMe } from '@/hooks/use-me'
 
 // The signed-in frame every feature screen renders inside (the /_authed
 // layout); child routes land in the Outlet.
 export function Shell() {
   const navigate = useNavigate()
   const { data: session } = authClient.useSession()
-
-  const { data: me } = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => {
-      const response = await api.api.me.$get()
-      if (!response.ok) {
-        throw new Error('Failed to load household')
-      }
-      return response.json()
-    },
-  })
+  const { data: me } = useMe()
 
   const handleSignOut = async () => {
     await authClient.signOut()
