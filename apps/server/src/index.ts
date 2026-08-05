@@ -1,9 +1,11 @@
-import { createDb, household, invite, member, meta, user } from '@pfinance/db'
+import { account, createDb, household, invite, member, meta, user } from '@pfinance/db'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
+import { validator } from 'hono/validator'
 import type { ServerEnv } from './env.ts'
+import { accountView, parseAccountPatch, parseNewAccount, setAccountArchived } from './accounts.ts'
 import { createAuth } from './auth.ts'
 import {
   findInvite,
@@ -121,6 +123,97 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }
     const { id, email, name } = c.var.user
     return c.json({ user: { id, email, name }, household: householdRow, role })
+  })
+  // --- Accounts (issue #7) — member-level: every Member sees and edits the
+  // Household's shared ledger (CONTEXT.md), so no ownerGuard here. Balance is
+  // always derived via accountView (ADR 0001), never read from a column.
+  // Inputs go through hono/validator wrapping the parse functions in
+  // accounts.ts — one validation point that also types the web app's RPC
+  // client (hc<AppType>) for these routes.
+  .get(
+    '/api/accounts',
+    // Archived Accounts are hidden by default; ?includeArchived=true is the
+    // "show closed accounts" toggle, which keeps their history reachable.
+    validator('query', (value) => ({ includeArchived: value.includeArchived === 'true' })),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { includeArchived } = c.req.valid('query')
+      const rows = await db
+        .select()
+        .from(account)
+        .where(
+          and(
+            eq(account.householdId, c.var.membership.householdId),
+            ...(includeArchived ? [] : [isNull(account.archivedAt)]),
+          ),
+        )
+        // Name breaks the tie within a second so the order is stable.
+        .orderBy(asc(account.createdAt), asc(account.name), asc(account.id))
+      return c.json({ accounts: rows.map(accountView) })
+    },
+  )
+  .post(
+    '/api/accounts',
+    validator('json', (value, c) => {
+      const parsed = parseNewAccount(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const row = {
+        id: crypto.randomUUID(),
+        householdId: c.var.membership.householdId,
+        ...c.req.valid('json'),
+        archivedAt: null,
+        createdAt: new Date(),
+      }
+      await db.insert(account).values(row)
+      return c.json({ account: accountView(row) })
+    },
+  )
+  .patch(
+    '/api/accounts/:id',
+    validator('json', (value, c) => {
+      const parsed = parseAccountPatch(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const [updated] = await db
+        .update(account)
+        .set(c.req.valid('json'))
+        .where(
+          and(
+            eq(account.id, c.req.param('id')),
+            eq(account.householdId, c.var.membership.householdId),
+          ),
+        )
+        .returning()
+      if (updated === undefined) {
+        return c.json({ error: 'Account not found.' }, 404)
+      }
+      return c.json({ account: accountView(updated) })
+    },
+  )
+  // Archiving hides an Account that closed in real life; unarchiving is the
+  // undo. Both keep every row — history is never deleted — and both are
+  // idempotent via setAccountArchived (a repeat archive keeps the original
+  // archivedAt).
+  .post('/api/accounts/:id/archive', async (c) => {
+    const db = createDb(c.env.DB)
+    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), true)
+    if (row === undefined) {
+      return c.json({ error: 'Account not found.' }, 404)
+    }
+    return c.json({ account: accountView(row) })
+  })
+  .post('/api/accounts/:id/unarchive', async (c) => {
+    const db = createDb(c.env.DB)
+    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), false)
+    if (row === undefined) {
+      return c.json({ error: 'Account not found.' }, 404)
+    }
+    return c.json({ account: accountView(row) })
   })
   // --- Member & Invite management (issue #6) — owner-only, so the guard
   // middleware covers both resources. Non-owner Members get a 403.

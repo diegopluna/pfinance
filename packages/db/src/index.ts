@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { drizzle } from 'drizzle-orm/d1'
 
+export * from './account-types.ts'
 export * from './schema.ts'
 
 // Module-form type import (not the global) so consumers that only need our

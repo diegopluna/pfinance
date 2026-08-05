@@ -13,6 +13,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedAccountsRouteImport } from './routes/_authed/accounts'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -34,6 +35,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedAccountsRoute = AuthedAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedMembersRoute = AuthedMembersRouteImport.update({
   id: '/members',
   path: '/members',
@@ -44,11 +50,13 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/accounts': typeof AuthedAccountsRoute
   '/members': typeof AuthedMembersRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/accounts': typeof AuthedAccountsRoute
   '/members': typeof AuthedMembersRoute
   '/': typeof AuthedIndexRoute
 }
@@ -57,19 +65,21 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_authed/accounts': typeof AuthedAccountsRoute
   '/_authed/members': typeof AuthedMembersRoute
   '/_authed/': typeof AuthedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/sign-up' | '/members'
+  fullPaths: '/' | '/sign-in' | '/sign-up' | '/accounts' | '/members'
   fileRoutesByTo: FileRoutesByTo
-  to: '/sign-in' | '/sign-up' | '/members' | '/'
+  to: '/sign-in' | '/sign-up' | '/accounts' | '/members' | '/'
   id:
     | '__root__'
     | '/_authed'
     | '/sign-in'
     | '/sign-up'
+    | '/_authed/accounts'
     | '/_authed/members'
     | '/_authed/'
   fileRoutesById: FileRoutesById
@@ -110,6 +120,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/accounts': {
+      id: '/_authed/accounts'
+      path: '/accounts'
+      fullPath: '/accounts'
+      preLoaderRoute: typeof AuthedAccountsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/members': {
       id: '/_authed/members'
       path: '/members'
@@ -121,11 +138,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedRouteChildren {
+  AuthedAccountsRoute: typeof AuthedAccountsRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedAccountsRoute: AuthedAccountsRoute,
   AuthedMembersRoute: AuthedMembersRoute,
   AuthedIndexRoute: AuthedIndexRoute,
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import {
   Card,
@@ -9,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@pfinance/ui/components/card'
+import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
 import { api } from '@/lib/api'
 import { useMe } from '@/hooks/use-me'
@@ -24,13 +26,6 @@ const inviteLink = (token: string) => `${window.location.origin}/sign-up?invite=
 // Compact display of the link (Claude Design 2e): host + abbreviated secret.
 const inviteLinkLabel = (token: string) =>
   `${window.location.host}/sign-up?invite=${token.slice(0, 4)}…${token.slice(-4)}`
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? '')
-    .join('')
 
 const joinedLabel = (iso: string) =>
   `Joined ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
@@ -121,7 +116,9 @@ function MembersScreen() {
     return (
       <Card className="w-full max-w-2xl">
         <CardHeader>
-          <CardTitle>Members</CardTitle>
+          <CardTitle>
+            <h1 className="text-base font-medium">Members</h1>
+          </CardTitle>
           <CardDescription>
             Only the household owner can manage members and invites.
           </CardDescription>
@@ -136,7 +133,9 @@ function MembersScreen() {
     <Card className="w-full max-w-2xl">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div className="flex flex-col gap-1.5">
-          <CardTitle>Members</CardTitle>
+          <CardTitle>
+            <h1 className="text-base font-medium">Members</h1>
+          </CardTitle>
           <CardDescription>
             Everyone in the household sees and edits the same ledger.
           </CardDescription>
@@ -151,9 +150,13 @@ function MembersScreen() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {membersQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading…
+          </p>
         ) : membersQuery.isError ? (
-          <p className="text-sm text-destructive">Couldn&apos;t load members.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t load members.
+          </p>
         ) : (
           <ul className="flex flex-col">
             {membersQuery.data.members.map((entry, index) => (
@@ -161,17 +164,11 @@ function MembersScreen() {
                 {index > 0 && <Separator className="my-3" />}
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-[10.5px] font-semibold text-muted-foreground">
-                      {initials(entry.name)}
-                    </span>
+                    <InitialsAvatar name={entry.name} />
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 text-sm font-medium">
                         <span className="truncate">{entry.name}</span>
-                        {entry.role === 'owner' && (
-                          <span className="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
-                            OWNER
-                          </span>
-                        )}
+                        {entry.role === 'owner' && <Badge>Owner</Badge>}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {entry.email}
@@ -202,16 +199,22 @@ function MembersScreen() {
           </ul>
         )}
         {removeMember.isError && (
-          <p className="text-sm text-destructive">Couldn&apos;t remove that member.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t remove that member.
+          </p>
         )}
 
         <p className="mt-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Pending invites
         </p>
         {invitesQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading…
+          </p>
         ) : invitesQuery.isError ? (
-          <p className="text-sm text-destructive">Couldn&apos;t load invites.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t load invites.
+          </p>
         ) : invitesQuery.data.invites.length === 0 ? (
           <p className="text-sm text-muted-foreground">No pending invites.</p>
         ) : (
@@ -252,10 +255,14 @@ function MembersScreen() {
           </ul>
         )}
         {revokeInvite.isError && (
-          <p className="text-sm text-destructive">Couldn&apos;t revoke that invite.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t revoke that invite.
+          </p>
         )}
         {createInvite.isError && (
-          <p className="text-sm text-destructive">Couldn&apos;t create an invite.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t create an invite.
+          </p>
         )}
         <p className="text-xs text-muted-foreground">
           Invite links work even while sign-ups are disabled — issuing one is the consent. There is

@@ -27,6 +27,9 @@ export function TextField({
   const field = useFieldContext<string>()
   const errors = field.state.meta.errors
   const invalid = errors.length > 0
+  // The error is tied to its control so assistive tech reports it on the
+  // field itself, not only as a page-level alert.
+  const errorId = `${field.name}-error`
   return (
     <Field data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
@@ -37,9 +40,10 @@ export function TextField({
         onBlur={field.handleBlur}
         onChange={(event) => field.handleChange(event.target.value)}
         aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
         {...inputProps}
       />
-      <FieldError errors={errors.map(asMessage)} />
+      <FieldError id={errorId} errors={errors.map(asMessage)} />
     </Field>
   )
 }
@@ -67,6 +71,7 @@ export function ComboboxField({
   const field = useFieldContext<string>()
   const errors = field.state.meta.errors
   const invalid = errors.length > 0
+  const errorId = `${field.name}-error`
   return (
     <Field data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
@@ -81,6 +86,7 @@ export function ComboboxField({
         <ComboboxTrigger
           id={field.name}
           aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? errorId : undefined}
           className="flex h-9 w-full items-center justify-between gap-1.5 rounded-3xl border border-transparent bg-input/50 px-3 py-2 text-sm whitespace-nowrap outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
         >
           <ComboboxValue>
@@ -109,7 +115,7 @@ export function ComboboxField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      <FieldError errors={errors.map(asMessage)} />
+      <FieldError id={errorId} errors={errors.map(asMessage)} />
     </Field>
   )
 }

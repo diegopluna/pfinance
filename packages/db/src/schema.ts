@@ -1,4 +1,5 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { ACCOUNT_TYPE_VALUES } from './account-types.ts'
 
 // Ledger convention: every money amount column in this schema is an INTEGER
 // in minor units (docs/adr/0006-money-integer-minor-units.md).
@@ -94,6 +95,26 @@ export const invite = sqliteTable('invite', {
   usedAt: integer('used_at', { mode: 'timestamp' }),
   usedBy: text('used_by').references(() => user.id, { onDelete: 'set null' }),
   revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+})
+
+// --- Ledger ---
+
+// A financial Account belonging to a Household (CONTEXT.md; issue #7). Its
+// Balance is never stored: it is derived as openingBalance + the sum of its
+// Transactions (ADR 0001). The type marks assets vs liabilities so Net Worth
+// can sign them (account-types.ts). Archiving hides an Account that closed
+// in real life while keeping its history — rows are never deleted.
+export const account = sqliteTable('account', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id')
+    .notNull()
+    .references(() => household.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  type: text('type', { enum: ACCOUNT_TYPE_VALUES }).notNull(),
+  // Integer minor units (ADR 0006).
+  openingBalance: integer('opening_balance').notNull(),
+  archivedAt: integer('archived_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
 export const member = sqliteTable('member', {

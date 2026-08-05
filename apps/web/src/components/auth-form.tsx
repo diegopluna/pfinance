@@ -10,7 +10,7 @@ import {
 } from '@pfinance/ui/components/card'
 import { FieldDescription, FieldGroup } from '@pfinance/ui/components/field'
 import { authClient } from '@/lib/auth-client'
-import { useAppForm } from '@/hooks/form'
+import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 
 const currencyOptions = CURRENCIES.map(({ code, name }) => ({
   value: code,
@@ -31,6 +31,7 @@ export function AuthForm({
 
   const form = useAppForm({
     defaultValues: { name: '', email: '', password: '', householdName: '', currency: '' },
+    onSubmitInvalid: focusFirstInvalid,
     onSubmit: async ({ value }) => {
       setServerError(null)
       // householdName/currency (or inviteToken) are extra sign-up fields the
@@ -125,7 +126,7 @@ export function AuthForm({
               </form.AppField>
               {mode === 'sign-up' && !invite && (
                 <div className="flex flex-col gap-2">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <form.AppField
                       name="householdName"
                       validators={{
@@ -163,7 +164,11 @@ export function AuthForm({
                   </FieldDescription>
                 </div>
               )}
-              {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+              {serverError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {serverError}
+                </p>
+              )}
               <form.AppForm>
                 <form.SubmitButton>
                   {mode === 'sign-in' ? 'Sign in' : invite ? 'Join household' : 'Create household'}
