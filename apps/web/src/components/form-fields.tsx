@@ -11,6 +11,7 @@ import {
 } from '@pfinance/ui/components/combobox'
 import { Field, FieldError, FieldLabel } from '@pfinance/ui/components/field'
 import { Input } from '@pfinance/ui/components/input'
+import { CalendarDatePicker } from '@/components/date-picker'
 import { useFieldContext, useFormContext } from '@/hooks/form-context'
 
 // Bound components for useAppForm (see hooks/form.ts): field components read
@@ -115,6 +116,29 @@ export function ComboboxField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
+      <FieldError id={errorId} errors={errors.map(asMessage)} />
+    </Field>
+  )
+}
+
+// Calendar-date field over the shadcn date picker; the field value is the
+// ledger's YYYY-MM-DD string ('' = nothing picked), see date-picker.tsx.
+export function DatePickerField({ label, placeholder }: { label: string; placeholder?: string }) {
+  const field = useFieldContext<string>()
+  const errors = field.state.meta.errors
+  const invalid = errors.length > 0
+  const errorId = `${field.name}-error`
+  return (
+    <Field data-invalid={invalid || undefined}>
+      <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
+      <CalendarDatePicker
+        id={field.name}
+        value={field.state.value}
+        onChange={field.handleChange}
+        placeholder={placeholder}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
+      />
       <FieldError id={errorId} errors={errors.map(asMessage)} />
     </Field>
   )

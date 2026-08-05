@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import {
   formatAmount,
@@ -31,6 +32,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@pfinance/ui/components/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@pfinance/ui/components/table'
+import { CalendarDatePicker, formatCalendarDate } from '@/components/date-picker'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useMe } from '@/hooks/use-me'
@@ -48,18 +58,6 @@ type TransactionEntry = InferResponseType<
   200
 >['transactions'][number]
 type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accounts'][number]
-
-// A Transaction's date is a calendar date string (never a timestamp), so it
-// must be formatted from its parts — new Date('2026-01-15') would read it as
-// UTC midnight and shift it a day west of Greenwich.
-const formatCalendarDate = (date: string) => {
-  const [year = 0, month = 1, day = 1] = date.split('-').map(Number)
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
-}
 
 // Format guidance in the Household Currency, signed: money out is negative.
 const amountExample = (currency: CurrencyCode) => {
@@ -239,28 +237,26 @@ function TransactionsScreen() {
             </SelectContent>
           </Select>
         </Field>
-        <Field className="w-36 gap-1">
+        <Field className="w-40 gap-1">
           <FieldLabel htmlFor="filter-from" className="text-xs text-muted-foreground">
             From
           </FieldLabel>
-          <Input
+          <CalendarDatePicker
             id="filter-from"
-            type="date"
             value={filters.from}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, from: event.target.value }))
-            }
+            placeholder="Any date"
+            onChange={(value) => setFilters((current) => ({ ...current, from: value }))}
           />
         </Field>
-        <Field className="w-36 gap-1">
+        <Field className="w-40 gap-1">
           <FieldLabel htmlFor="filter-to" className="text-xs text-muted-foreground">
             To
           </FieldLabel>
-          <Input
+          <CalendarDatePicker
             id="filter-to"
-            type="date"
             value={filters.to}
-            onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
+            placeholder="Any date"
+            onChange={(value) => setFilters((current) => ({ ...current, to: value }))}
           />
         </Field>
         <Field className="min-w-44 flex-1 gap-1">
@@ -304,52 +300,18 @@ function TransactionsScreen() {
       ) : (
         <Card size="sm">
           <CardContent>
-            <ul className="divide-y divide-border">
-              {transactions.map((entry) => (
-                <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {formatCalendarDate(entry.date)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{entry.description}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {/* Attribution survives the author's removal: the money
-                          still moved (createdBy set null server-side). */}
-                      Entered by {entry.enteredBy ?? 'a removed member'}
-                    </span>
-                  </span>
-                  <Badge className="shrink-0">
-                    {accountNames.get(entry.accountId) ?? 'Unknown account'}
-                  </Badge>
-                  <span className="w-28 shrink-0 text-right text-sm font-semibold tracking-tight tabular-nums">
-                    {formatAmount(entry.amount, currency)}
-                  </span>
-                  <span className="-mr-2 flex shrink-0 items-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                      onClick={() => openDialog(entry)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                      disabled={deleteTransaction.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Delete "${entry.description}"?`)) {
-                          deleteTransaction.mutate(entry.id)
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <TransactionsTable
+              transactions={transactions}
+              accountNames={accountNames}
+              currency={currency}
+              deleting={deleteTransaction.isPending}
+              onEdit={openDialog}
+              onDelete={(entry) => {
+                if (window.confirm(`Delete "${entry.description}"?`)) {
+                  deleteTransaction.mutate(entry.id)
+                }
+              }}
+            />
           </CardContent>
         </Card>
       )}
@@ -359,6 +321,134 @@ function TransactionsScreen() {
         </p>
       )}
     </div>
+  )
+}
+
+// The ledger as a shadcn data table over TanStack Table (core row model
+// only: ordering and filtering are the server's). The full result renders in
+// one pass for now — when the ledger grows past that, virtualize the rows
+// with @tanstack/react-virtual before reaching for pagination.
+function TransactionsTable({
+  transactions,
+  accountNames,
+  currency,
+  deleting,
+  onEdit,
+  onDelete,
+}: {
+  transactions: TransactionEntry[]
+  accountNames: Map<string, string>
+  currency: CurrencyCode
+  deleting: boolean
+  onEdit: (entry: TransactionEntry) => void
+  onDelete: (entry: TransactionEntry) => void
+}) {
+  const columns: ColumnDef<TransactionEntry>[] = [
+    {
+      accessorKey: 'date',
+      header: 'Date',
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatCalendarDate(row.original.date)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'description',
+      header: 'Description',
+      cell: ({ row }) => (
+        <span className="block max-w-72 truncate text-sm font-medium">
+          {row.original.description}
+        </span>
+      ),
+    },
+    {
+      id: 'account',
+      header: 'Account',
+      cell: ({ row }) => (
+        <Badge>{accountNames.get(row.original.accountId) ?? 'Unknown account'}</Badge>
+      ),
+    },
+    {
+      accessorKey: 'enteredBy',
+      header: 'Entered by',
+      // Attribution survives the author's removal: the money still moved
+      // (createdBy set null server-side).
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.enteredBy ?? 'A removed member'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'amount',
+      header: () => <span className="block text-right">Amount</span>,
+      cell: ({ row }) => (
+        <span className="block text-right text-sm font-semibold tracking-tight tabular-nums">
+          {formatAmount(row.original.amount, currency)}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <span className="flex items-center justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => onEdit(row.original)}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={deleting}
+            onClick={() => onDelete(row.original)}
+          >
+            Delete
+          </Button>
+        </span>
+      ),
+    },
+  ]
+
+  const table = useReactTable({
+    data: transactions,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  })
+
+  return (
+    <Table>
+      <TableHeader>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <TableHead key={header.id}>
+                {header.isPlaceholder
+                  ? null
+                  : flexRender(header.column.columnDef.header, header.getContext())}
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows.map((row) => (
+          <TableRow key={row.id}>
+            {row.getVisibleCells().map((cell) => (
+              <TableCell key={cell.id}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
 
@@ -466,7 +556,7 @@ function TransactionFormDialog({
                   onSubmit: ({ value }) => (value === '' ? 'Pick a date' : undefined),
                 }}
               >
-                {(field) => <field.TextField label="Date" type="date" />}
+                {(field) => <field.DatePickerField label="Date" />}
               </form.AppField>
             </div>
             <form.AppField
