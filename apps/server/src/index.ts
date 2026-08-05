@@ -46,7 +46,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // auth.ts stays the enforcement point (ADR 0004).
   .get('/api/sign-up-status', async (c) => {
     const db = createDb(c.env.DB)
-    return c.json({ allowed: await selfServeSignUpAllowed(db, c.env) })
+    return c.json({ allowed: await selfServeSignUpAllowed(db) })
   })
   // Every other /api route requires a session; the caller's Membership is
   // resolved here so handlers scope all data access to

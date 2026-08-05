@@ -17,10 +17,10 @@ export const Route = createFileRoute('/sign-up')({
       throw redirect({ to: '/' })
     }
   },
-  // Ask the server whether self-serve sign-up is open (SIGNUPS_ENABLED +
-  // bootstrap exception, ADR 0004) so a locked instance explains itself
-  // instead of failing on submit. If the check itself fails, show the form —
-  // the server's auth hook still enforces the gate.
+  // Ask the server whether self-serve sign-up is open (locked once a User
+  // exists — bootstrap exception, ADR 0004) so a claimed instance explains
+  // itself instead of failing on submit. If the check itself fails, show the
+  // form — the server's auth hook still enforces the gate.
   loader: async (): Promise<{ allowed: boolean }> => {
     try {
       const response = await api.api['sign-up-status'].$get()
@@ -43,8 +43,7 @@ function SignUpScreen() {
         <CardHeader>
           <CardTitle>Sign-ups are closed</CardTitle>
           <CardDescription>
-            This pfinance instance isn&apos;t accepting new sign-ups. Ask whoever runs it to enable
-            them.
+            This pfinance instance already has its owner and isn&apos;t accepting new sign-ups.
           </CardDescription>
         </CardHeader>
         <CardContent>

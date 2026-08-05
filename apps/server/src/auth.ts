@@ -32,14 +32,14 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
     databaseHooks: {
       user: {
         create: {
-          // Self-serve sign-up gating (SIGNUPS_ENABLED + bootstrap exception,
-          // ADR 0004). Guarding user creation rather than the sign-up route
-          // keeps every path that would mint a User behind the gate; the
-          // invites exception (ADR 0004 §2) will need an explicit bypass here
-          // when it lands. A thrown APIError aborts the creation and becomes
-          // the endpoint's error response.
+          // Self-serve sign-up gating (locked once a User exists, bootstrap
+          // exception, ADR 0004). Guarding user creation rather than the
+          // sign-up route keeps every path that would mint a User behind the
+          // gate; the invites exception (ADR 0004 §2) will need an explicit
+          // bypass here when it lands. A thrown APIError aborts the creation
+          // and becomes the endpoint's error response.
           before: async () => {
-            if (!(await selfServeSignUpAllowed(db, env))) {
+            if (!(await selfServeSignUpAllowed(db))) {
               throw new APIError('FORBIDDEN', {
                 message: 'Sign-ups are disabled on this instance.',
               })
