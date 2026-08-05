@@ -10,20 +10,22 @@ import { AuthForm } from '@/components/auth-form'
 import { api } from '@/lib/api'
 import { authClient } from '@/lib/auth-client'
 
+// Screen copy per rejection reason; the keys are the server's reason union,
+// checked by the typed RPC response in the loader below.
+const deadInviteCopy = {
+  not_found: 'This invite link is not valid — check that you copied the whole link.',
+  used: 'This invite has already been used. Ask the household owner for a new one.',
+  revoked: 'This invite was revoked. Ask the household owner for a new one.',
+  expired: 'This invite has expired. Ask the household owner for a new one.',
+} as const
+
 // The three ways this screen renders: self-serve sign-up (open only while
 // the instance is unclaimed, ADR 0004), Invite redemption (?invite=token
 // from a copy-paste link), or a dead Invite explaining itself.
 type SignUpLoaderData =
   | { kind: 'self-serve'; allowed: boolean }
   | { kind: 'invite'; token: string; householdName: string }
-  | { kind: 'dead-invite'; reason: 'not_found' | 'used' | 'revoked' | 'expired' }
-
-const deadInviteCopy: Record<'not_found' | 'used' | 'revoked' | 'expired', string> = {
-  not_found: 'This invite link is not valid — check that you copied the whole link.',
-  used: 'This invite has already been used. Ask the household owner for a new one.',
-  revoked: 'This invite was revoked. Ask the household owner for a new one.',
-  expired: 'This invite has expired. Ask the household owner for a new one.',
-}
+  | { kind: 'dead-invite'; reason: keyof typeof deadInviteCopy }
 
 export const Route = createFileRoute('/sign-up')({
   validateSearch: (search: Record<string, unknown>): { invite?: string } =>
@@ -42,15 +44,11 @@ export const Route = createFileRoute('/sign-up')({
   loader: async ({ deps }): Promise<SignUpLoaderData> => {
     if (deps.invite !== undefined) {
       try {
-        const url = new URL(api.api['invite-info'].$url())
-        url.searchParams.set('token', deps.invite)
-        const response = await fetch(url)
+        const response = await api.api['invite-info'].$get({ query: { token: deps.invite } })
         if (!response.ok) {
           return { kind: 'invite', token: deps.invite, householdName: '' }
         }
-        const info = (await response.json()) as
-          | { valid: true; householdName: string }
-          | { valid: false; reason: 'not_found' | 'used' | 'revoked' | 'expired' }
+        const info = await response.json()
         return info.valid
           ? { kind: 'invite', token: deps.invite, householdName: info.householdName }
           : { kind: 'dead-invite', reason: info.reason }

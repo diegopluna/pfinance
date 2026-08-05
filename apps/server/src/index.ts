@@ -1,5 +1,5 @@
 import { createDb, household, invite, member, meta, user } from '@pfinance/db'
-import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
@@ -10,6 +10,7 @@ import {
   generateInviteToken,
   INVITE_DEFAULT_TTL_SECONDS,
   INVITE_MAX_TTL_SECONDS,
+  pendingInviteFilter,
 } from './invites.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
@@ -181,14 +182,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       .from(invite)
       // Pending only: consumed, expired and revoked Invites are history, not
       // actionable, so the management screen never shows them.
-      .where(
-        and(
-          eq(invite.householdId, c.var.membership.householdId),
-          isNull(invite.usedAt),
-          isNull(invite.revokedAt),
-          gt(invite.expiresAt, now),
-        ),
-      )
+      .where(and(eq(invite.householdId, c.var.membership.householdId), pendingInviteFilter(now)))
       .orderBy(asc(invite.createdAt), asc(invite.id))
     return c.json({ invites })
   })

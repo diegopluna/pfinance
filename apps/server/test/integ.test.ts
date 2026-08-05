@@ -506,7 +506,7 @@ test.provider(
 )
 
 test.provider(
-  'only the owner manages Invites and Members; removal frees the seat',
+  'only the owner manages Invites and Members; a removed Member can be re-invited',
   (scratch) =>
     Effect.gen(function* () {
       const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)

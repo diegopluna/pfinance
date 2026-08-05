@@ -12,9 +12,9 @@ import {
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError } from 'better-auth/api'
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { ServerEnv } from './env.ts'
-import { findInvite, inviteRejectionMessage } from './invites.ts'
+import { findInvite, inviteRejectionMessage, pendingInviteFilter } from './invites.ts'
 import { trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 
@@ -108,14 +108,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
               const [claimed] = await db
                 .update(invite)
                 .set({ usedAt: now, usedBy: newUser.id })
-                .where(
-                  and(
-                    eq(invite.token, inviteToken),
-                    isNull(invite.usedAt),
-                    isNull(invite.revokedAt),
-                    gt(invite.expiresAt, now),
-                  ),
-                )
+                .where(and(eq(invite.token, inviteToken), pendingInviteFilter(now)))
                 .returning({ householdId: invite.householdId })
               if (claimed === undefined) {
                 // Lost the race since the before hook's check. Same known

@@ -1,5 +1,5 @@
 import { invite, type Db } from '@pfinance/db'
-import { eq } from 'drizzle-orm'
+import { and, eq, gt, isNull } from 'drizzle-orm'
 
 // Invites default to a week and never exceed it; the owner may shorten one
 // (the minimum only exists so a bad value can't create an immortal link).
@@ -14,6 +14,12 @@ export const generateInviteToken = () => {
 }
 
 export type InviteRejection = 'not_found' | 'used' | 'revoked' | 'expired'
+
+// The SQL form of "pending" (redeemable) — composed into the consuming
+// UPDATE (auth.ts) and the owner's pending list (index.ts) so the two
+// queries can't drift from findInvite's classification below.
+export const pendingInviteFilter = (now: Date) =>
+  and(isNull(invite.usedAt), isNull(invite.revokedAt), gt(invite.expiresAt, now))
 
 // Look up an Invite by token and classify it: 'pending' means redeemable,
 // anything else is the reason it isn't. Shared by the public invite-info
