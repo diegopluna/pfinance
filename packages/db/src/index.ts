@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/d1'
 
 export * from './account-types.ts'
 export * from './schema.ts'
+export * from './transaction-kinds.ts'
 
 // Module-form type import (not the global) so consumers that only need our
 // types — e.g. the web app importing the server's RPC schema — don't need

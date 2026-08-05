@@ -1,4 +1,5 @@
 import { Button } from '@pfinance/ui/components/button'
+import { Checkbox } from '@pfinance/ui/components/checkbox'
 import {
   Combobox,
   ComboboxContent,
@@ -9,7 +10,13 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from '@pfinance/ui/components/combobox'
-import { Field, FieldError, FieldLabel } from '@pfinance/ui/components/field'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from '@pfinance/ui/components/field'
 import { Input } from '@pfinance/ui/components/input'
 import { CalendarDatePicker } from '@/components/date-picker'
 import { useFieldContext, useFormContext } from '@/hooks/form-context'
@@ -45,6 +52,27 @@ export function TextField({
         {...inputProps}
       />
       <FieldError id={errorId} errors={errors.map(asMessage)} />
+    </Field>
+  )
+}
+
+// Boolean flag with the label beside the box; the optional description
+// explains the consequence of checking it.
+export function CheckboxField({ label, description }: { label: string; description?: string }) {
+  const field = useFieldContext<boolean>()
+  return (
+    <Field orientation="horizontal">
+      <Checkbox
+        id={field.name}
+        name={field.name}
+        checked={field.state.value}
+        onBlur={field.handleBlur}
+        onCheckedChange={(checked) => field.handleChange(checked === true)}
+      />
+      <FieldContent>
+        <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
+        {description !== undefined && <FieldDescription>{description}</FieldDescription>}
+      </FieldContent>
     </Field>
   )
 }

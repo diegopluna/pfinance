@@ -1,15 +1,23 @@
-import { account, transaction, user, type Db } from '@pfinance/db'
-import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm'
+import {
+  account,
+  isTransactionKind,
+  transaction,
+  user,
+  type Db,
+  type TransactionKind,
+} from '@pfinance/db'
+import { and, asc, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm'
 
 // Parsing and shaping for the /api/transactions surface (issue #8). A
 // Transaction's editable state is exactly { accountId, date, amount,
-// description }; who entered it and when are recorded once at creation.
+// description, kind }; who entered it and when are recorded once at creation.
 
 export interface TransactionFields {
   accountId: string
   date: string
   amount: number
   description: string
+  kind: TransactionKind
 }
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -59,7 +67,11 @@ export const parseNewTransaction = (body: unknown): Parsed<TransactionFields> =>
   }
   const description = parseDescription(record.description)
   if (description === undefined) return { ok: false, error: 'A transaction needs a description.' }
-  return { ok: true, value: { accountId, date: record.date, amount, description } }
+  // Absent means standard — the ordinary ledger entry; anything sent must
+  // name a known kind (transaction-kinds.ts), never be silently coerced.
+  const kind = record.kind === undefined ? 'standard' : record.kind
+  if (!isTransactionKind(kind)) return { ok: false, error: 'Unknown transaction kind.' }
+  return { ok: true, value: { accountId, date: record.date, amount, description, kind } }
 }
 
 // PATCH accepts any subset of the editable fields — but at least one, so a
@@ -93,21 +105,49 @@ export const parseTransactionPatch = (body: unknown): Parsed<Partial<Transaction
     }
     patch.description = description
   }
+  if ('kind' in record) {
+    // No undefined-means-default here: a kind that is sent must be valid.
+    if (!isTransactionKind(record.kind)) {
+      return { ok: false, error: 'Unknown transaction kind.' }
+    }
+    patch.kind = record.kind
+  }
   if (Object.keys(patch).length === 0) {
-    return { ok: false, error: 'Nothing to update: send accountId, date, amount, or description.' }
+    return {
+      ok: false,
+      error: 'Nothing to update: send accountId, date, amount, description, or kind.',
+    }
   }
   return { ok: true, value: patch }
 }
 
-// List filters: Account, inclusive date range, and description search. Dates
-// are validated as calendar dates — a malformed bound is rejected, never
-// silently ignored (it would quietly widen the range).
+// List filters: Account, inclusive date range, description search, and the
+// derived view. Dates are validated as calendar dates — a malformed bound is
+// rejected, never silently ignored (it would quietly widen the range), and
+// an unknown view is rejected the same way.
 export interface TransactionFilters {
   accountId?: string
   from?: string
   to?: string
   q?: string
+  view?: DerivedView
 }
+
+// Expense and Income are derived views, not stored kinds (CONTEXT.md): the
+// sign carries the direction, and Balance Adjustments are excluded by
+// definition (issue #9). Transfer legs will join the exclusion with issue
+// #12. Issue #19's aggregates must reuse this predicate.
+export const DERIVED_VIEW_VALUES = ['expense', 'income'] as const
+
+export type DerivedView = (typeof DERIVED_VIEW_VALUES)[number]
+
+const isDerivedView = (value: string): value is DerivedView =>
+  (DERIVED_VIEW_VALUES as readonly string[]).includes(value)
+
+export const derivedViewConditions = (view: DerivedView): SQL[] => [
+  eq(transaction.kind, 'standard'),
+  view === 'expense' ? lt(transaction.amount, 0) : gt(transaction.amount, 0),
+]
 
 export const parseTransactionFilters = (
   query: Record<string, string | undefined>,
@@ -124,6 +164,12 @@ export const parseTransactionFilters = (
   }
   const q = query.q?.trim()
   if (q !== undefined && q !== '') filters.q = q
+  if (query.view !== undefined && query.view !== '') {
+    if (!isDerivedView(query.view)) {
+      return { ok: false, error: 'The view filter must be "expense" or "income".' }
+    }
+    filters.view = query.view
+  }
   return { ok: true, value: filters }
 }
 
@@ -153,6 +199,7 @@ export const transactionView = (
   date: row.date,
   amount: row.amount,
   description: row.description,
+  kind: row.kind,
   enteredBy,
   createdAt: row.createdAt,
 })
@@ -163,6 +210,7 @@ const transactionSelection = {
   date: transaction.date,
   amount: transaction.amount,
   description: transaction.description,
+  kind: transaction.kind,
   enteredBy: user.name,
   createdAt: transaction.createdAt,
 } satisfies Record<keyof ReturnType<typeof transactionView>, unknown>
@@ -188,6 +236,7 @@ export const listTransactions = (db: Db, householdId: string, filters: Transacti
         ...(filters.from === undefined ? [] : [gte(transaction.date, filters.from)]),
         ...(filters.to === undefined ? [] : [lte(transaction.date, filters.to)]),
         ...(filters.q === undefined ? [] : [descriptionMatches(filters.q)]),
+        ...(filters.view === undefined ? [] : derivedViewConditions(filters.view)),
       ),
     )
     // Newest ledger entries first; createdAt (then id) breaks same-day ties.
