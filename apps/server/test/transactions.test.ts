@@ -30,6 +30,7 @@ interface TransactionView {
   date: string
   amount: number
   description: string
+  kind: string
   enteredBy: string | null
   createdAt: string
 }
@@ -282,6 +283,166 @@ test.provider(
         (yield* executeWarm(patchRequest(apiUrl, owner.cookie, 'missing', { amount: 1 }))).status,
       ).toBe(404)
       expect((yield* executeWarm(deleteRequest(apiUrl, owner.cookie, 'missing'))).status).toBe(404)
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'Balance Adjustments: move the Balance but are excluded from Expense/Income (issue #9)',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'adjust-owner@example.com')
+
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 10000,
+        }),
+      )
+      const card = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Visa',
+          type: 'credit_card',
+          openingBalance: 0,
+        }),
+      )
+
+      // Ordinary entries are the standard kind — stated or defaulted.
+      const groceries = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-01',
+          amount: -2000,
+          description: 'Groceries',
+        }),
+      )
+      expect(groceries.kind).toBe('standard')
+      const salary = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-02',
+          amount: 50000,
+          description: 'Salary',
+          kind: 'standard',
+        }),
+      )
+      expect(salary.kind).toBe('standard')
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: card.id,
+          date: '2026-03-02',
+          amount: -4500,
+          description: 'Streaming',
+        })).status,
+      ).toBe(200)
+
+      // Record Balance Adjustments in both directions: the flavor whose only
+      // purpose is correcting drift between the derived Balance and reality.
+      const created = yield* createTransaction(apiUrl, owner.cookie, {
+        accountId: checking.id,
+        date: '2026-03-03',
+        amount: 12345,
+        description: 'Untracked interest',
+        kind: 'balance_adjustment',
+      })
+      expect(created.status).toBe(200)
+      const interest = yield* readTransaction(created)
+      expect(interest.kind).toBe('balance_adjustment')
+      const writeOff = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-04',
+          amount: -345,
+          description: 'Bank fee drift',
+          kind: 'balance_adjustment',
+        }),
+      )
+      expect(writeOff.kind).toBe('balance_adjustment')
+
+      // The Balance INCLUDES the adjustments (ADR 0001):
+      // 10000 - 2000 + 50000 + 12345 - 345 = 70000.
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(70000)
+
+      // The plain ledger lists every kind; each row names its kind so the
+      // client can label adjustments.
+      const all = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(Object.fromEntries(all.map((entry) => [entry.description, entry.kind]))).toEqual({
+        Groceries: 'standard',
+        Salary: 'standard',
+        Streaming: 'standard',
+        'Untracked interest': 'balance_adjustment',
+        'Bank fee drift': 'balance_adjustment',
+      })
+
+      // Expense and Income are sign-derived views that EXCLUDE adjustments —
+      // in both directions, so drift corrections never read as spending or
+      // earning.
+      const expenses = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, '?view=expense'),
+      )
+      expect(expenses.map((entry) => entry.description).sort()).toEqual(['Groceries', 'Streaming'])
+      const income = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, '?view=income'),
+      )
+      expect(income.map((entry) => entry.description)).toEqual(['Salary'])
+
+      // The view composes with the other filters.
+      const checkingExpenses = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, `?view=expense&accountId=${checking.id}`),
+      )
+      expect(checkingExpenses.map((entry) => entry.description)).toEqual(['Groceries'])
+
+      // A zero amount is neither an Expense nor Income — the sign rule.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-05',
+          amount: 0,
+          description: 'Zero correction',
+        })).status,
+      ).toBe(200)
+      expect(
+        (yield* readTransactions(
+          yield* listTransactions(apiUrl, owner.cookie, '?view=expense'),
+        )).map((entry) => entry.description),
+      ).not.toContain('Zero correction')
+      expect(
+        (yield* readTransactions(
+          yield* listTransactions(apiUrl, owner.cookie, '?view=income'),
+        )).map((entry) => entry.description),
+      ).not.toContain('Zero correction')
+
+      // Re-labeling: PATCH flips a mislabeled entry's kind; the Balance is
+      // untouched (the amount didn't move) but the views follow.
+      const relabeled = yield* readTransaction(
+        yield* patchTransaction(apiUrl, owner.cookie, salary.id, { kind: 'balance_adjustment' }),
+      )
+      expect(relabeled.kind).toBe('balance_adjustment')
+      expect(
+        yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie, '?view=income')),
+      ).toEqual([])
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(70000)
+
+      // Unknown kinds and views are rejected, never silently coerced.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-06',
+          amount: 1,
+          description: 'ok',
+          kind: 'transfer',
+        })).status,
+      ).toBe(400)
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, groceries.id, { kind: '' })).status,
+      ).toBe(400)
+      expect((yield* listTransactions(apiUrl, owner.cookie, '?view=spending')).status).toBe(400)
     }),
   { timeout: 600_000 },
 )

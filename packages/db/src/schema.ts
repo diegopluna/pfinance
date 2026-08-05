@@ -1,5 +1,6 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import { ACCOUNT_TYPE_VALUES } from './account-types.ts'
+import { TRANSACTION_KIND_VALUES } from './transaction-kinds.ts'
 
 // Ledger convention: every money amount column in this schema is an INTEGER
 // in minor units (docs/adr/0006-money-integer-minor-units.md).
@@ -132,6 +133,11 @@ export const transaction = sqliteTable('transaction', {
   // Signed integer minor units (ADR 0006): negative = money out.
   amount: integer('amount').notNull(),
   description: text('description').notNull(),
+  // The Transaction flavor (transaction-kinds.ts): balance_adjustment rows
+  // move the Balance but are excluded from the Expense/Income derived views
+  // (issue #9). The default exists only so the column can be added to
+  // pre-kind rows — the app always writes it explicitly.
+  kind: text('kind', { enum: TRANSACTION_KIND_VALUES }).notNull().default('standard'),
   // The Member who entered it, kept for attribution; set null if that User
   // is removed so the ledger row survives (a User holds no financial data).
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),

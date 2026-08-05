@@ -1,0 +1,1 @@
+ALTER TABLE `transaction` ADD `kind` text DEFAULT 'standard' NOT NULL;

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./account-types": "./src/account-types.ts"
+    "./account-types": "./src/account-types.ts",
+    "./transaction-kinds": "./src/transaction-kinds.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:"

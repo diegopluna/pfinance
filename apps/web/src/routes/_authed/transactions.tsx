@@ -356,9 +356,15 @@ function TransactionsTable({
     {
       accessorKey: 'description',
       header: 'Description',
+      // A Balance Adjustment is visibly labeled: it moves the Balance but is
+      // excluded from Expense/Income, so it must never read as an ordinary
+      // entry (issue #9).
       cell: ({ row }) => (
-        <span className="block max-w-72 truncate text-sm font-medium">
-          {row.original.description}
+        <span className="flex items-center gap-2">
+          <span className="block max-w-72 truncate text-sm font-medium">
+            {row.original.description}
+          </span>
+          {row.original.kind === 'balance_adjustment' && <Badge>Balance adjustment</Badge>}
         </span>
       ),
     },
@@ -484,6 +490,7 @@ function TransactionFormDialog({
       date: entry?.date ?? '',
       amount: entry === null ? '' : fromMinorUnits(entry.amount, currency),
       description: entry?.description ?? '',
+      balanceAdjustment: entry?.kind === 'balance_adjustment',
     },
     onSubmitInvalid: focusFirstInvalid,
     onSubmit: async ({ value }) => {
@@ -494,6 +501,9 @@ function TransactionFormDialog({
         // (ADR 0006); the sign carries the direction.
         amount: toMinorUnits(value.amount.trim(), currency),
         description: value.description.trim(),
+        // The checkbox is the Balance Adjustment flavor (issue #9): it moves
+        // the Balance but never counts as spending or income.
+        kind: value.balanceAdjustment ? 'balance_adjustment' : 'standard',
       })
     },
   })
@@ -559,6 +569,14 @@ function TransactionFormDialog({
                 {(field) => <field.DatePickerField label="Date" />}
               </form.AppField>
             </div>
+            <form.AppField name="balanceAdjustment">
+              {(field) => (
+                <field.CheckboxField
+                  label="Balance adjustment"
+                  description="Corrects drift between the balance and reality — never counted as spending or income."
+                />
+              )}
+            </form.AppField>
             <form.AppField
               name="accountId"
               validators={{
