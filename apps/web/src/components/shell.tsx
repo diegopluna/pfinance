@@ -1,25 +1,14 @@
-import { Outlet, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { Button } from '@pfinance/ui/components/button'
-import { api } from '@/lib/api'
 import { authClient } from '@/lib/auth-client'
+import { useMe } from '@/hooks/use-me'
 
 // The signed-in frame every feature screen renders inside (the /_authed
 // layout); child routes land in the Outlet.
 export function Shell() {
   const navigate = useNavigate()
   const { data: session } = authClient.useSession()
-
-  const { data: me } = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => {
-      const response = await api.api.me.$get()
-      if (!response.ok) {
-        throw new Error('Failed to load household')
-      }
-      return response.json()
-    },
-  })
+  const { data: me } = useMe()
 
   const handleSignOut = async () => {
     await authClient.signOut()
@@ -32,6 +21,24 @@ export function Shell() {
         <div className="flex items-baseline gap-3">
           <span className="text-lg font-semibold">pfinance</span>
           {me && <span className="text-sm text-muted-foreground">{me.household.name}</span>}
+          {/* Managing Members and Invites is owner-only (issue #6), so the
+              nav entry only shows for the owner. */}
+          {me?.role === 'owner' && (
+            <nav className="ml-3 flex items-baseline gap-3 text-sm">
+              <Link
+                to="/"
+                className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+              >
+                Overview
+              </Link>
+              <Link
+                to="/members"
+                className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+              >
+                Members
+              </Link>
+            </nav>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{session?.user.email}</span>

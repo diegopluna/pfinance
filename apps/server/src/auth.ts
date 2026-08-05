@@ -1,9 +1,20 @@
 import { isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
-import { authAccount, createDb, household, member, session, user, verification } from '@pfinance/db'
+import {
+  authAccount,
+  createDb,
+  household,
+  invite,
+  member,
+  session,
+  user,
+  verification,
+} from '@pfinance/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError } from 'better-auth/api'
+import { and, eq } from 'drizzle-orm'
 import type { ServerEnv } from './env.ts'
+import { findInvite, inviteRejectionMessage, pendingInviteFilter } from './invites.ts'
 import { trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 
@@ -19,6 +30,13 @@ const requireSupportedCurrency = (requested: unknown): CurrencyCode => {
     })
   }
   return requested
+}
+
+// The sign-up body's inviteToken rides through Better Auth untyped, like
+// householdName below — hence the runtime narrowing.
+const inviteTokenFrom = (body: unknown): string | undefined => {
+  const requested = (body as { inviteToken?: unknown } | undefined)?.inviteToken
+  return typeof requested === 'string' && requested !== '' ? requested : undefined
 }
 
 // Email+password only, no verification, no reset (docs/adr/0005).
@@ -50,10 +68,24 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
           // Self-serve sign-up gating (locked once a User exists, bootstrap
           // exception, ADR 0004). Guarding user creation rather than the
           // sign-up route keeps every path that would mint a User behind the
-          // gate; the invites exception (ADR 0004 §2) will need an explicit
-          // bypass here when it lands. A thrown APIError aborts the creation
-          // and becomes the endpoint's error response.
+          // gate. A thrown APIError aborts the creation and becomes the
+          // endpoint's error response.
           before: async (_newUser, ctx) => {
+            const inviteToken = inviteTokenFrom(ctx?.body)
+            if (inviteToken !== undefined) {
+              // Invite redemption bypasses the gate (ADR 0004 §2) — issuing
+              // the Invite was the consent. No currency either: the recipient
+              // joins the inviting Household instead of creating one. This
+              // check gives the clear rejection; the after hook re-checks
+              // atomically on consumption.
+              const found = await findInvite(db, inviteToken, new Date())
+              if (found.status !== 'pending') {
+                throw new APIError('FORBIDDEN', {
+                  message: inviteRejectionMessage[found.status],
+                })
+              }
+              return
+            }
             if (!(await selfServeSignUpAllowed(db))) {
               throw new APIError('FORBIDDEN', {
                 message: 'Sign-ups are disabled on this instance.',
@@ -67,6 +99,34 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
           // fails a User exists without a Membership and the session
           // middleware rejects them (401) — recovery is deployer-side today.
           after: async (newUser, ctx) => {
+            const inviteToken = inviteTokenFrom(ctx?.body)
+            if (inviteToken !== undefined) {
+              const now = new Date()
+              // Consume atomically: the conditional UPDATE only lands on a
+              // still-pending Invite, so two racing redemptions can't both
+              // claim it (single-use).
+              const [claimed] = await db
+                .update(invite)
+                .set({ usedAt: now, usedBy: newUser.id })
+                .where(and(eq(invite.token, inviteToken), pendingInviteFilter(now)))
+                .returning({ householdId: invite.householdId })
+              if (claimed === undefined) {
+                // Lost the race since the before hook's check. Same known
+                // limit as below: the User row already exists, so until a
+                // deployer cleans it up the session middleware rejects them.
+                throw new APIError('FORBIDDEN', {
+                  message: 'This invite is no longer valid.',
+                })
+              }
+              await db.insert(member).values({
+                id: crypto.randomUUID(),
+                userId: newUser.id,
+                householdId: claimed.householdId,
+                role: 'member',
+                createdAt: now,
+              })
+              return
+            }
             // The user names their Household at sign-up (an extra field on
             // the sign-up body, which Better Auth passes through untyped —
             // hence the runtime guard); default keeps sign-up resilient.

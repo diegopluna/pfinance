@@ -98,9 +98,9 @@ const signUpRequest = (
   email: string,
   name: string,
   // currency: null omits the field to prove the server requires it.
-  options: { householdName?: string; currency?: string | null } = {},
+  options: { householdName?: string; currency?: string | null; inviteToken?: string } = {},
 ) => {
-  const { householdName, currency = 'USD' } = options
+  const { householdName, currency = 'USD', inviteToken } = options
   return HttpClientRequest.post(`${apiUrl}/api/auth/sign-up/email`).pipe(
     trustedOrigin,
     HttpClientRequest.bodyJsonUnsafe({
@@ -109,6 +109,7 @@ const signUpRequest = (
       password: 'correct-horse-battery',
       ...(householdName !== undefined && { householdName }),
       ...(currency !== null && { currency }),
+      ...(inviteToken !== undefined && { inviteToken }),
     }),
   )
 }
@@ -324,6 +325,275 @@ test.provider(
       expect(me.status).toBe(200)
       const body = yield* readMe(me)
       expect(body.household.currency).toBe('JPY')
+    }),
+  { timeout: 600_000 },
+)
+
+// --- Invites & member management (issue #6, ADR 0004 §2) ---
+// Same scratch-stack pattern: every test mints Users, so each deploys a
+// pristine instance. The owner signs up through the bootstrap exception, then
+// everyone else arrives via Invites.
+
+interface InviteInfo {
+  valid: boolean
+  reason?: string
+  householdName?: string
+}
+
+interface CreatedInvite {
+  invite: { id: string; token: string; expiresAt: string; createdAt: string }
+}
+
+const withCookie = (cookie: string) => HttpClientRequest.setHeader('cookie', cookie)
+
+const createInvite = (apiUrl: string, cookie: string, expiresInSeconds?: number) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/invites`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(expiresInSeconds === undefined ? {} : { expiresInSeconds }),
+    ),
+  )
+
+const readCreatedInvite = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => body as unknown as CreatedInvite)
+
+const inviteInfo = (apiUrl: string, token: string) =>
+  Effect.flatMap(
+    Test.executeWhenReady(
+      HttpClientRequest.get(`${apiUrl}/api/invite-info?token=${encodeURIComponent(token)}`),
+    ),
+    (response) => {
+      expect(response.status).toBe(200)
+      return Effect.map(response.json, (body) => body as unknown as InviteInfo)
+    },
+  )
+
+// Bootstrap an owner and return their cookie + household id.
+const signUpOwner = (apiUrl: string, email: string) =>
+  Effect.gen(function* () {
+    const signUp = yield* Test.executeWhenReady(
+      signUpRequest(apiUrl, email, 'Owner', { householdName: 'Invite House' }),
+    )
+    expect(signUp.status).toBe(200)
+    const cookie = cookieHeader(signUp)
+    const me = yield* readMe(
+      yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
+      ),
+    )
+    return { cookie, householdId: me.household.id }
+  })
+
+test.provider(
+  'a valid Invite registers a Member while sign-ups are locked, exactly once',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'invite-owner@example.com')
+
+      // The instance is claimed, so the self-serve gate is closed…
+      const status = yield* signUpStatus(apiUrl)
+      expect(status.allowed).toBe(false)
+
+      const created = yield* createInvite(apiUrl, owner.cookie)
+      expect(created.status).toBe(200)
+      const { invite } = yield* readCreatedInvite(created)
+      expect(invite.token).toBeTruthy()
+
+      // …but the Invite link identifies itself to the sign-up screen…
+      const info = yield* inviteInfo(apiUrl, invite.token)
+      expect(info.valid).toBe(true)
+      expect(info.householdName).toBe('Invite House')
+
+      // …and redeems even though sign-ups are off. No currency: the recipient
+      // joins the existing Household instead of creating one (ADR 0002).
+      const redeem = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'joiner@example.com', 'Joiner', {
+          currency: null,
+          inviteToken: invite.token,
+        }),
+      )
+      expect(redeem.status).toBe(200)
+
+      const joiner = yield* readMe(
+        yield* Test.executeWhenReady(
+          HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookieHeader(redeem))),
+        ),
+      )
+      expect(joiner.role).toBe('member')
+      expect(joiner.household.id).toBe(owner.householdId)
+
+      // Single-use: the consumed Invite rejects the next redemption…
+      const again = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'second-joiner@example.com', 'Second Joiner', {
+          currency: null,
+          inviteToken: invite.token,
+        }),
+      )
+      expect(again.status).toBe(403)
+
+      // …and reports why.
+      const usedInfo = yield* inviteInfo(apiUrl, invite.token)
+      expect(usedInfo.valid).toBe(false)
+      expect(usedInfo.reason).toBe('used')
+
+      // A made-up token never validates or redeems.
+      const bogusInfo = yield* inviteInfo(apiUrl, 'not-a-real-token')
+      expect(bogusInfo.valid).toBe(false)
+      const bogusRedeem = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'gatecrasher@example.com', 'Gatecrasher', {
+          currency: null,
+          inviteToken: 'not-a-real-token',
+        }),
+      )
+      expect(bogusRedeem.status).toBe(403)
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'expired and revoked Invites are rejected and leave the pending list',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'expiry-owner@example.com')
+
+      // Expiry: a 1-second Invite lapses before redemption.
+      const shortLived = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie, 1))
+      yield* Effect.sleep('2 seconds')
+      const expiredRedeem = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'too-late@example.com', 'Too Late', {
+          currency: null,
+          inviteToken: shortLived.invite.token,
+        }),
+      )
+      expect(expiredRedeem.status).toBe(403)
+      const expiredInfo = yield* inviteInfo(apiUrl, shortLived.invite.token)
+      expect(expiredInfo.valid).toBe(false)
+      expect(expiredInfo.reason).toBe('expired')
+
+      // Revocation: the owner withdraws a pending Invite before it's used.
+      const revocable = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie))
+      const revoke = yield* Test.executeWhenReady(
+        HttpClientRequest.delete(`${apiUrl}/api/invites/${revocable.invite.id}`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+        ),
+      )
+      expect(revoke.status).toBe(200)
+
+      const revokedRedeem = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'uninvited@example.com', 'Uninvited', {
+          currency: null,
+          inviteToken: revocable.invite.token,
+        }),
+      )
+      expect(revokedRedeem.status).toBe(403)
+      const revokedInfo = yield* inviteInfo(apiUrl, revocable.invite.token)
+      expect(revokedInfo.valid).toBe(false)
+      expect(revokedInfo.reason).toBe('revoked')
+
+      // Neither the expired nor the revoked Invite is pending anymore.
+      const list = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/invites`).pipe(withCookie(owner.cookie)),
+      )
+      expect(list.status).toBe(200)
+      const pending = (yield* list.json) as unknown as { invites: Array<{ id: string }> }
+      expect(pending.invites).toEqual([])
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'only the owner manages Invites and Members; a removed Member can be re-invited',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'boss@example.com')
+
+      const first = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie))
+      const joined = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'plain-member@example.com', 'Plain Member', {
+          currency: null,
+          inviteToken: first.invite.token,
+        }),
+      )
+      expect(joined.status).toBe(200)
+      const memberCookie = cookieHeader(joined)
+
+      // A non-owner Member can't touch the management surface.
+      const memberCreate = yield* createInvite(apiUrl, memberCookie)
+      expect(memberCreate.status).toBe(403)
+      const memberList = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/invites`).pipe(withCookie(memberCookie)),
+      )
+      expect(memberList.status).toBe(403)
+      const memberMembers = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/members`).pipe(withCookie(memberCookie)),
+      )
+      expect(memberMembers.status).toBe(403)
+
+      // The owner sees both Members and the remaining pending Invites.
+      const pendingInvite = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie))
+      const members = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/members`).pipe(withCookie(owner.cookie)),
+      )
+      expect(members.status).toBe(200)
+      const memberBody = (yield* members.json) as unknown as {
+        members: Array<{ id: string; email: string; role: string }>
+      }
+      expect(memberBody.members.map((entry) => [entry.email, entry.role])).toEqual([
+        ['boss@example.com', 'owner'],
+        ['plain-member@example.com', 'member'],
+      ])
+      const invites = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/invites`).pipe(withCookie(owner.cookie)),
+      )
+      const inviteBody = (yield* invites.json) as unknown as { invites: Array<{ id: string }> }
+      expect(inviteBody.invites.map((entry) => entry.id)).toEqual([pendingInvite.invite.id])
+
+      // Members can't remove Members — and nobody removes the owner.
+      const target = memberBody.members.find((entry) => entry.role === 'member')
+      const ownerRow = memberBody.members.find((entry) => entry.role === 'owner')
+      const memberRemove = yield* Test.executeWhenReady(
+        HttpClientRequest.delete(`${apiUrl}/api/members/${target?.id}`).pipe(
+          trustedOrigin,
+          withCookie(memberCookie),
+        ),
+      )
+      expect(memberRemove.status).toBe(403)
+      const removeOwner = yield* Test.executeWhenReady(
+        HttpClientRequest.delete(`${apiUrl}/api/members/${ownerRow?.id}`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+        ),
+      )
+      expect(removeOwner.status).toBe(400)
+
+      // The owner removes the Member: their session stops resolving…
+      const remove = yield* Test.executeWhenReady(
+        HttpClientRequest.delete(`${apiUrl}/api/members/${target?.id}`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+        ),
+      )
+      expect(remove.status).toBe(200)
+      const evicted = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(memberCookie)),
+      )
+      expect(evicted.status).toBe(401)
+
+      // …and removal deleted their User, so the same email can be re-invited
+      // (a lingering User row would block re-registration on the unique email).
+      const second = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie))
+      const rejoined = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'plain-member@example.com', 'Plain Member', {
+          currency: null,
+          inviteToken: second.invite.token,
+        }),
+      )
+      expect(rejoined.status).toBe(200)
     }),
   { timeout: 600_000 },
 )
