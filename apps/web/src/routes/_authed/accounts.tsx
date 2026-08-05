@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { InferRequestType } from 'hono/client'
+import type { InferRequestType, InferResponseType } from 'hono/client'
 import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
 import {
   formatAmount,
@@ -11,13 +11,15 @@ import {
   type CurrencyCode,
 } from '@pfinance/currency'
 import { Button } from '@pfinance/ui/components/button'
+import { Card, CardContent } from '@pfinance/ui/components/card'
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@pfinance/ui/components/card'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
 import { api } from '@/lib/api'
 import { useAppForm } from '@/hooks/form'
@@ -41,16 +43,18 @@ const archivedLabel = (iso: string | null) =>
     ? 'Archived'
     : `Archived ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
 
-// The editable Account state, inferred from the server's validator through
-// the RPC schema so the two can't drift.
+// Both shapes are inferred from the server's route schema so they can't
+// drift: the editable state from the create validator, the listed Account
+// from the list response.
 type AccountFields = InferRequestType<typeof api.api.accounts.$post>['json']
+type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accounts'][number]
 
 function AccountsScreen() {
   const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [showArchived, setShowArchived] = useState(false)
-  // null: panel closed · 'new': creating · otherwise the id being edited.
-  const [editing, setEditing] = useState<string | null>(null)
+  // Closed, creating, or editing one Account (the dialog form below).
+  const [dialog, setDialog] = useState<{ entry: AccountEntry | null } | null>(null)
 
   // Every amount is entered and shown in the Household Currency (ADR 0002).
   // The USD fallback only covers the frame before /api/me resolves — the
@@ -85,7 +89,7 @@ function AccountsScreen() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      closePanel()
+      setDialog(null)
     },
   })
 
@@ -102,48 +106,9 @@ function AccountsScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['accounts'] }),
   })
 
-  const form = useAppForm({
-    defaultValues: { name: '', type: '', openingBalance: '' },
-    onSubmit: async ({ value }) => {
-      if (!isAccountType(value.type)) return
-      await saveAccount.mutateAsync({
-        id: editing === 'new' ? null : editing,
-        fields: {
-          name: value.name.trim(),
-          type: value.type,
-          // Decimal string → integer minor units at the boundary (ADR 0006).
-          openingBalance: toMinorUnits(value.openingBalance.trim(), currency),
-        },
-      })
-    },
-  })
-
-  const closePanel = () => {
-    setEditing(null)
-    form.reset({ name: '', type: '', openingBalance: '' })
-  }
-
-  const openCreate = () => {
-    setEditing('new')
-    form.reset({ name: '', type: '', openingBalance: '' })
-  }
-
-  const openEdit = (entry: { id: string; name: string; type: string; openingBalance: number }) => {
-    setEditing(entry.id)
-    form.reset({
-      name: entry.name,
-      type: entry.type,
-      openingBalance: fromMinorUnits(entry.openingBalance, currency),
-    })
-  }
-
-  const validAmount = (value: string) => {
-    try {
-      toMinorUnits(value.trim(), currency)
-      return true
-    } catch {
-      return false
-    }
+  const openDialog = (entry: AccountEntry | null) => {
+    saveAccount.reset()
+    setDialog({ entry })
   }
 
   const accounts = accountsQuery.data?.accounts ?? []
@@ -160,93 +125,33 @@ function AccountsScreen() {
             Nothing here is directly editable.
           </p>
         </div>
-        <Button className="shrink-0" onClick={openCreate}>
+        <Button className="shrink-0" onClick={() => openDialog(null)}>
           New account
         </Button>
       </div>
 
-      {editing !== null && (
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>{editing === 'new' ? 'New account' : 'Edit account'}</CardTitle>
-            {me && (
-              <CardDescription>
-                Belongs to {me.household.name} · {currency}
-              </CardDescription>
-            )}
-          </CardHeader>
-          <CardContent>
-            <form
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                void form.handleSubmit()
-              }}
-            >
-              <FieldGroup>
-                <div className="grid grid-cols-2 gap-3">
-                  <form.AppField
-                    name="name"
-                    validators={{
-                      onSubmit: ({ value }) => (value.trim() ? undefined : 'Name the account'),
-                    }}
-                  >
-                    {(field) => <field.TextField label="Name" placeholder="Checking" />}
-                  </form.AppField>
-                  <form.AppField
-                    name="type"
-                    validators={{
-                      onSubmit: ({ value }) => (isAccountType(value) ? undefined : 'Choose a type'),
-                    }}
-                  >
-                    {(field) => (
-                      <field.ComboboxField
-                        label="Type"
-                        placeholder="Choose"
-                        searchPlaceholder="Search types…"
-                        emptyText="No account type found."
-                        options={typeOptions}
-                      />
-                    )}
-                  </form.AppField>
-                </div>
-                <form.AppField
-                  name="openingBalance"
-                  validators={{
-                    onSubmit: ({ value }) =>
-                      validAmount(value) ? undefined : 'Enter an amount like 1234.56',
-                  }}
-                >
-                  {(field) => (
-                    <field.TextField
-                      label={`Opening balance (${currency})`}
-                      placeholder="0.00"
-                      inputMode="decimal"
-                    />
-                  )}
-                </form.AppField>
-                {/* Claude Design 2d's framing of the type choice. */}
-                <p className="text-xs text-muted-foreground">
-                  Liability types (credit card, loan) count negatively toward net worth. The balance
-                  is derived from here on.
-                </p>
-                {saveAccount.isError && (
-                  <p className="text-sm text-destructive">{saveAccount.error.message}</p>
-                )}
-                <div className="flex items-center gap-2">
-                  <form.AppForm>
-                    <form.SubmitButton>
-                      {editing === 'new' ? 'Create account' : 'Save changes'}
-                    </form.SubmitButton>
-                  </form.AppForm>
-                  <Button type="button" variant="ghost" onClick={closePanel}>
-                    Cancel
-                  </Button>
-                </div>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
+      {/* Keyed by target so the form mounts with the right defaults — a
+          reused form instance gets its pristine fields stomped back to the
+          previous defaults on re-render. */}
+      {dialog !== null && (
+        <AccountFormDialog
+          key={dialog.entry?.id ?? 'new'}
+          entry={dialog.entry}
+          householdName={me?.household.name}
+          currency={currency}
+          error={saveAccount.isError ? saveAccount.error.message : null}
+          onSubmit={(fields) =>
+            saveAccount
+              .mutateAsync({ id: dialog.entry?.id ?? null, fields })
+              // The mutation records failures for the dialog's error line;
+              // swallow the rejection so the form doesn't also throw.
+              .then(
+                () => undefined,
+                () => undefined,
+              )
+          }
+          onClose={() => setDialog(null)}
+        />
       )}
 
       {accountsQuery.isPending ? (
@@ -287,7 +192,7 @@ function AccountsScreen() {
                     variant="ghost"
                     size="sm"
                     className="text-muted-foreground"
-                    onClick={() => openEdit(entry)}
+                    onClick={() => openDialog(entry)}
                   >
                     Edit
                   </Button>
@@ -345,7 +250,7 @@ function AccountsScreen() {
                         variant="ghost"
                         size="sm"
                         className="text-muted-foreground"
-                        onClick={() => openEdit(entry)}
+                        onClick={() => openDialog(entry)}
                       >
                         Edit
                       </Button>
@@ -366,5 +271,132 @@ function AccountsScreen() {
           </ul>
         ))}
     </div>
+  )
+}
+
+// The create/edit dialog (Claude Design 2d). Mounted fresh per target (see
+// the `key` at the call site), so defaultValues are simply the values being
+// edited and TanStack Form never fights a mid-life defaults change.
+function AccountFormDialog({
+  entry,
+  householdName,
+  currency,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  entry: AccountEntry | null
+  householdName: string | undefined
+  currency: CurrencyCode
+  error: string | null
+  onSubmit: (fields: AccountFields) => Promise<void>
+  onClose: () => void
+}) {
+  const form = useAppForm({
+    defaultValues: {
+      name: entry?.name ?? '',
+      type: entry?.type ?? '',
+      openingBalance: entry === null ? '' : fromMinorUnits(entry.openingBalance, currency),
+    },
+    onSubmit: async ({ value }) => {
+      if (!isAccountType(value.type)) return
+      await onSubmit({
+        name: value.name.trim(),
+        type: value.type,
+        // Decimal string → integer minor units at the boundary (ADR 0006).
+        openingBalance: toMinorUnits(value.openingBalance.trim(), currency),
+      })
+    },
+  })
+
+  const validAmount = (value: string) => {
+    try {
+      toMinorUnits(value.trim(), currency)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{entry === null ? 'New account' : 'Edit account'}</DialogTitle>
+          {householdName !== undefined && (
+            <DialogDescription>
+              Belongs to {householdName} · {currency}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            void form.handleSubmit()
+          }}
+        >
+          <FieldGroup>
+            <div className="grid grid-cols-2 gap-3">
+              <form.AppField
+                name="name"
+                validators={{
+                  onSubmit: ({ value }) => (value.trim() ? undefined : 'Name the account'),
+                }}
+              >
+                {(field) => <field.TextField label="Name" placeholder="Checking" />}
+              </form.AppField>
+              <form.AppField
+                name="type"
+                validators={{
+                  onSubmit: ({ value }) => (isAccountType(value) ? undefined : 'Choose a type'),
+                }}
+              >
+                {(field) => (
+                  <field.ComboboxField
+                    label="Type"
+                    placeholder="Choose"
+                    searchPlaceholder="Search types…"
+                    emptyText="No account type found."
+                    options={typeOptions}
+                  />
+                )}
+              </form.AppField>
+            </div>
+            <form.AppField
+              name="openingBalance"
+              validators={{
+                onSubmit: ({ value }) =>
+                  validAmount(value) ? undefined : 'Enter an amount like 1234.56',
+              }}
+            >
+              {(field) => (
+                <field.TextField
+                  label={`Opening balance (${currency})`}
+                  placeholder="0.00"
+                  inputMode="decimal"
+                />
+              )}
+            </form.AppField>
+            {/* Claude Design 2d's framing of the type choice. */}
+            <p className="text-xs text-muted-foreground">
+              Liability types (credit card, loan) count negatively toward net worth. The balance is
+              derived from here on.
+            </p>
+            {error !== null && <p className="text-sm text-destructive">{error}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <form.AppForm>
+                <form.SubmitButton>
+                  {entry === null ? 'Create account' : 'Save changes'}
+                </form.SubmitButton>
+              </form.AppForm>
+            </DialogFooter>
+          </FieldGroup>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
