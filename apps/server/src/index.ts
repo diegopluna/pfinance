@@ -365,9 +365,14 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }),
     async (c) => {
       const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      // Backfill before the insert lands: otherwise a pre-seed Household
+      // whose first categories call is a create would gain a row and pass
+      // the zero-rows check forever, never receiving the defaults.
+      await ensureSeededCategories(db, householdId)
       const row = {
         id: crypto.randomUUID(),
-        householdId: c.var.membership.householdId,
+        householdId,
         ...c.req.valid('json'),
         archivedAt: null,
         createdAt: new Date(),

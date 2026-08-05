@@ -7,6 +7,7 @@ import {
   type Db,
 } from '@pfinance/db'
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import type { Parsed } from './parsed.ts'
 
 // Parsing and shaping for the /api/accounts surface (issue #7). The editable
 // state of an Account is exactly { name, type, openingBalance }; Balance is
@@ -18,8 +19,6 @@ export interface AccountFields {
   type: AccountType
   openingBalance: number
 }
-
-type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
 const parseName = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined

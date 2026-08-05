@@ -1,5 +1,6 @@
 import { category, type Db } from '@pfinance/db'
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import type { Parsed } from './parsed.ts'
 
 // Seeds, parsing and archive semantics for the /api/categories surface
 // (issue #10, ADR 0003). A Category is a flat household-owned label; its
@@ -34,9 +35,10 @@ export const seedCategoryRows = (householdId: string, createdAt: Date) =>
     createdAt,
   }))
 
-// Backfill for Households that predate seeding-at-creation. Zero rows means
-// never seeded: Categories are archived, never deleted, so a Household that
-// has ever been seeded (or has ever created one) keeps at least one row
+// Backfill for Households that predate seeding-at-creation, run from every
+// route that can put the first row in place (list and create) so no ordering
+// of calls dodges it. Zero rows means never seeded: Categories are archived,
+// never deleted, so a Household that has been seeded keeps at least one row
 // forever. The conflict-ignore makes the check-then-insert race harmless.
 export const ensureSeededCategories = async (db: Db, householdId: string) => {
   const [existing] = await db
@@ -51,8 +53,6 @@ export const ensureSeededCategories = async (db: Db, householdId: string) => {
 export interface CategoryFields {
   name: string
 }
-
-type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
 // Shared by POST (create) and PATCH (rename): name is the entire editable
 // state, so both accept exactly { name }.

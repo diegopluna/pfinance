@@ -7,6 +7,7 @@ import {
   type TransactionKind,
 } from '@pfinance/db'
 import { and, asc, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm'
+import type { Parsed } from './parsed.ts'
 
 // Parsing and shaping for the /api/transactions surface (issue #8). A
 // Transaction's editable state is exactly { accountId, date, amount,
@@ -19,8 +20,6 @@ export interface TransactionFields {
   description: string
   kind: TransactionKind
 }
-
-type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
 // A calendar date is an ISO `YYYY-MM-DD` string naming a real day — never a
 // timestamp (CONTEXT.md). Validated structurally and against the calendar

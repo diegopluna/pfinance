@@ -18,6 +18,12 @@ import {
 // Every test mints Users, so each deploys a pristine instance through the
 // scratch stack (see harness.ts). The seam is HTTP: the same /api/categories
 // surface the web app consumes.
+//
+// Known coverage limit: the backfill branch for Households that predate
+// seeding-at-creation can't be manufactured through this seam — every
+// sign-up now seeds. It shares the deterministic-id insert with creation
+// seeding, and the "seeded exactly once" assertions below pin the same
+// idempotence the backfill relies on.
 
 // The seed set in the order the API returns it (alphabetical, case-folded).
 // Spelled out rather than imported from src so a change to the vocabulary

@@ -152,28 +152,13 @@ function CategoriesScreen() {
           <CardContent>
             <ul className="divide-y divide-border">
               {active.map((entry) => (
-                <li key={entry.id} className="flex items-center justify-between gap-3 py-1.5">
-                  <span className="truncate text-sm font-medium">{entry.name}</span>
-                  <span className="flex shrink-0 items-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                      onClick={() => openDialog(entry)}
-                    >
-                      Rename
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                      disabled={setArchived.isPending}
-                      onClick={() => setArchived.mutate({ id: entry.id, archive: true })}
-                    >
-                      Archive
-                    </Button>
-                  </span>
-                </li>
+                <CategoryRow
+                  key={entry.id}
+                  entry={entry}
+                  disabled={setArchived.isPending}
+                  onRename={() => openDialog(entry)}
+                  onSetArchived={(archive) => setArchived.mutate({ id: entry.id, archive })}
+                />
               ))}
             </ul>
           </CardContent>
@@ -208,39 +193,61 @@ function CategoriesScreen() {
             <CardContent>
               <ul className="divide-y divide-border">
                 {archived.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between gap-3 py-1.5">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{entry.name}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {archivedLabel(entry.archivedAt)} · history preserved
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 items-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground"
-                        onClick={() => openDialog(entry)}
-                      >
-                        Rename
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground"
-                        disabled={setArchived.isPending}
-                        onClick={() => setArchived.mutate({ id: entry.id, archive: false })}
-                      >
-                        Unarchive
-                      </Button>
-                    </span>
-                  </li>
+                  <CategoryRow
+                    key={entry.id}
+                    entry={entry}
+                    disabled={setArchived.isPending}
+                    onRename={() => openDialog(entry)}
+                    onSetArchived={(archive) => setArchived.mutate({ id: entry.id, archive })}
+                  />
                 ))}
               </ul>
             </CardContent>
           </Card>
         ))}
     </div>
+  )
+}
+
+// One row of the vocabulary, active or archived: the same name + Rename +
+// Archive/Unarchive shape, with the archive stamp only on retired labels.
+function CategoryRow({
+  entry,
+  disabled,
+  onRename,
+  onSetArchived,
+}: {
+  entry: CategoryEntry
+  disabled: boolean
+  onRename: () => void
+  onSetArchived: (archive: boolean) => void
+}) {
+  const isArchived = entry.archivedAt !== null
+  return (
+    <li className="flex items-center justify-between gap-3 py-1.5">
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{entry.name}</span>
+        {isArchived && (
+          <span className="block text-xs text-muted-foreground">
+            {archivedLabel(entry.archivedAt)} · history preserved
+          </span>
+        )}
+      </span>
+      <span className="flex shrink-0 items-center">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onRename}>
+          Rename
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground"
+          disabled={disabled}
+          onClick={() => onSetArchived(!isArchived)}
+        >
+          {isArchived ? 'Unarchive' : 'Archive'}
+        </Button>
+      </span>
+    </li>
   )
 }
 
@@ -296,11 +303,6 @@ function CategoryFormDialog({
             >
               {(field) => <field.TextField label="Name" placeholder="Groceries" />}
             </form.AppField>
-            {entry !== null && (
-              <p className="text-xs text-muted-foreground">
-                Renaming updates every transaction already carrying this category.
-              </p>
-            )}
             {error !== null && (
               <p role="alert" className="text-sm text-destructive">
                 {error}
