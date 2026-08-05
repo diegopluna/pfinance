@@ -6,9 +6,9 @@ import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as Drizzle from 'alchemy/Drizzle/Schema'
 import * as GitHub from 'alchemy/GitHub'
 import * as Output from 'alchemy/Output'
+import * as Config from 'effect/Config'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
-import * as Redacted from 'effect/Redacted'
 import type { ServerEnv } from './apps/server/src/env.ts'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
@@ -33,16 +33,15 @@ export const server = Cloudflare.Worker('Server', {
   compatibility: { flags: ['nodejs_compat'] },
   env: {
     DB: database,
-    // Signs Better Auth session cookies. The fallback keeps dev/test
-    // zero-config; real deployments must set BETTER_AUTH_SECRET (rotating it
-    // signs everyone out).
-    BETTER_AUTH_SECRET: Redacted.make(
-      process.env.BETTER_AUTH_SECRET ?? 'dev-only-secret-set-BETTER_AUTH_SECRET',
-    ),
+    // Signs Better Auth session cookies. Minted once per stage and persisted
+    // in alchemy state, so it survives deploys with no env var to manage and
+    // no fallback secret in the repo. Replacing the resource rotates it
+    // (signing everyone out).
+    BETTER_AUTH_SECRET: Alchemy.makeRandom('BetterAuthSecret'),
     // Pins the browser origin trusted for credentialed requests (see
     // apps/server/src/origins.ts). Unset ('') falls back to trusting
     // workers.dev broadly — fine for dev/previews, set it in production.
-    WEB_ORIGIN: process.env.WEB_ORIGIN ?? '',
+    WEB_ORIGIN: Config.string('WEB_ORIGIN').pipe(Config.withDefault('')),
   },
   dev: {
     port: 3001,
