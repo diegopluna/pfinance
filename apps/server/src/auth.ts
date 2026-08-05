@@ -1,3 +1,4 @@
+import { isSupportedCurrency } from '@pfinance/currency'
 import { authAccount, createDb, household, member, session, user, verification } from '@pfinance/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
@@ -38,10 +39,19 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
           // gate; the invites exception (ADR 0004 §2) will need an explicit
           // bypass here when it lands. A thrown APIError aborts the creation
           // and becomes the endpoint's error response.
-          before: async () => {
+          before: async (_newUser, ctx) => {
             if (!(await selfServeSignUpAllowed(db))) {
               throw new APIError('FORBIDDEN', {
                 message: 'Sign-ups are disabled on this instance.',
+              })
+            }
+            // The Household's Currency is chosen at sign-up and immutable
+            // afterwards (ADR 0002), so a missing or unsupported code must
+            // fail here — before the User exists — rather than default to
+            // one the user never picked.
+            if (!isSupportedCurrency(ctx?.body?.currency)) {
+              throw new APIError('BAD_REQUEST', {
+                message: 'Choose a supported currency for your household.',
               })
             }
           },
@@ -59,12 +69,21 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
               typeof requested === 'string' && requested.trim() !== ''
                 ? requested.trim().slice(0, 120)
                 : `${newUser.name}'s Household`
+            // Validated by the before hook; the re-check narrows the untyped
+            // body and keeps the invariant local.
+            const currency = ctx?.body?.currency
+            if (!isSupportedCurrency(currency)) {
+              throw new APIError('BAD_REQUEST', {
+                message: 'Choose a supported currency for your household.',
+              })
+            }
             const now = new Date()
             const householdId = crypto.randomUUID()
             await db.batch([
               db.insert(household).values({
                 id: householdId,
                 name: householdName,
+                currency,
                 createdAt: now,
               }),
               db.insert(member).values({

@@ -1,0 +1,1 @@
+ALTER TABLE `household` ADD `currency` text DEFAULT 'USD' NOT NULL;

@@ -1,6 +1,13 @@
 import { Button } from '@pfinance/ui/components/button'
 import { Field, FieldError, FieldLabel } from '@pfinance/ui/components/field'
 import { Input } from '@pfinance/ui/components/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@pfinance/ui/components/select'
 import { useFieldContext, useFormContext } from '@/hooks/form-context'
 
 // Bound components for useAppForm (see hooks/form.ts): field components read
@@ -29,6 +36,42 @@ export function TextField({
         aria-invalid={invalid || undefined}
         {...inputProps}
       />
+      <FieldError errors={errors.map(asMessage)} />
+    </Field>
+  )
+}
+
+export function SelectField({
+  label,
+  placeholder,
+  options,
+}: {
+  label: string
+  placeholder?: string
+  options: ReadonlyArray<{ value: string; label: string }>
+}) {
+  const field = useFieldContext<string>()
+  const errors = field.state.meta.errors
+  const invalid = errors.length > 0
+  return (
+    <Field data-invalid={invalid || undefined}>
+      <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
+      <Select
+        // The form models "nothing chosen" as '', Base UI as null.
+        value={field.state.value === '' ? null : field.state.value}
+        onValueChange={(value) => field.handleChange(value ?? '')}
+      >
+        <SelectTrigger id={field.name} aria-invalid={invalid || undefined} className="w-full">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <FieldError errors={errors.map(asMessage)} />
     </Field>
   )

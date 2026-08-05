@@ -74,7 +74,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     const db = createDb(c.env.DB)
     const { householdId, role } = c.var.membership
     const [householdRow] = await db
-      .select({ id: household.id, name: household.name })
+      // currency rides along so clients can format every amount (ADR 0002).
+      .select({ id: household.id, name: household.name, currency: household.currency })
       .from(household)
       .where(eq(household.id, householdId))
       .limit(1)

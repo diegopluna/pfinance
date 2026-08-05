@@ -84,7 +84,7 @@ test(
 
 interface Me {
   user: { id: string; email: string; name: string }
-  household: { id: string; name: string }
+  household: { id: string; name: string; currency: string }
   role: string
 }
 
@@ -93,16 +93,25 @@ interface Me {
 // tests send one exactly like a browser client would.
 const trustedOrigin = HttpClientRequest.setHeader('origin', 'http://localhost:3000')
 
-const signUpRequest = (apiUrl: string, email: string, name: string, householdName?: string) =>
-  HttpClientRequest.post(`${apiUrl}/api/auth/sign-up/email`).pipe(
+const signUpRequest = (
+  apiUrl: string,
+  email: string,
+  name: string,
+  // currency: null omits the field to prove the server requires it.
+  options: { householdName?: string; currency?: string | null } = {},
+) => {
+  const { householdName, currency = 'USD' } = options
+  return HttpClientRequest.post(`${apiUrl}/api/auth/sign-up/email`).pipe(
     trustedOrigin,
     HttpClientRequest.bodyJsonUnsafe({
       email,
       name,
       password: 'correct-horse-battery',
       ...(householdName !== undefined && { householdName }),
+      ...(currency !== null && { currency }),
     }),
   )
+}
 
 const signInRequest = (apiUrl: string, email: string) =>
   HttpClientRequest.post(`${apiUrl}/api/auth/sign-in/email`).pipe(
@@ -154,7 +163,7 @@ test.provider(
       const email = 'owner@example.com'
 
       const signUp = yield* Test.executeWhenReady(
-        signUpRequest(apiUrl, email, 'Test Owner', 'Casa Test'),
+        signUpRequest(apiUrl, email, 'Test Owner', { householdName: 'Casa Test', currency: 'BRL' }),
       )
       expect(signUp.status).toBe(200)
       const cookie = cookieHeader(signUp)
@@ -172,8 +181,10 @@ test.provider(
       expect(body.user.email).toBe(email)
       expect(body.role).toBe('owner')
       expect(body.household.id).toBeTruthy()
-      // The household carries the name chosen at sign-up.
+      // The household carries the name and Currency chosen at sign-up —
+      // the API reports the Currency so clients can format every amount.
       expect(body.household.name).toBe('Casa Test')
+      expect(body.household.currency).toBe('BRL')
     }),
   { timeout: 600_000 },
 )
@@ -249,7 +260,9 @@ test.provider(
 
       // …so the first sign-up succeeds and claims the instance.
       const first = yield* Test.executeWhenReady(
-        signUpRequest(apiUrl, 'founder@example.com', 'Founder', 'Founding Household'),
+        signUpRequest(apiUrl, 'founder@example.com', 'Founder', {
+          householdName: 'Founding Household',
+        }),
       )
       expect(first.status).toBe(200)
 
@@ -273,6 +286,44 @@ test.provider(
       const founder = yield* readMe(me)
       expect(founder.role).toBe('owner')
       expect(founder.household.name).toBe('Founding Household')
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'sign-up requires a supported Currency for the new Household',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+
+      // The Currency is chosen at creation and immutable afterwards (ADR
+      // 0002), so a missing or unsupported code must fail the sign-up —
+      // before any User is created.
+      const missing = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'no-currency@example.com', 'No Currency', { currency: null }),
+      )
+      expect(missing.status).toBe(400)
+
+      const bogus = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'doge@example.com', 'Doge Fan', { currency: 'DOGE' }),
+      )
+      expect(bogus.status).toBe(400)
+
+      // Neither rejection minted a User, so the bootstrap slot is still open
+      // and a valid choice claims it — including a 0-exponent currency.
+      const valid = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'yen-owner@example.com', 'Yen Owner', { currency: 'JPY' }),
+      )
+      expect(valid.status).toBe(200)
+
+      const me = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(
+          HttpClientRequest.setHeader('cookie', cookieHeader(valid)),
+        ),
+      )
+      expect(me.status).toBe(200)
+      const body = yield* readMe(me)
+      expect(body.household.currency).toBe('JPY')
     }),
   { timeout: 600_000 },
 )
