@@ -64,13 +64,15 @@ const patchRequest = (apiUrl: string, cookie: string, id: string, body: Record<s
 const patchAccount = (apiUrl: string, cookie: string, id: string, body: Record<string, unknown>) =>
   Test.executeWhenReady(patchRequest(apiUrl, cookie, id, body))
 
-const archiveRequest = (apiUrl: string, cookie: string, id: string, action: string) =>
+type ArchiveAction = 'archive' | 'unarchive'
+
+const archiveRequest = (apiUrl: string, cookie: string, id: string, action: ArchiveAction) =>
   HttpClientRequest.post(`${apiUrl}/api/accounts/${id}/${action}`).pipe(
     trustedOrigin,
     withCookie(cookie),
   )
 
-const archiveAccount = (apiUrl: string, cookie: string, id: string, action: string) =>
+const archiveAccount = (apiUrl: string, cookie: string, id: string, action: ArchiveAction) =>
   Test.executeWhenReady(archiveRequest(apiUrl, cookie, id, action))
 
 const listAccounts = (apiUrl: string, cookie: string, query = '') =>
@@ -155,7 +157,17 @@ test.provider(
       // Archive: hidden from the default list, history kept.
       const archived = yield* archiveAccount(apiUrl, owner.cookie, card.id, 'archive')
       expect(archived.status).toBe(200)
-      expect((yield* readAccount(archived)).archivedAt).not.toBeNull()
+      const archivedCard = yield* readAccount(archived)
+      expect(archivedCard.archivedAt).not.toBeNull()
+
+      // Re-archiving is an idempotent no-op: the original archivedAt is when
+      // the account closed, and a second click must not rewrite it. The sleep
+      // outlasts the second-precision timestamps, so a rewrite can't hide
+      // behind two calls landing in the same second.
+      yield* Effect.sleep('1.5 seconds')
+      const rearchived = yield* archiveAccount(apiUrl, owner.cookie, card.id, 'archive')
+      expect(rearchived.status).toBe(200)
+      expect((yield* readAccount(rearchived)).archivedAt).toEqual(archivedCard.archivedAt)
 
       const defaultList = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
       expect(defaultList.map((entry) => entry.name)).toEqual(['Nubank Checking'])

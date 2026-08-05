@@ -5,7 +5,7 @@ import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
 import { validator } from 'hono/validator'
 import type { ServerEnv } from './env.ts'
-import { accountView, parseAccountPatch, parseNewAccount } from './accounts.ts'
+import { accountView, parseAccountPatch, parseNewAccount, setAccountArchived } from './accounts.ts'
 import { createAuth } from './auth.ts'
 import {
   findInvite,
@@ -196,40 +196,24 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     },
   )
   // Archiving hides an Account that closed in real life; unarchiving is the
-  // undo. Both keep every row — history is never deleted.
+  // undo. Both keep every row — history is never deleted — and both are
+  // idempotent via setAccountArchived (a repeat archive keeps the original
+  // archivedAt).
   .post('/api/accounts/:id/archive', async (c) => {
     const db = createDb(c.env.DB)
-    const [archived] = await db
-      .update(account)
-      .set({ archivedAt: new Date() })
-      .where(
-        and(
-          eq(account.id, c.req.param('id')),
-          eq(account.householdId, c.var.membership.householdId),
-        ),
-      )
-      .returning()
-    if (archived === undefined) {
+    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), true)
+    if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
-    return c.json({ account: accountView(archived) })
+    return c.json({ account: accountView(row) })
   })
   .post('/api/accounts/:id/unarchive', async (c) => {
     const db = createDb(c.env.DB)
-    const [restored] = await db
-      .update(account)
-      .set({ archivedAt: null })
-      .where(
-        and(
-          eq(account.id, c.req.param('id')),
-          eq(account.householdId, c.var.membership.householdId),
-        ),
-      )
-      .returning()
-    if (restored === undefined) {
+    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), false)
+    if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
-    return c.json({ account: accountView(restored) })
+    return c.json({ account: accountView(row) })
   })
   // --- Member & Invite management (issue #6) — owner-only, so the guard
   // middleware covers both resources. Non-owner Members get a 403.

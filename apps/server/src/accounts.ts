@@ -1,4 +1,5 @@
-import { accountKind, isAccountType, type account, type AccountType } from '@pfinance/db'
+import { account, accountKind, isAccountType, type AccountType, type Db } from '@pfinance/db'
+import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 
 // Parsing and shaping for the /api/accounts surface (issue #7). The editable
 // state of an Account is exactly { name, type, openingBalance }; Balance is
@@ -62,6 +63,30 @@ export const parseAccountPatch = (body: unknown): Parsed<Partial<AccountFields>>
     return { ok: false, error: 'Nothing to update: send name, type, or openingBalance.' }
   }
   return { ok: true, value: patch }
+}
+
+// Archive / unarchive an Account, scoped to the caller's Household. The
+// state flip is conditional so a repeat call can't rewrite history — the
+// original archivedAt is when the account closed, and a second click must
+// not move it. Returns the row (updated or already in the requested state),
+// or undefined when no such Account exists.
+export const setAccountArchived = async (
+  db: Db,
+  householdId: string,
+  id: string,
+  archived: boolean,
+) => {
+  const scope = and(eq(account.id, id), eq(account.householdId, householdId))
+  const [updated] = await db
+    .update(account)
+    .set({ archivedAt: archived ? new Date() : null })
+    .where(and(scope, archived ? isNull(account.archivedAt) : isNotNull(account.archivedAt)))
+    .returning()
+  if (updated !== undefined) return updated
+  // Nothing flipped: idempotent no-op if the Account is already in the
+  // requested state, undefined (→ 404) if it doesn't exist.
+  const [existing] = await db.select().from(account).where(scope).limit(1)
+  return existing
 }
 
 // The API shape of an Account: the row plus its derived kind and Balance.

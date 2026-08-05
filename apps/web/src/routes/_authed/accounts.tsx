@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ACCOUNT_TYPES, isAccountType, type AccountType } from '@pfinance/db/account-types'
+import type { InferRequestType } from 'hono/client'
+import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
 import {
   formatAmount,
   fromMinorUnits,
@@ -36,11 +37,9 @@ const typeOptions = ACCOUNT_TYPES.map(({ type, label, kind }) => ({
 
 const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) => [type, label]))
 
-interface AccountFields {
-  name: string
-  type: AccountType
-  openingBalance: number
-}
+// The editable Account state, inferred from the server's validator through
+// the RPC schema so the two can't drift.
+type AccountFields = InferRequestType<typeof api.api.accounts.$post>['json']
 
 function AccountsScreen() {
   const queryClient = useQueryClient()
