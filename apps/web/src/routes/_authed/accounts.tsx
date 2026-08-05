@@ -133,11 +133,11 @@ function AccountsScreen() {
   const archived = accounts.filter((entry) => entry.archivedAt !== null)
 
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Accounts</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="max-w-prose text-sm text-muted-foreground">
             Balances are derived: opening balance plus the sum of each account&apos;s transactions.
             Nothing here is directly editable.
           </p>
@@ -183,7 +183,7 @@ function AccountsScreen() {
         // Account cards with the derived Balance front and center (Claude
         // Design 2c); liabilities carry the LIABILITY badge so debt reads as
         // debt at a glance.
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {active.map((entry) => (
             <Card key={entry.id} size="sm">
               <CardContent className="flex flex-col">

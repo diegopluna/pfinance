@@ -9,9 +9,9 @@ export const Route = createFileRoute('/_authed/')({
 // this is an empty state that points at the one thing that exists: Accounts.
 function Home() {
   return (
-    <div className="flex w-full max-w-3xl flex-col items-start gap-1">
+    <div className="flex w-full flex-col items-start gap-1">
       <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-      <p className="text-sm text-muted-foreground">
+      <p className="max-w-prose text-sm text-muted-foreground">
         Nothing to show yet. Add accounts to start the ledger — transactions, net worth, and
         spending charts build on them.
       </p>
