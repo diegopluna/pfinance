@@ -41,3 +41,8 @@ test('isSupportedCurrency accepts known ISO codes and rejects everything else', 
   expect(isSupportedCurrency('DOGE')).toBe(false)
   expect(isSupportedCurrency(undefined)).toBe(false)
 })
+
+test('amounts beyond safe-integer minor units are rejected, never approximated', () => {
+  expect(() => fromMinorUnits(2 ** 53, 'USD')).toThrow(RangeError)
+  expect(() => toMinorUnits('90071992547409.92', 'USD')).toThrow(RangeError)
+})

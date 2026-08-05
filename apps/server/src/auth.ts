@@ -1,4 +1,4 @@
-import { isSupportedCurrency } from '@pfinance/currency'
+import { isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import { authAccount, createDb, household, member, session, user, verification } from '@pfinance/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
@@ -6,6 +6,20 @@ import { APIError } from 'better-auth/api'
 import type { ServerEnv } from './env.ts'
 import { trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
+
+// The Household's Currency is chosen at sign-up and immutable afterwards
+// (ADR 0002), so a missing or unsupported code fails the sign-up rather than
+// defaulting to one the user never picked. Shared by both user-create hooks:
+// the before hook rejects while no User exists yet, the after hook re-checks
+// to narrow the untyped body.
+const requireSupportedCurrency = (requested: unknown): CurrencyCode => {
+  if (!isSupportedCurrency(requested)) {
+    throw new APIError('BAD_REQUEST', {
+      message: 'Choose a supported currency for your household.',
+    })
+  }
+  return requested
+}
 
 // Email+password only, no verification, no reset (docs/adr/0005).
 // baseURL comes from the incoming request: the worker doesn't know its own
@@ -45,15 +59,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
                 message: 'Sign-ups are disabled on this instance.',
               })
             }
-            // The Household's Currency is chosen at sign-up and immutable
-            // afterwards (ADR 0002), so a missing or unsupported code must
-            // fail here — before the User exists — rather than default to
-            // one the user never picked.
-            if (!isSupportedCurrency(ctx?.body?.currency)) {
-              throw new APIError('BAD_REQUEST', {
-                message: 'Choose a supported currency for your household.',
-              })
-            }
+            requireSupportedCurrency(ctx?.body?.currency)
           },
           // Sign-up creates the User's Household with them as owner, in one
           // flow. db.batch is a single atomic D1 transaction. Known limit:
@@ -69,14 +75,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
               typeof requested === 'string' && requested.trim() !== ''
                 ? requested.trim().slice(0, 120)
                 : `${newUser.name}'s Household`
-            // Validated by the before hook; the re-check narrows the untyped
-            // body and keeps the invariant local.
-            const currency = ctx?.body?.currency
-            if (!isSupportedCurrency(currency)) {
-              throw new APIError('BAD_REQUEST', {
-                message: 'Choose a supported currency for your household.',
-              })
-            }
+            const currency = requireSupportedCurrency(ctx?.body?.currency)
             const now = new Date()
             const householdId = crypto.randomUUID()
             await db.batch([

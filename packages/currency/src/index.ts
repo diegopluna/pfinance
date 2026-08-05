@@ -69,8 +69,11 @@ export function isSupportedCurrency(code: unknown): code is CurrencyCode {
 }
 
 export function getCurrency(code: CurrencyCode): Currency {
-  // The Map is built from CURRENCIES, so a CurrencyCode always resolves.
-  return byCode.get(code) as Currency
+  const currency = byCode.get(code)
+  if (currency === undefined) {
+    throw new RangeError(`Unsupported currency: "${code}"`)
+  }
+  return currency
 }
 
 /**
@@ -106,6 +109,9 @@ export function formatAmount(minorUnits: number, code: CurrencyCode, locale?: st
     minimumFractionDigits: minorUnitExponent,
     maximumFractionDigits: minorUnitExponent,
   })
+  // Intl formats numeric strings exactly (NumberFormat v3, everywhere the
+  // app runs: workerd, evergreen browsers, Node 20+) — the amount never
+  // passes through a float. TS's lib types lag the spec, hence the cast.
   return formatter.format(fromMinorUnits(minorUnits, code) as unknown as number)
 }
 
