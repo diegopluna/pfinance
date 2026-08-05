@@ -1,9 +1,16 @@
-import { createDb, household, member, meta } from '@pfinance/db'
-import { eq } from 'drizzle-orm'
+import { createDb, household, invite, member, meta, user } from '@pfinance/db'
+import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { createMiddleware } from 'hono/factory'
 import type { ServerEnv } from './env.ts'
 import { createAuth } from './auth.ts'
+import {
+  findInvite,
+  generateInviteToken,
+  INVITE_DEFAULT_TTL_SECONDS,
+  INVITE_MAX_TTL_SECONDS,
+} from './invites.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 
@@ -16,6 +23,17 @@ type Variables = {
 
 const authFor = (c: { env: ServerEnv; req: { url: string } }) =>
   createAuth(c.env, new URL(c.req.url).origin)
+
+// Managing Members and Invites is the owner's alone (issue #6); runs after
+// the session middleware below, which resolves c.var.membership.
+const ownerGuard = createMiddleware<{ Bindings: ServerEnv; Variables: Variables }>(
+  async (c, next) => {
+    if (c.var.membership.role !== 'owner') {
+      return c.json({ error: 'Only the household owner can manage members and invites.' }, 403)
+    }
+    await next()
+  },
+)
 
 // Routes are chained so the accumulated schema type reaches the web app's
 // typed client (Hono RPC) via AppType below.
@@ -47,6 +65,24 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   .get('/api/sign-up-status', async (c) => {
     const db = createDb(c.env.DB)
     return c.json({ allowed: await selfServeSignUpAllowed(db) })
+  })
+  // Public for the same reason as sign-up-status: the recipient of an Invite
+  // link isn't signed in, and the sign-up screen wants to greet them (or
+  // explain a dead link) before rendering the form. Redemption itself is
+  // enforced in the auth hook regardless.
+  .get('/api/invite-info', async (c) => {
+    const token = c.req.query('token') ?? ''
+    const db = createDb(c.env.DB)
+    const found = await findInvite(db, token, new Date())
+    if (found.status !== 'pending') {
+      return c.json({ valid: false as const, reason: found.status })
+    }
+    const [householdRow] = await db
+      .select({ name: household.name })
+      .from(household)
+      .where(eq(household.id, found.invite.householdId))
+      .limit(1)
+    return c.json({ valid: true as const, householdName: householdRow?.name ?? '' })
   })
   // Every other /api route requires a session; the caller's Membership is
   // resolved here so handlers scope all data access to
@@ -84,6 +120,120 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }
     const { id, email, name } = c.var.user
     return c.json({ user: { id, email, name }, household: householdRow, role })
+  })
+  // --- Member & Invite management (issue #6) — owner-only, so the guard
+  // middleware covers both resources. Non-owner Members get a 403.
+  .use('/api/members/*', ownerGuard)
+  .use('/api/members', ownerGuard)
+  .use('/api/invites/*', ownerGuard)
+  .use('/api/invites', ownerGuard)
+  .get('/api/members', async (c) => {
+    const db = createDb(c.env.DB)
+    const members = await db
+      .select({
+        id: member.id,
+        userId: member.userId,
+        name: user.name,
+        email: user.email,
+        role: member.role,
+        createdAt: member.createdAt,
+      })
+      .from(member)
+      .innerJoin(user, eq(user.id, member.userId))
+      .where(eq(member.householdId, c.var.membership.householdId))
+      // Timestamps have second precision, so role breaks the tie and keeps
+      // the owner first when rows land in the same second.
+      .orderBy(asc(member.createdAt), desc(member.role), asc(member.id))
+    return c.json({ members })
+  })
+  // Removing a Member deletes their User (cascades to session, credentials
+  // and the member row): a User holds no data of their own (CONTEXT.md), an
+  // orphaned one could never join another Household (unique membership), and
+  // a lingering row would squat the unique email and block re-inviting them.
+  .delete('/api/members/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const [target] = await db
+      .select({ userId: member.userId, role: member.role })
+      .from(member)
+      .where(
+        and(eq(member.id, c.req.param('id')), eq(member.householdId, c.var.membership.householdId)),
+      )
+      .limit(1)
+    if (!target) {
+      return c.json({ error: 'Member not found.' }, 404)
+    }
+    if (target.role === 'owner') {
+      return c.json({ error: "The household owner can't be removed." }, 400)
+    }
+    await db.delete(user).where(eq(user.id, target.userId))
+    return c.json({ ok: true })
+  })
+  .get('/api/invites', async (c) => {
+    const db = createDb(c.env.DB)
+    const now = new Date()
+    const invites = await db
+      .select({
+        id: invite.id,
+        token: invite.token,
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt,
+      })
+      .from(invite)
+      // Pending only: consumed, expired and revoked Invites are history, not
+      // actionable, so the management screen never shows them.
+      .where(
+        and(
+          eq(invite.householdId, c.var.membership.householdId),
+          isNull(invite.usedAt),
+          isNull(invite.revokedAt),
+          gt(invite.expiresAt, now),
+        ),
+      )
+      .orderBy(asc(invite.createdAt), asc(invite.id))
+    return c.json({ invites })
+  })
+  .post('/api/invites', async (c) => {
+    const db = createDb(c.env.DB)
+    const body: unknown = await c.req.json().catch(() => ({}))
+    const requested = (body as { expiresInSeconds?: unknown }).expiresInSeconds
+    const ttlSeconds =
+      typeof requested === 'number' && Number.isFinite(requested) && requested >= 1
+        ? Math.min(Math.floor(requested), INVITE_MAX_TTL_SECONDS)
+        : INVITE_DEFAULT_TTL_SECONDS
+    const now = new Date()
+    const created = {
+      id: crypto.randomUUID(),
+      token: generateInviteToken(),
+      householdId: c.var.membership.householdId,
+      createdBy: c.var.user.id,
+      expiresAt: new Date(now.getTime() + ttlSeconds * 1000),
+      createdAt: now,
+    }
+    await db.insert(invite).values(created)
+    const { id, token, expiresAt, createdAt } = created
+    return c.json({ invite: { id, token, expiresAt, createdAt } })
+  })
+  // Revoke: only a pending Invite can be withdrawn — the conditional UPDATE
+  // makes revoking a just-consumed Invite report 404 instead of silently
+  // rewriting history.
+  .delete('/api/invites/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const [revoked] = await db
+      .update(invite)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(invite.id, c.req.param('id')),
+          eq(invite.householdId, c.var.membership.householdId),
+          isNull(invite.usedAt),
+          isNull(invite.revokedAt),
+        ),
+      )
+      .returning({ id: invite.id })
+    if (revoked === undefined) {
+      return c.json({ error: 'Invite not found.' }, 404)
+    }
+    return c.json({ ok: true })
   })
 
 // The RPC surface consumed by hc<AppType>() in apps/web.

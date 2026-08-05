@@ -75,6 +75,27 @@ export const household = sqliteTable('household', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
+// An Invite is a single-use, expiring link issued by a Household's owner
+// (CONTEXT.md; ADR 0004 §2). Lifecycle is recorded, never deleted: usedAt
+// marks consumption, revokedAt marks revocation, and "pending" is the derived
+// state of neither with expiresAt in the future.
+export const invite = sqliteTable('invite', {
+  id: text('id').primaryKey(),
+  // The secret carried in the copy-paste link (ADR 0005: no email anywhere).
+  token: text('token').notNull().unique(),
+  householdId: text('household_id')
+    .notNull()
+    .references(() => household.id, { onDelete: 'cascade' }),
+  // The issuing owner, kept for the audit trail; set null if that User goes
+  // away so the Invite record survives.
+  createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  usedAt: integer('used_at', { mode: 'timestamp' }),
+  usedBy: text('used_by').references(() => user.id, { onDelete: 'set null' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+})
+
 export const member = sqliteTable('member', {
   id: text('id').primaryKey(),
   // Unique: a User belongs to exactly one Household in the MVP.

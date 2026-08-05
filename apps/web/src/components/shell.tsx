@@ -1,4 +1,4 @@
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@pfinance/ui/components/button'
 import { api } from '@/lib/api'
@@ -32,6 +32,24 @@ export function Shell() {
         <div className="flex items-baseline gap-3">
           <span className="text-lg font-semibold">pfinance</span>
           {me && <span className="text-sm text-muted-foreground">{me.household.name}</span>}
+          {/* Managing Members and Invites is owner-only (issue #6), so the
+              nav entry only shows for the owner. */}
+          {me?.role === 'owner' && (
+            <nav className="ml-3 flex items-baseline gap-3 text-sm">
+              <Link
+                to="/"
+                className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+              >
+                Overview
+              </Link>
+              <Link
+                to="/members"
+                className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+              >
+                Members
+              </Link>
+            </nav>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{session?.user.email}</span>

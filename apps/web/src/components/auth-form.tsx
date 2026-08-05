@@ -17,7 +17,15 @@ const currencyOptions = CURRENCIES.map(({ code, name }) => ({
   label: `${code} — ${name}`,
 }))
 
-export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+export function AuthForm({
+  mode,
+  invite,
+}: {
+  mode: 'sign-in' | 'sign-up'
+  // Present when the sign-up arrives through an Invite link: the recipient
+  // joins the inviting Household, so no household name or currency is asked.
+  invite?: { token: string; householdName: string }
+}) {
   const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -25,11 +33,21 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     defaultValues: { name: '', email: '', password: '', householdName: '', currency: '' },
     onSubmit: async ({ value }) => {
       setServerError(null)
+      // householdName/currency (or inviteToken) are extra sign-up fields the
+      // server's user-create hook reads to build the new Household — or to
+      // join the inviting one when redeeming an Invite. Passed via a variable
+      // (not a literal) since the client's types don't know custom fields.
+      const signUpBody = invite
+        ? {
+            name: value.name,
+            email: value.email,
+            password: value.password,
+            inviteToken: invite.token,
+          }
+        : value
       const { error } =
         mode === 'sign-up'
-          ? // householdName and currency are extra sign-up fields; the
-            // server's user-create hook builds the new Household from them.
-            await authClient.signUp.email(value)
+          ? await authClient.signUp.email(signUpBody)
           : await authClient.signIn.email({ email: value.email, password: value.password })
       if (error) {
         setServerError(error.message ?? 'Something went wrong')
@@ -43,13 +61,23 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          {/* Sign-up copy assumes the bootstrap state: the form only renders
-              while the instance has no owner (ADR 0004). */}
-          <CardTitle>{mode === 'sign-in' ? 'Sign in' : 'Set up your household'}</CardTitle>
+          {/* Sign-up copy assumes the bootstrap state: without an Invite the
+              form only renders while the instance has no owner (ADR 0004). */}
+          <CardTitle>
+            {mode === 'sign-in'
+              ? 'Sign in'
+              : invite
+                ? invite.householdName
+                  ? `Join ${invite.householdName}`
+                  : 'Join the household'
+                : 'Set up your household'}
+          </CardTitle>
           <CardDescription>
             {mode === 'sign-in'
               ? 'Welcome back to pfinance.'
-              : "You're the first user — this sign-up claims the instance and makes you the owner."}
+              : invite
+                ? "You've been invited — create your account to join the household."
+                : "You're the first user — this sign-up claims the instance and makes you the owner."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -95,7 +123,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                   />
                 )}
               </form.AppField>
-              {mode === 'sign-up' && (
+              {mode === 'sign-up' && !invite && (
                 <div className="flex flex-col gap-2">
                   <div className="grid grid-cols-2 gap-3">
                     <form.AppField
@@ -138,7 +166,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
               {serverError && <p className="text-sm text-destructive">{serverError}</p>}
               <form.AppForm>
                 <form.SubmitButton>
-                  {mode === 'sign-in' ? 'Sign in' : 'Create household'}
+                  {mode === 'sign-in' ? 'Sign in' : invite ? 'Join household' : 'Create household'}
                 </form.SubmitButton>
               </form.AppForm>
             </FieldGroup>
