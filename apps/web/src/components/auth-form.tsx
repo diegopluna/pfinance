@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Button } from '@pfinance/ui/components/button'
 import {
   Card,
   CardContent,
@@ -8,37 +7,29 @@ import {
   CardHeader,
   CardTitle,
 } from '@pfinance/ui/components/card'
-import { Input } from '@pfinance/ui/components/input'
-import { Label } from '@pfinance/ui/components/label'
+import { FieldGroup } from '@pfinance/ui/components/field'
 import { authClient } from '@/lib/auth-client'
+import { useAppForm } from '@/hooks/form'
 
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const navigate = useNavigate()
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setError(null)
-    setSubmitting(true)
-    const form = new FormData(event.currentTarget)
-    const field = (key: string) => {
-      const value = form.get(key)
-      return typeof value === 'string' ? value : ''
-    }
-    const email = field('email')
-    const password = field('password')
-    const { error: authError } =
-      mode === 'sign-up'
-        ? await authClient.signUp.email({ email, password, name: field('name') })
-        : await authClient.signIn.email({ email, password })
-    if (authError) {
-      setError(authError.message ?? 'Something went wrong')
-      setSubmitting(false)
-      return
-    }
-    await navigate({ to: '/' })
-  }
+  const form = useAppForm({
+    defaultValues: { name: '', email: '', password: '' },
+    onSubmit: async ({ value }) => {
+      setServerError(null)
+      const { error } =
+        mode === 'sign-up'
+          ? await authClient.signUp.email(value)
+          : await authClient.signIn.email({ email: value.email, password: value.password })
+      if (error) {
+        setServerError(error.message ?? 'Something went wrong')
+        return
+      }
+      await navigate({ to: '/' })
+    },
+  })
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
@@ -52,32 +43,53 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {mode === 'sign-up' && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" name="name" required autoComplete="name" />
-              </div>
-            )}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" required autoComplete="email" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              void form.handleSubmit()
+            }}
+          >
+            <FieldGroup>
+              {mode === 'sign-up' && (
+                <form.AppField
+                  name="name"
+                  validators={{
+                    onSubmit: ({ value }) => (value.trim() ? undefined : 'Enter your name'),
+                  }}
+                >
+                  {(field) => <field.TextField label="Name" autoComplete="name" />}
+                </form.AppField>
+              )}
+              <form.AppField
+                name="email"
+                validators={{
+                  onSubmit: ({ value }) =>
+                    /^[^\s@]+@[^\s@]+$/.test(value) ? undefined : 'Enter a valid email',
+                }}
+              >
+                {(field) => <field.TextField label="Email" type="email" autoComplete="email" />}
+              </form.AppField>
+              <form.AppField
                 name="password"
-                type="password"
-                required
-                minLength={8}
-                autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={submitting}>
-              {mode === 'sign-in' ? 'Sign in' : 'Sign up'}
-            </Button>
+                validators={{
+                  onSubmit: ({ value }) =>
+                    value.length >= 8 ? undefined : 'Password must be at least 8 characters',
+                }}
+              >
+                {(field) => (
+                  <field.TextField
+                    label="Password"
+                    type="password"
+                    autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+                  />
+                )}
+              </form.AppField>
+              {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+              <form.AppForm>
+                <form.SubmitButton>{mode === 'sign-in' ? 'Sign in' : 'Sign up'}</form.SubmitButton>
+              </form.AppForm>
+            </FieldGroup>
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {mode === 'sign-in' ? (
