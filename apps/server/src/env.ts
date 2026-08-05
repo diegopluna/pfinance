@@ -7,4 +7,7 @@ export type ServerEnv = {
   DB: D1Database
   BETTER_AUTH_SECRET: string
   WEB_ORIGIN: string
+  // 'true' opens self-serve sign-up; anything else (including unset → '')
+  // keeps it locked, per docs/adr/0004-signup-gating.md.
+  SIGNUPS_ENABLED: string
 }

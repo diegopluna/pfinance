@@ -42,6 +42,11 @@ export const server = Cloudflare.Worker('Server', {
     // apps/server/src/origins.ts). Unset ('') falls back to trusting
     // workers.dev broadly — fine for dev/previews, set it in production.
     WEB_ORIGIN: Config.string('WEB_ORIGIN').pipe(Config.withDefault('')),
+    // Self-serve sign-up switch (ADR 0004). Unset ('') means locked — the
+    // secure default for deployers who never read the docs; the bootstrap
+    // exception in apps/server/src/signup-gate.ts still lets the first User
+    // claim a fresh instance. Deploy with SIGNUPS_ENABLED=true to open it.
+    SIGNUPS_ENABLED: Config.string('SIGNUPS_ENABLED').pipe(Config.withDefault('')),
   },
   dev: {
     port: 3001,

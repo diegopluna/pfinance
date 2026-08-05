@@ -1,3 +1,4 @@
+import * as Alchemy from 'alchemy'
 import * as Cloudflare from 'alchemy/Cloudflare'
 import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as Test from 'alchemy/Test/Vitest'
@@ -6,7 +7,16 @@ import * as Layer from 'effect/Layer'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import { expect } from 'vite-plus/test'
+import { schema } from '../../../alchemy.run.ts'
 import Stack from '../../../stacks/backend.ts'
+
+// The shared worker below deploys with sign-ups OPEN: every test in this file
+// mints its own user (local D1 state persists between runs), and the
+// open-sign-ups acceptance path needs the switch on anyway. The locked/
+// bootstrap path is exercised against its own scratch-stack worker instead
+// (see the test.provider test at the bottom). `??=` so an explicit env value
+// still wins.
+process.env.SIGNUPS_ENABLED ??= 'true'
 
 // Same providers/state as the backend stack (stacks/backend.ts) — the
 // server tests deploy only Schema → D1 → Worker, not the full product
@@ -197,4 +207,117 @@ test(
     expect(forged.status).toBe(401)
   }),
   { timeout: 120_000 },
+)
+
+// --- Sign-up gating (issue #4, ADR 0004) ---
+
+const signUpStatus = (apiUrl: string) =>
+  Effect.flatMap(
+    Test.executeWhenReady(HttpClientRequest.get(`${apiUrl}/api/sign-up-status`)),
+    (response) => {
+      expect(response.status).toBe(200)
+      return Effect.map(response.json, (body) => body as { allowed: boolean })
+    },
+  )
+
+test(
+  'open sign-ups: the gate reports open and each sign-up gets its own Household',
+  Effect.gen(function* () {
+    const { apiUrl = '' } = yield* stack
+
+    // This worker runs with SIGNUPS_ENABLED=true (and has users from the
+    // tests above), so the gate is open on the switch alone.
+    const status = yield* signUpStatus(apiUrl)
+    expect(status.allowed).toBe(true)
+
+    const firstSignUp = yield* Test.executeWhenReady(
+      signUpRequest(apiUrl, uniqueEmail(), 'First Neighbor'),
+    )
+    expect(firstSignUp.status).toBe(200)
+    const secondSignUp = yield* Test.executeWhenReady(
+      signUpRequest(apiUrl, uniqueEmail(), 'Second Neighbor'),
+    )
+    expect(secondSignUp.status).toBe(200)
+
+    // Each self-serve sign-up creates its own isolated Household.
+    const firstMe = yield* readMe(
+      yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(
+          HttpClientRequest.setHeader('cookie', cookieHeader(firstSignUp)),
+        ),
+      ),
+    )
+    const secondMe = yield* readMe(
+      yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(
+          HttpClientRequest.setHeader('cookie', cookieHeader(secondSignUp)),
+        ),
+      ),
+    )
+    expect(firstMe.household.id).not.toBe(secondMe.household.id)
+    expect(firstMe.role).toBe('owner')
+    expect(secondMe.role).toBe('owner')
+  }),
+  { timeout: 120_000 },
+)
+
+// A locked instance: the same worker code with SIGNUPS_ENABLED unset and its
+// own D1. Deployed through `test.provider`'s scratch stack, whose in-memory
+// state gives the bootstrap sequence what the shared stage can't: a database
+// with zero Users on every run, torn down afterwards even on failure.
+const lockedDatabase = Cloudflare.D1.Database(
+  'LockedDB',
+  Effect.map(schema, (s) => ({ migrationsDir: s.out })),
+)
+
+const lockedServer = Cloudflare.Worker('LockedServer', {
+  main: './apps/server/src/index.ts',
+  compatibility: { flags: ['nodejs_compat'] },
+  env: {
+    DB: lockedDatabase,
+    BETTER_AUTH_SECRET: Alchemy.makeRandom('LockedBetterAuthSecret'),
+    WEB_ORIGIN: '',
+    SIGNUPS_ENABLED: '',
+  },
+})
+
+test.provider(
+  'bootstrap then locked: the first sign-up claims the instance, then the gate closes',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(
+        Effect.map(lockedServer, (worker) => ({ apiUrl: worker.url })),
+      )
+
+      // Zero Users: the bootstrap exception opens the gate despite the
+      // switch being off…
+      const before = yield* signUpStatus(apiUrl)
+      expect(before.allowed).toBe(true)
+
+      // …so the first sign-up succeeds and claims the instance.
+      const first = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, uniqueEmail(), 'Founder', 'Founding Household'),
+      )
+      expect(first.status).toBe(200)
+
+      // One User exists and the switch is off: the gate reports closed…
+      const after = yield* signUpStatus(apiUrl)
+      expect(after.allowed).toBe(false)
+
+      // …and further self-serve sign-ups are rejected.
+      const second = yield* Test.executeWhenReady(signUpRequest(apiUrl, uniqueEmail(), 'Latecomer'))
+      expect(second.status).toBe(403)
+
+      // The founder's session still works — the gate never touches sign-in.
+      const me = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(
+          HttpClientRequest.setHeader('cookie', cookieHeader(first)),
+        ),
+      )
+      expect(me.status).toBe(200)
+      const founder = yield* readMe(me)
+      expect(founder.role).toBe('owner')
+      expect(founder.household.name).toBe('Founding Household')
+    }),
+  { timeout: 600_000 },
 )
