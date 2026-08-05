@@ -15,6 +15,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedAccountsRouteImport } from './routes/_authed/accounts'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
+import { Route as AuthedTransactionsRouteImport } from './routes/_authed/transactions'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
@@ -45,6 +46,11 @@ const AuthedMembersRoute = AuthedMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedTransactionsRoute = AuthedTransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
+  getParentRoute: () => AuthedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -52,12 +58,14 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/accounts': typeof AuthedAccountsRoute
   '/members': typeof AuthedMembersRoute
+  '/transactions': typeof AuthedTransactionsRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/accounts': typeof AuthedAccountsRoute
   '/members': typeof AuthedMembersRoute
+  '/transactions': typeof AuthedTransactionsRoute
   '/': typeof AuthedIndexRoute
 }
 export interface FileRoutesById {
@@ -67,13 +75,15 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/accounts': typeof AuthedAccountsRoute
   '/_authed/members': typeof AuthedMembersRoute
+  '/_authed/transactions': typeof AuthedTransactionsRoute
   '/_authed/': typeof AuthedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/sign-up' | '/accounts' | '/members'
+  fullPaths:
+    '/' | '/sign-in' | '/sign-up' | '/accounts' | '/members' | '/transactions'
   fileRoutesByTo: FileRoutesByTo
-  to: '/sign-in' | '/sign-up' | '/accounts' | '/members' | '/'
+  to: '/sign-in' | '/sign-up' | '/accounts' | '/members' | '/transactions' | '/'
   id:
     | '__root__'
     | '/_authed'
@@ -81,6 +91,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/accounts'
     | '/_authed/members'
+    | '/_authed/transactions'
     | '/_authed/'
   fileRoutesById: FileRoutesById
 }
@@ -134,18 +145,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedMembersRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/transactions': {
+      id: '/_authed/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof AuthedTransactionsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
   AuthedAccountsRoute: typeof AuthedAccountsRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
+  AuthedTransactionsRoute: typeof AuthedTransactionsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAccountsRoute: AuthedAccountsRoute,
   AuthedMembersRoute: AuthedMembersRoute,
+  AuthedTransactionsRoute: AuthedTransactionsRoute,
   AuthedIndexRoute: AuthedIndexRoute,
 }
 

@@ -1,5 +1,12 @@
-import { account, accountKind, isAccountType, type AccountType, type Db } from '@pfinance/db'
-import { and, eq, isNotNull, isNull } from 'drizzle-orm'
+import {
+  account,
+  accountKind,
+  isAccountType,
+  transaction,
+  type AccountType,
+  type Db,
+} from '@pfinance/db'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 
 // Parsing and shaping for the /api/accounts surface (issue #7). The editable
 // state of an Account is exactly { name, type, openingBalance }; Balance is
@@ -89,16 +96,28 @@ export const setAccountArchived = async (
   return existing
 }
 
-// The API shape of an Account: the row plus its derived kind and Balance.
-// With no Transactions yet the ledger sum is zero, so Balance equals the
-// opening balance; issue #8 adds the Transaction sum to this derivation.
-export const accountView = (row: typeof account.$inferSelect) => ({
+// The sum of an Account's Transactions, computed in SQL — the reason amounts
+// are INTEGERs (ADR 0006). Exposed both as an expression (for the grouped
+// list query) and as a single-account fetch (for mutation responses).
+export const ledgerSumExpr = sql<number>`coalesce(sum(${transaction.amount}), 0)`.mapWith(Number)
+
+export const ledgerSum = async (db: Db, accountId: string): Promise<number> => {
+  const [row] = await db
+    .select({ total: ledgerSumExpr })
+    .from(transaction)
+    .where(eq(transaction.accountId, accountId))
+  return row?.total ?? 0
+}
+
+// The API shape of an Account: the row plus its derived kind and Balance —
+// opening balance plus the ledger sum (ADR 0001), never a stored column.
+export const accountView = (row: typeof account.$inferSelect, ledgerTotal: number) => ({
   id: row.id,
   name: row.name,
   type: row.type,
   kind: accountKind(row.type),
   openingBalance: row.openingBalance,
-  balance: row.openingBalance,
+  balance: row.openingBalance + ledgerTotal,
   archivedAt: row.archivedAt,
   createdAt: row.createdAt,
 })

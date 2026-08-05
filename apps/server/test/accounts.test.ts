@@ -1,12 +1,15 @@
 import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
-import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
-import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import { expect } from 'vite-plus/test'
 import {
   cookieHeader,
+  createAccount,
+  executeWarm,
   freshApiUrl,
+  listAccounts,
+  readAccount,
+  readAccounts,
   signUpOwner,
   signUpRequest,
   test,
@@ -18,41 +21,6 @@ import {
 // Every test mints Users, so each deploys a pristine instance through the
 // scratch stack (see harness.ts). The seam is HTTP: the same /api/accounts
 // surface the web app consumes.
-
-interface AccountView {
-  id: string
-  name: string
-  type: string
-  kind: string
-  openingBalance: number
-  balance: number
-  archivedAt: string | null
-  createdAt: string
-}
-
-const readAccount = (response: HttpClientResponse) =>
-  Effect.map(response.json, (body) => (body as unknown as { account: AccountView }).account)
-
-const readAccounts = (response: HttpClientResponse) =>
-  Effect.map(response.json, (body) => (body as unknown as { accounts: AccountView[] }).accounts)
-
-const createAccount = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
-  Test.executeWhenReady(
-    HttpClientRequest.post(`${apiUrl}/api/accounts`).pipe(
-      trustedOrigin,
-      withCookie(cookie),
-      HttpClientRequest.bodyJsonUnsafe(body),
-    ),
-  )
-
-// Plain execute, no cold-start retry: executeWhenReady treats 404 as "edge
-// not converged yet" and retries it away, so a test that ASSERTS a 404 must
-// hit the (by then long warm) worker directly.
-const executeWarm = (request: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    return yield* client.execute(request)
-  })
 
 const patchRequest = (apiUrl: string, cookie: string, id: string, body: Record<string, unknown>) =>
   HttpClientRequest.patch(`${apiUrl}/api/accounts/${id}`).pipe(
@@ -74,11 +42,6 @@ const archiveRequest = (apiUrl: string, cookie: string, id: string, action: Arch
 
 const archiveAccount = (apiUrl: string, cookie: string, id: string, action: ArchiveAction) =>
   Test.executeWhenReady(archiveRequest(apiUrl, cookie, id, action))
-
-const listAccounts = (apiUrl: string, cookie: string, query = '') =>
-  Test.executeWhenReady(
-    HttpClientRequest.get(`${apiUrl}/api/accounts${query}`).pipe(withCookie(cookie)),
-  )
 
 test.provider(
   'Accounts: create, edit, archive; Balance is derived and never editable',
