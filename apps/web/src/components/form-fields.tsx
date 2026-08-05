@@ -45,10 +45,14 @@ export function SelectField({
   label,
   placeholder,
   options,
+  renderValue,
 }: {
   label: string
   placeholder?: string
   options: ReadonlyArray<{ value: string; label: string }>
+  // Compact display for the closed trigger when the option labels are long
+  // (e.g. "BRL — Brazilian Real" listed, "BRL" once chosen).
+  renderValue?: (value: string) => React.ReactNode
 }) {
   const field = useFieldContext<string>()
   const errors = field.state.meta.errors
@@ -62,7 +66,14 @@ export function SelectField({
         onValueChange={(value) => field.handleChange(value ?? '')}
       >
         <SelectTrigger id={field.name} aria-invalid={invalid || undefined} className="w-full">
-          <SelectValue placeholder={placeholder} />
+          <SelectValue
+            placeholder={placeholder}
+            children={
+              renderValue
+                ? (value: string | null) => (value === null ? placeholder : renderValue(value))
+                : undefined
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (

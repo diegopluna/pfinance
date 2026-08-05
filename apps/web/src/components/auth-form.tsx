@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@pfinance/ui/components/card'
-import { FieldGroup } from '@pfinance/ui/components/field'
+import { FieldDescription, FieldGroup } from '@pfinance/ui/components/field'
 import { authClient } from '@/lib/auth-client'
 import { useAppForm } from '@/hooks/form'
 
@@ -43,11 +43,13 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{mode === 'sign-in' ? 'Sign in' : 'Create your Household'}</CardTitle>
+          {/* Sign-up copy assumes the bootstrap state: the form only renders
+              while the instance has no owner (ADR 0004). */}
+          <CardTitle>{mode === 'sign-in' ? 'Sign in' : 'Set up your household'}</CardTitle>
           <CardDescription>
             {mode === 'sign-in'
               ? 'Welcome back to pfinance.'
-              : 'Signing up creates you and your Household.'}
+              : "You're the first user — this sign-up claims the instance and makes you the owner."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -66,7 +68,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                     onSubmit: ({ value }) => (value.trim() ? undefined : 'Enter your name'),
                   }}
                 >
-                  {(field) => <field.TextField label="Name" autoComplete="name" />}
+                  {(field) => <field.TextField label="Your name" autoComplete="name" />}
                 </form.AppField>
               )}
               <form.AppField
@@ -94,37 +96,48 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                 )}
               </form.AppField>
               {mode === 'sign-up' && (
-                <>
-                  <form.AppField
-                    name="householdName"
-                    validators={{
-                      onSubmit: ({ value }) => (value.trim() ? undefined : 'Name your household'),
-                    }}
-                  >
-                    {(field) => <field.TextField label="Household name" placeholder="Casa Peter" />}
-                  </form.AppField>
-                  {/* Chosen once, immutable afterwards (ADR 0002): every
-                      amount in the household is denominated in it. */}
-                  <form.AppField
-                    name="currency"
-                    validators={{
-                      onSubmit: ({ value }) =>
-                        isSupportedCurrency(value) ? undefined : 'Choose your currency',
-                    }}
-                  >
-                    {(field) => (
-                      <field.SelectField
-                        label="Currency"
-                        placeholder="Choose a currency"
-                        options={currencyOptions}
-                      />
-                    )}
-                  </form.AppField>
-                </>
+                <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <form.AppField
+                      name="householdName"
+                      validators={{
+                        onSubmit: ({ value }) => (value.trim() ? undefined : 'Name your household'),
+                      }}
+                    >
+                      {(field) => (
+                        <field.TextField label="Household name" placeholder="Casa Peter" />
+                      )}
+                    </form.AppField>
+                    {/* Chosen once, immutable afterwards (ADR 0002). */}
+                    <form.AppField
+                      name="currency"
+                      validators={{
+                        onSubmit: ({ value }) =>
+                          isSupportedCurrency(value) ? undefined : 'Choose your currency',
+                      }}
+                    >
+                      {(field) => (
+                        <field.SelectField
+                          label="Currency"
+                          placeholder="Choose"
+                          options={currencyOptions}
+                          // The closed trigger shows just the code, like the
+                          // sidebar's "BRL · 2 members".
+                          renderValue={(code) => code}
+                        />
+                      )}
+                    </form.AppField>
+                  </div>
+                  <FieldDescription>
+                    Currency is set once per household — every account and transaction uses it.
+                  </FieldDescription>
+                </div>
               )}
               {serverError && <p className="text-sm text-destructive">{serverError}</p>}
               <form.AppForm>
-                <form.SubmitButton>{mode === 'sign-in' ? 'Sign in' : 'Sign up'}</form.SubmitButton>
+                <form.SubmitButton>
+                  {mode === 'sign-in' ? 'Sign in' : 'Create household'}
+                </form.SubmitButton>
               </form.AppForm>
             </FieldGroup>
           </form>
