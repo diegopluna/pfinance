@@ -144,6 +144,23 @@ export const transaction = sqliteTable('transaction', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
+// A Category is a household-owned label for spending/income analysis
+// (CONTEXT.md; ADR 0003): a flat list — no parent column, ever — seeded with
+// defaults at Household creation (issue #10). Archiving retires a label from
+// assignment while Transactions that carry it keep their history; rows are
+// never deleted. Seeded rows use deterministic ids derived from the
+// Household id (see apps/server categories module), so the one-time backfill
+// of pre-seed Households can insert-or-ignore idempotently.
+export const category = sqliteTable('category', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id')
+    .notNull()
+    .references(() => household.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  archivedAt: integer('archived_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
 export const member = sqliteTable('member', {
   id: text('id').primaryKey(),
   // Unique: a User belongs to exactly one Household in the MVP.
