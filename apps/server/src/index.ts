@@ -5,6 +5,7 @@ import { cors } from 'hono/cors'
 import type { ServerEnv } from './env.ts'
 import { createAuth } from './auth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
+import { selfServeSignUpAllowed } from './signup-gate.ts'
 
 type SessionUser = { id: string; email: string; name: string }
 
@@ -40,6 +41,13 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // sign-out, get-session). Registered before the session middleware, so it
   // stays public.
   .on(['GET', 'POST'], '/api/auth/*', (c) => authFor(c).handler(c.req.raw))
+  // Public: the sign-up screen asks before rendering the form, so a locked
+  // instance explains itself instead of failing on submit. The auth hook in
+  // auth.ts stays the enforcement point (ADR 0004).
+  .get('/api/sign-up-status', async (c) => {
+    const db = createDb(c.env.DB)
+    return c.json({ allowed: await selfServeSignUpAllowed(db) })
+  })
   // Every other /api route requires a session; the caller's Membership is
   // resolved here so handlers scope all data access to
   // c.var.membership.householdId.
