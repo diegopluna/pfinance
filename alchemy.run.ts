@@ -8,6 +8,8 @@ import * as GitHub from 'alchemy/GitHub'
 import * as Output from 'alchemy/Output'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
+import * as Redacted from 'effect/Redacted'
+import type { ServerEnv } from './apps/server/src/env.ts'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
 // pending migration SQL on deploy whenever the schema drifts.
@@ -29,13 +31,33 @@ export const database = Cloudflare.D1.Database(
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
   compatibility: { flags: ['nodejs_compat'] },
-  env: { DB: database },
+  env: {
+    DB: database,
+    // Signs Better Auth session cookies. The fallback keeps dev/test
+    // zero-config; real deployments must set BETTER_AUTH_SECRET (rotating it
+    // signs everyone out).
+    BETTER_AUTH_SECRET: Redacted.make(
+      process.env.BETTER_AUTH_SECRET ?? 'dev-only-secret-set-BETTER_AUTH_SECRET',
+    ),
+    // Pins the browser origin trusted for credentialed requests (see
+    // apps/server/src/origins.ts). Unset ('') falls back to trusting
+    // workers.dev broadly — fine for dev/previews, set it in production.
+    WEB_ORIGIN: process.env.WEB_ORIGIN ?? '',
+  },
   dev: {
     port: 3001,
   },
 })
 
-export type ServerEnv = Cloudflare.InferEnv<typeof server>
+// The worker declares its own env type (apps/server/src/env.ts) so its code
+// never imports this infra file; these assertions fail to compile if the
+// declared type drifts from the env deployed above, in either direction.
+type InferredEnv = Cloudflare.InferEnv<typeof server>
+type _AssertEnvDeclared = [
+  InferredEnv extends ServerEnv ? true : never,
+  ServerEnv extends InferredEnv ? true : never,
+][number]
+const _envMatches: _AssertEnvDeclared = true
 
 export default Alchemy.Stack(
   'PFinance',
