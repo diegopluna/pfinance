@@ -591,3 +591,119 @@ test.provider(
     }),
   { timeout: 600_000 },
 )
+
+// --- Import revert (issue #15) ---
+// Deleting an Import deletes every Transaction it created — a bad column
+// mapping is one click to undo. Balances recompute (they are derived, ADR
+// 0001); Transactions from other sources are untouched; the history no
+// longer lists the Import.
+
+const deleteImportRequest = (apiUrl: string, cookie: string, id: string) =>
+  HttpClientRequest.delete(`${apiUrl}/api/imports/${id}`).pipe(trustedOrigin, withCookie(cookie))
+
+test.provider(
+  'Import revert: deleting an Import removes exactly its Transactions; Balances and history follow',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'revert-owner@example.com', {
+        householdName: 'Revert House',
+        currency: 'USD',
+      })
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 50000,
+        }),
+      )
+
+      // A Transaction from another source: the revert must never touch it.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-04-01',
+          amount: -1000,
+          description: 'Groceries',
+        })).status,
+      ).toBe(200)
+
+      // A good Import that stays…
+      const keep = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'keep.csv',
+          csv: 'Date,Description,Amount\n2026-04-02,Interest,20.00\n',
+        }),
+      )
+      yield* previewImport(apiUrl, owner.cookie, keep.id, MAPPING)
+      expect((yield* confirmImport(apiUrl, owner.cookie, keep.id)).status).toBe(200)
+
+      // …and a badly mapped one the Member wants gone.
+      const mistake = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'mistake.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-04-03,Coffee,-3.00',
+            '2026-04-04,Salary,"1,000.00"',
+          ].join('\n'),
+        }),
+      )
+      yield* previewImport(apiUrl, owner.cookie, mistake.id, MAPPING)
+      expect((yield* confirmImport(apiUrl, owner.cookie, mistake.id)).status).toBe(200)
+
+      // The pre-revert ledger: 50000 - 1000 + 2000 - 300 + 100000.
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(150700)
+
+      // Revert: one DELETE undoes the whole batch.
+      const reverted = yield* executeWarm(deleteImportRequest(apiUrl, owner.cookie, mistake.id))
+      expect(reverted.status).toBe(200)
+      expect(yield* reverted.json).toEqual({ ok: true })
+
+      // Exactly the mistake's Transactions are gone: the manual row and the
+      // other Import's row survive.
+      const remaining = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(remaining.map((entry) => entry.description).toSorted()).toEqual([
+        'Groceries',
+        'Interest',
+      ])
+      expect(remaining.some((entry) => entry.importId === mistake.id)).toBe(false)
+
+      // The Balance is back to its pre-Import value: 50000 - 1000 + 2000.
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(51000)
+
+      // The history reflects the deletion, and the Import is truly gone: a
+      // second delete finds nothing.
+      const afterRevert = yield* readImports(yield* listImports(apiUrl, owner.cookie))
+      expect(afterRevert.map((entry) => entry.fileName)).toEqual(['keep.csv'])
+      expect(
+        (yield* executeWarm(deleteImportRequest(apiUrl, owner.cookie, mistake.id))).status,
+      ).toBe(404)
+
+      // A pending Import (nothing created yet) deletes the same way — an
+      // abandoned upload doesn't haunt the history.
+      const abandoned = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'abandoned.csv',
+          csv: 'Date,Description,Amount\n2026-04-05,Snack,-1.00\n',
+        }),
+      )
+      expect(
+        (yield* executeWarm(deleteImportRequest(apiUrl, owner.cookie, abandoned.id))).status,
+      ).toBe(200)
+      expect(
+        (yield* readImports(yield* listImports(apiUrl, owner.cookie))).map(
+          (entry) => entry.fileName,
+        ),
+      ).toEqual(['keep.csv'])
+      expect(yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))).toHaveLength(2)
+    }),
+  { timeout: 600_000 },
+)

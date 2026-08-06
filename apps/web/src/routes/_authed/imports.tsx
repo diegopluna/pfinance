@@ -189,6 +189,14 @@ function ImportsScreen() {
     },
   })
 
+  // Confirming creates Transactions and reverting deletes them, so both
+  // refresh every ledger view.
+  const invalidateLedger = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['imports'] })
+    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+  }
+
   const confirm = useMutation({
     mutationFn: async (fields: { id: string; overrides: number[] }) => {
       const response = await api.api.imports[':id'].confirm.$post({
@@ -202,15 +210,23 @@ function ImportsScreen() {
       return response.json()
     },
     onSuccess: async () => {
-      // The Transactions and their Balances now exist; every ledger view
-      // refreshes.
-      await queryClient.invalidateQueries({ queryKey: ['imports'] })
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      await invalidateLedger()
       setActive(null)
       setMapping(null)
       setOverrides(new Set())
     },
+  })
+
+  // The revert (issue #15): deleting an Import deletes every Transaction it
+  // created server-side.
+  const deleteImport = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.api.imports[':id'].$delete({ param: { id } })
+      if (!response.ok) {
+        throw new Error('Failed to delete the import')
+      }
+    },
+    onSuccess: invalidateLedger,
   })
 
   const closeWizard = () => {
@@ -276,7 +292,19 @@ function ImportsScreen() {
               imports={imports}
               accountNames={accountNames}
               resuming={resume.isPending}
+              deleting={deleteImport.isPending}
               onResume={(id) => resume.mutate(id)}
+              onDelete={(entry) => {
+                const cascadeWarning =
+                  entry.status === 'confirmed' && (entry.createdCount ?? 0) > 0
+                    ? ` Its ${entry.createdCount} imported ${
+                        entry.createdCount === 1 ? 'transaction goes' : 'transactions go'
+                      } too.`
+                    : ''
+                if (window.confirm(`Delete import "${entry.fileName}"?${cascadeWarning}`)) {
+                  deleteImport.mutate(entry.id)
+                }
+              }}
             />
           </CardContent>
         </Card>
@@ -284,6 +312,11 @@ function ImportsScreen() {
       {resume.isError && (
         <p role="alert" className="text-sm text-destructive">
           Couldn&apos;t reopen that import.
+        </p>
+      )}
+      {deleteImport.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t delete that import.
         </p>
       )}
     </div>
@@ -627,12 +660,16 @@ function ImportHistoryTable({
   imports,
   accountNames,
   resuming,
+  deleting,
   onResume,
+  onDelete,
 }: {
   imports: ImportEntry[]
   accountNames: Map<string, string>
   resuming: boolean
+  deleting: boolean
   onResume: (id: string) => void
+  onDelete: (entry: ImportEntry) => void
 }) {
   return (
     <Table>
@@ -683,8 +720,8 @@ function ImportHistoryTable({
                 : `${entry.rowCount} rows`}
             </TableCell>
             <TableCell>
-              {entry.status === 'pending' && (
-                <span className="flex justify-end">
+              <span className="flex justify-end">
+                {entry.status === 'pending' && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -694,8 +731,17 @@ function ImportHistoryTable({
                   >
                     Resume
                   </Button>
-                </span>
-              )}
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={deleting}
+                  onClick={() => onDelete(entry)}
+                >
+                  Delete
+                </Button>
+              </span>
             </TableCell>
           </TableRow>
         ))}
