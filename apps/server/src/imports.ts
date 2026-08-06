@@ -171,14 +171,27 @@ export const parseCsvAmount = (cell: string, currency: CurrencyCode): number | u
   }
 }
 
+// Credit-card statements commonly invert the ledger's sign convention:
+// positive = charge, negative = payment (issue #42). 'flip' negates every
+// parsed amount so charges land as Expenses; absent means 'as-is'.
+export const IMPORT_AMOUNT_SIGN_VALUES = ['as-is', 'flip'] as const
+
+export type ImportAmountSign = (typeof IMPORT_AMOUNT_SIGN_VALUES)[number]
+
+export const isImportAmountSign = (value: unknown): value is ImportAmountSign =>
+  (IMPORT_AMOUNT_SIGN_VALUES as readonly unknown[]).includes(value)
+
 // The column mapping a Member chooses on the map step: which cell is the
-// date, the description, and the amount, plus the date shape. Persisted on
-// the Import as JSON so confirm creates exactly what preview showed.
+// date, the description, and the amount, plus the date shape and the amount
+// sign strategy. Persisted on the Import as JSON so confirm creates exactly
+// what preview showed. amountSign stays optional so mappings stored before
+// issue #42 keep reading as as-is.
 export interface ImportMapping {
   dateColumn: number
   descriptionColumn: number
   amountColumn: number
   dateFormat: ImportDateFormat
+  amountSign?: ImportAmountSign
 }
 
 export interface ImportRowFields {
@@ -233,10 +246,14 @@ const previewRow = (
   if (date === undefined) {
     return failed(`Not a ${DATE_FORMAT_LABELS[mapping.dateFormat]} date: "${raw.date}"`)
   }
-  const amount = parseCsvAmount(raw.amount, currency)
-  if (amount === undefined) {
+  const parsedAmount = parseCsvAmount(raw.amount, currency)
+  if (parsedAmount === undefined) {
     return failed(`Not a ${currency} amount: "${raw.amount}"`)
   }
+  // The flip happens here, before dedup and confirm ever see the row, so
+  // every downstream consumer works with ledger-true signs. The zero guard
+  // keeps -0 out of the ledger.
+  const amount = mapping.amountSign === 'flip' && parsedAmount !== 0 ? -parsedAmount : parsedAmount
   const description = raw.description.trim()
   if (description === '') {
     return failed('The description is empty.')
@@ -326,7 +343,21 @@ export const parseImportMapping = (body: unknown): Parsed<ImportMapping> => {
   if (!isImportDateFormat(dateFormat)) {
     return { ok: false, error: 'The date format must be "ymd", "dmy", or "mdy".' }
   }
-  return { ok: true, value: { dateColumn, descriptionColumn, amountColumn, dateFormat } }
+  // Absent means as-is; anything sent must be known — an ignored flip would
+  // import a whole statement inverted.
+  if (record.amountSign !== undefined && !isImportAmountSign(record.amountSign)) {
+    return { ok: false, error: 'The amount sign must be "as-is" or "flip".' }
+  }
+  return {
+    ok: true,
+    value: {
+      dateColumn,
+      descriptionColumn,
+      amountColumn,
+      dateFormat,
+      ...(record.amountSign !== undefined && { amountSign: record.amountSign }),
+    },
+  }
 }
 
 export interface ImportConfirmFields {
