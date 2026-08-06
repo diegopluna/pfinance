@@ -53,6 +53,7 @@ export const Route = createFileRoute('/_authed/transactions')({
 // drift: the editable state from the create validator, the listed
 // Transaction from the list response.
 type TransactionFields = InferRequestType<typeof api.api.transactions.$post>['json']
+type TransferFields = InferRequestType<typeof api.api.transfers.$post>['json']
 type TransactionEntry = InferResponseType<
   typeof api.api.transactions.$get,
   200
@@ -69,6 +70,17 @@ const amountExample = (currency: CurrencyCode) => {
   const { minorUnitExponent } = getCurrency(currency)
   return minorUnitExponent === 0 ? '-1234' : `-1234.${'5678'.slice(0, minorUnitExponent)}`
 }
+
+// A Transfer's amount is unsigned — direction is from → to, never a sign.
+const transferAmountExample = (currency: CurrencyCode) => amountExample(currency).slice(1)
+
+// Read a Transfer's editable state back off either leg: the leg's sign says
+// which side of the pair this Account is on, counterpartAccountId names the
+// other (transactions.ts server-side).
+const transferSidesOf = (leg: TransactionEntry) => ({
+  fromAccountId: leg.amount < 0 ? leg.accountId : (leg.counterpartAccountId ?? ''),
+  toAccountId: leg.amount < 0 ? (leg.counterpartAccountId ?? '') : leg.accountId,
+})
 
 interface Filters {
   accountId: string
@@ -93,6 +105,14 @@ function TransactionsScreen() {
     entry: null,
     nonce: 0,
   })
+  // The Transfer dialog mirrors the Transaction one; its target is either
+  // leg of the pair (the form reads the whole Transfer off it), or null for
+  // a new Transfer.
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [transferTarget, setTransferTarget] = useState<{
+    entry: TransactionEntry | null
+    nonce: number
+  }>({ entry: null, nonce: 0 })
 
   // Every amount is entered and shown in the Household Currency (ADR 0002).
   // The USD fallback only covers the frame before /api/me resolves.
@@ -193,10 +213,50 @@ function TransactionsScreen() {
     },
   })
 
+  // Transfers write through their own surface (issue #12): both legs move
+  // atomically server-side, so the same two invalidations cover them.
+  const saveTransfer = useMutation({
+    mutationFn: async ({ id, fields }: { id: string | null; fields: TransferFields }) => {
+      const response =
+        id === null
+          ? await api.api.transfers.$post({ json: fields })
+          : await api.api.transfers[':id'].$patch({ param: { id }, json: fields })
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error ?? 'Failed to save the transfer')
+      }
+      return response.json()
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      setTransferDialogOpen(false)
+    },
+  })
+
+  const deleteTransfer = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.api.transfers[':id'].$delete({ param: { id } })
+      if (!response.ok) {
+        throw new Error('Failed to delete the transfer')
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+    },
+  })
+
   const openDialog = (entry: TransactionEntry | null) => {
     saveTransaction.reset()
     setTarget((current) => ({ entry, nonce: current.nonce + 1 }))
     setDialogOpen(true)
+  }
+
+  const openTransferDialog = (entry: TransactionEntry | null) => {
+    saveTransfer.reset()
+    setTransferTarget((current) => ({ entry, nonce: current.nonce + 1 }))
+    setTransferDialogOpen(true)
   }
 
   const transactions = transactionsQuery.data?.transactions ?? []
@@ -216,9 +276,12 @@ function TransactionsScreen() {
             The household ledger. Amounts are signed: negative is money out, positive is money in.
           </p>
         </div>
-        <Button className="shrink-0" onClick={() => openDialog(null)}>
-          New transaction
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => openTransferDialog(null)}>
+            New transfer
+          </Button>
+          <Button onClick={() => openDialog(null)}>New transaction</Button>
+        </div>
       </div>
 
       <TransactionFormDialog
@@ -240,6 +303,22 @@ function TransactionsScreen() {
             )
         }
         onClose={() => setDialogOpen(false)}
+      />
+
+      <TransferFormDialog
+        key={transferTarget.nonce}
+        open={transferDialogOpen}
+        entry={transferTarget.entry}
+        accounts={accounts}
+        currency={currency}
+        error={saveTransfer.isError ? saveTransfer.error.message : null}
+        onSubmit={(fields) =>
+          saveTransfer.mutateAsync({ id: transferTarget.entry?.transferId ?? null, fields }).then(
+            () => undefined,
+            () => undefined,
+          )
+        }
+        onClose={() => setTransferDialogOpen(false)}
       />
 
       {/* Filter bar: Account, inclusive date range, and description search
@@ -361,10 +440,18 @@ function TransactionsScreen() {
               accountNames={accountNames}
               categoryNames={categoryNames}
               currency={currency}
-              deleting={deleteTransaction.isPending}
-              onEdit={openDialog}
+              deleting={deleteTransaction.isPending || deleteTransfer.isPending}
+              // A Transfer leg is not independently editable (issue #12):
+              // either leg opens the whole Transfer.
+              onEdit={(entry) =>
+                entry.transferId === null ? openDialog(entry) : openTransferDialog(entry)
+              }
               onDelete={(entry) => {
-                if (window.confirm(`Delete "${entry.description}"?`)) {
+                if (entry.transferId !== null) {
+                  if (window.confirm(`Delete transfer "${entry.description}"? Both legs go.`)) {
+                    deleteTransfer.mutate(entry.transferId)
+                  }
+                } else if (window.confirm(`Delete "${entry.description}"?`)) {
                   deleteTransaction.mutate(entry.id)
                 }
               }}
@@ -372,9 +459,9 @@ function TransactionsScreen() {
           </CardContent>
         </Card>
       )}
-      {deleteTransaction.isError && (
+      {(deleteTransaction.isError || deleteTransfer.isError) && (
         <p role="alert" className="text-sm text-destructive">
-          Couldn&apos;t delete that transaction.
+          Couldn&apos;t delete that {deleteTransfer.isError ? 'transfer' : 'transaction'}.
         </p>
       )}
     </div>
@@ -415,15 +502,21 @@ function TransactionsTable({
     {
       accessorKey: 'description',
       header: 'Description',
-      // A Balance Adjustment is visibly labeled: it moves the Balance but is
-      // excluded from Expense/Income, so it must never read as an ordinary
-      // entry (issue #9).
+      // A Balance Adjustment or Transfer leg is visibly labeled: both move
+      // the Balance but are excluded from Expense/Income, so neither must
+      // ever read as an ordinary entry (issues #9, #12).
       cell: ({ row }) => (
         <span className="flex items-center gap-2">
           <span className="block max-w-72 truncate text-sm font-medium">
             {row.original.description}
           </span>
           {row.original.kind === 'balance_adjustment' && <Badge>Balance adjustment</Badge>}
+          {row.original.kind === 'transfer' && (
+            <Badge>
+              {row.original.amount < 0 ? 'Transfer to ' : 'Transfer from '}
+              {accountNames.get(row.original.counterpartAccountId ?? '') ?? 'another account'}
+            </Badge>
+          )}
         </span>
       ),
     },
@@ -438,9 +531,13 @@ function TransactionsTable({
       id: 'category',
       header: 'Category',
       // Exactly one Category or Uncategorized (ADR 0003); the quiet text for
-      // the latter keeps real labels visually distinct from the default.
+      // the latter keeps real labels visually distinct from the default. A
+      // Transfer leg carries no Category at all — it's never spending to
+      // analyze — so it shows a dash, not "Uncategorized".
       cell: ({ row }) =>
-        row.original.categoryId === null ? (
+        row.original.kind === 'transfer' ? (
+          <span className="text-xs text-muted-foreground">—</span>
+        ) : row.original.categoryId === null ? (
           <span className="text-xs text-muted-foreground">Uncategorized</span>
         ) : (
           <Badge>{categoryNames.get(row.original.categoryId) ?? 'Unknown category'}</Badge>
@@ -701,6 +798,181 @@ function TransactionFormDialog({
               <form.AppForm>
                 <form.SubmitButton>
                   {entry === null ? 'Log transaction' : 'Save changes'}
+                </form.SubmitButton>
+              </form.AppForm>
+            </DialogFooter>
+          </FieldGroup>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// The Transfer create/edit dialog (issue #12): one entity moving money
+// between two of the Household's own Accounts. Editing is handed either leg
+// and reads the whole pair off it; every save lands on both legs atomically
+// server-side. Mounted fresh per target like the Transaction dialog.
+function TransferFormDialog({
+  open,
+  entry,
+  accounts,
+  currency,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  open: boolean
+  entry: TransactionEntry | null
+  accounts: AccountEntry[]
+  currency: CurrencyCode
+  error: string | null
+  onSubmit: (fields: TransferFields) => Promise<void>
+  onClose: () => void
+}) {
+  const sides = entry === null ? { fromAccountId: '', toAccountId: '' } : transferSidesOf(entry)
+
+  // Open accounts only for new Transfers; when editing one that touches an
+  // archived Account, that Account stays choosable so the form round-trips
+  // without forcibly moving the money — the Transaction dialog's rule.
+  const accountOptions = accounts
+    .filter(
+      (account) =>
+        account.archivedAt === null ||
+        account.id === sides.fromAccountId ||
+        account.id === sides.toAccountId,
+    )
+    .map((account) => ({ value: account.id, label: account.name }))
+
+  const form = useAppForm({
+    defaultValues: {
+      fromAccountId: sides.fromAccountId,
+      toAccountId: sides.toAccountId,
+      amount: entry === null ? '' : fromMinorUnits(Math.abs(entry.amount), currency),
+      date: entry?.date ?? '',
+      description: entry?.description ?? '',
+    },
+    onSubmitInvalid: focusFirstInvalid,
+    onSubmit: async ({ value }) => {
+      await onSubmit({
+        fromAccountId: value.fromAccountId,
+        toAccountId: value.toAccountId,
+        // Unsigned decimal string → positive integer minor units (ADR 0006);
+        // the direction is from → to, and the server signs the legs.
+        amount: toMinorUnits(value.amount.trim(), currency),
+        date: value.date,
+        // Blank means the server's default label ("Transfer").
+        description: value.description.trim(),
+      })
+    },
+  })
+
+  const validAmount = (value: string) => {
+    try {
+      return toMinorUnits(value.trim(), currency) > 0
+    } catch {
+      return false
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{entry === null ? 'New transfer' : 'Edit transfer'}</DialogTitle>
+          <DialogDescription>
+            Moves money between two of your accounts — never counted as spending or income ·{' '}
+            {currency}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            void form.handleSubmit()
+          }}
+        >
+          <FieldGroup>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <form.AppField
+                name="fromAccountId"
+                validators={{
+                  onSubmit: ({ value }) => (value === '' ? 'Choose an account' : undefined),
+                }}
+              >
+                {(field) => (
+                  <field.ComboboxField
+                    label="From account"
+                    placeholder="Choose"
+                    searchPlaceholder="Search accounts…"
+                    emptyText="No account found."
+                    options={accountOptions}
+                  />
+                )}
+              </form.AppField>
+              <form.AppField
+                name="toAccountId"
+                validators={{
+                  onSubmit: ({ value, fieldApi }) =>
+                    value === ''
+                      ? 'Choose an account'
+                      : value === fieldApi.form.state.values.fromAccountId
+                        ? 'Pick a different account'
+                        : undefined,
+                }}
+              >
+                {(field) => (
+                  <field.ComboboxField
+                    label="To account"
+                    placeholder="Choose"
+                    searchPlaceholder="Search accounts…"
+                    emptyText="No account found."
+                    options={accountOptions}
+                  />
+                )}
+              </form.AppField>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <form.AppField
+                name="amount"
+                validators={{
+                  onSubmit: ({ value }) =>
+                    validAmount(value)
+                      ? undefined
+                      : `Enter a positive amount like ${transferAmountExample(currency)}`,
+                }}
+              >
+                {(field) => (
+                  <field.TextField
+                    label={`Amount (${currency})`}
+                    placeholder={transferAmountExample(currency)}
+                    inputMode="decimal"
+                  />
+                )}
+              </form.AppField>
+              <form.AppField
+                name="date"
+                validators={{
+                  onSubmit: ({ value }) => (value === '' ? 'Pick a date' : undefined),
+                }}
+              >
+                {(field) => <field.DatePickerField label="Date" />}
+              </form.AppField>
+            </div>
+            <form.AppField name="description">
+              {(field) => <field.TextField label="Description (optional)" placeholder="Transfer" />}
+            </form.AppField>
+            {error !== null && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <form.AppForm>
+                <form.SubmitButton>
+                  {entry === null ? 'Log transfer' : 'Save changes'}
                 </form.SubmitButton>
               </form.AppForm>
             </DialogFooter>
