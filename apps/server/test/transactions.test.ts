@@ -32,7 +32,19 @@ interface TransactionView {
   description: string
   kind: string
   categoryId: string | null
+  transferId: string | null
+  counterpartAccountId: string | null
   enteredBy: string | null
+  createdAt: string
+}
+
+interface TransferView {
+  id: string
+  fromAccountId: string
+  toAccountId: string
+  amount: number
+  date: string
+  description: string
   createdAt: string
 }
 
@@ -90,6 +102,39 @@ const listTransactions = (apiUrl: string, cookie: string, query = '') =>
   Test.executeWhenReady(
     HttpClientRequest.get(`${apiUrl}/api/transactions${query}`).pipe(withCookie(cookie)),
   )
+
+const readTransfer = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => (body as unknown as { transfer: TransferView }).transfer)
+
+const createTransfer = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/transfers`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    ),
+  )
+
+const patchTransferRequest = (
+  apiUrl: string,
+  cookie: string,
+  id: string,
+  body: Record<string, unknown>,
+) =>
+  HttpClientRequest.patch(`${apiUrl}/api/transfers/${id}`).pipe(
+    trustedOrigin,
+    withCookie(cookie),
+    HttpClientRequest.bodyJsonUnsafe(body),
+  )
+
+const patchTransfer = (apiUrl: string, cookie: string, id: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(patchTransferRequest(apiUrl, cookie, id, body))
+
+const deleteTransferRequest = (apiUrl: string, cookie: string, id: string) =>
+  HttpClientRequest.delete(`${apiUrl}/api/transfers/${id}`).pipe(trustedOrigin, withCookie(cookie))
+
+const deleteTransfer = (apiUrl: string, cookie: string, id: string) =>
+  Test.executeWhenReady(deleteTransferRequest(apiUrl, cookie, id))
 
 const readCategory = (response: HttpClientResponse) =>
   Effect.map(response.json, (body) => (body as unknown as { category: CategoryView }).category)
@@ -468,7 +513,9 @@ test.provider(
         balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
       ).toBe(70000)
 
-      // Unknown kinds and views are rejected, never silently coerced.
+      // Unknown kinds and views are rejected, never silently coerced — and
+      // the transfer kind, while known, is never writable here: a lone leg
+      // can only exist through /api/transfers (issue #12).
       expect(
         (yield* createTransaction(apiUrl, owner.cookie, {
           accountId: checking.id,
@@ -746,6 +793,256 @@ test.provider(
       expect(
         yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie, '?q=dinner')),
       ).toEqual([])
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'Transfers: one entity, two legs — atomic writes, both Balances, excluded from views (issue #12)',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+
+      // Transfers are Household data: no session, no access.
+      const anonymous = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/transfers`).pipe(
+          trustedOrigin,
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ),
+      )
+      expect(anonymous.status).toBe(401)
+
+      const owner = yield* signUpOwner(apiUrl, 'transfer-owner@example.com')
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 100000,
+        }),
+      )
+      const savings = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Savings',
+          type: 'savings',
+          openingBalance: 0,
+        }),
+      )
+      const vault = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Vault',
+          type: 'savings',
+          openingBalance: 5000,
+        }),
+      )
+
+      // Standard rows in both directions, so the derived views below are
+      // non-empty — proving legs are excluded, not that the views are empty.
+      const groceries = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-04-01',
+          amount: -2000,
+          description: 'Groceries',
+        }),
+      )
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-04-02',
+          amount: 50000,
+          description: 'Salary',
+        })).status,
+      ).toBe(200)
+
+      // Create: from-Account, to-Account, positive amount, calendar date —
+      // one entity, two linked legs.
+      const created = yield* createTransfer(apiUrl, owner.cookie, {
+        fromAccountId: checking.id,
+        toAccountId: savings.id,
+        amount: 25000,
+        date: '2026-04-03',
+        description: 'Monthly savings',
+      })
+      expect(created.status).toBe(200)
+      const moved = yield* readTransfer(created)
+      expect(moved.fromAccountId).toBe(checking.id)
+      expect(moved.toAccountId).toBe(savings.id)
+      expect(moved.amount).toBe(25000)
+      expect(moved.date).toBe('2026-04-03')
+      expect(moved.description).toBe('Monthly savings')
+
+      // Both legs render as Transfers in the ledger: kind names the flavor,
+      // transferId links the pair, and each leg knows its counterpart.
+      const all = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      const legs = all.filter((entry) => entry.transferId === moved.id)
+      expect(legs).toHaveLength(2)
+      const outflow = legs.find((entry) => entry.amount < 0)
+      const inflow = legs.find((entry) => entry.amount > 0)
+      expect(outflow?.kind).toBe('transfer')
+      expect(outflow?.accountId).toBe(checking.id)
+      expect(outflow?.amount).toBe(-25000)
+      expect(outflow?.counterpartAccountId).toBe(savings.id)
+      expect(inflow?.kind).toBe('transfer')
+      expect(inflow?.accountId).toBe(savings.id)
+      expect(inflow?.amount).toBe(25000)
+      expect(inflow?.counterpartAccountId).toBe(checking.id)
+      expect(legs.every((entry) => entry.date === '2026-04-03')).toBe(true)
+      expect(legs.every((entry) => entry.description === 'Monthly savings')).toBe(true)
+      // A standard row is linked to no Transfer.
+      expect(all.find((entry) => entry.id === groceries.id)?.transferId).toBeNull()
+
+      // Both Balances reflect the Transfer (ADR 0001):
+      // checking 100000 - 2000 + 50000 - 25000; savings 0 + 25000.
+      const afterCreate = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
+      expect(balanceOf(afterCreate, checking.id)).toBe(123000)
+      expect(balanceOf(afterCreate, savings.id)).toBe(25000)
+
+      // Excluded from Expense and Income by definition: paying yourself is
+      // never spending or earning.
+      expect(
+        (yield* readTransactions(
+          yield* listTransactions(apiUrl, owner.cookie, '?view=expense'),
+        )).map((entry) => entry.description),
+      ).toEqual(['Groceries'])
+      expect(
+        (yield* readTransactions(
+          yield* listTransactions(apiUrl, owner.cookie, '?view=income'),
+        )).map((entry) => entry.description),
+      ).toEqual(['Salary'])
+
+      // Legs are not independently editable: every mutation goes through the
+      // Transfer, so the pair can never drift.
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, outflow?.id ?? '', { amount: -1 })).status,
+      ).toBe(400)
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, inflow?.id ?? '', {
+          description: 'sneaky',
+        })).status,
+      ).toBe(400)
+      expect((yield* deleteTransaction(apiUrl, owner.cookie, outflow?.id ?? '')).status).toBe(400)
+      // And a lone leg can't be created or converted on /api/transactions.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-04-04',
+          amount: -100,
+          description: 'Lone leg',
+          kind: 'transfer',
+        })).status,
+      ).toBe(400)
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, groceries.id, { kind: 'transfer' })).status,
+      ).toBe(400)
+
+      // Edit applies to both legs atomically: amount and date stay mirrored.
+      const repriced = yield* patchTransfer(apiUrl, owner.cookie, moved.id, {
+        amount: 30000,
+        date: '2026-04-05',
+      })
+      expect(repriced.status).toBe(200)
+      const repricedView = yield* readTransfer(repriced)
+      expect(repricedView.amount).toBe(30000)
+      expect(repricedView.date).toBe('2026-04-05')
+      const repricedLegs = (yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie),
+      )).filter((entry) => entry.transferId === moved.id)
+      expect(repricedLegs.map((entry) => entry.amount).sort((a, b) => a - b)).toEqual([
+        -30000, 30000,
+      ])
+      expect(repricedLegs.every((entry) => entry.date === '2026-04-05')).toBe(true)
+      const afterReprice = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
+      expect(balanceOf(afterReprice, checking.id)).toBe(118000)
+      expect(balanceOf(afterReprice, savings.id)).toBe(30000)
+
+      // Re-routing the destination moves the inflow leg's Account; the
+      // description follows both legs.
+      const rerouted = yield* patchTransfer(apiUrl, owner.cookie, moved.id, {
+        toAccountId: vault.id,
+        description: 'Vault stash',
+      })
+      expect(rerouted.status).toBe(200)
+      const reroutedView = yield* readTransfer(rerouted)
+      expect(reroutedView.fromAccountId).toBe(checking.id)
+      expect(reroutedView.toAccountId).toBe(vault.id)
+      const reroutedLegs = (yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie),
+      )).filter((entry) => entry.transferId === moved.id)
+      expect(reroutedLegs.every((entry) => entry.description === 'Vault stash')).toBe(true)
+      const afterReroute = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
+      expect(balanceOf(afterReroute, checking.id)).toBe(118000)
+      expect(balanceOf(afterReroute, savings.id)).toBe(0)
+      expect(balanceOf(afterReroute, vault.id)).toBe(35000)
+
+      // Validation: a Transfer needs two distinct Accounts of this Household
+      // and a positive integer amount — direction is structural, never a sign.
+      const valid = {
+        fromAccountId: checking.id,
+        toAccountId: savings.id,
+        amount: 100,
+        date: '2026-04-06',
+      }
+      const invalid: Record<string, unknown>[] = [
+        { ...valid, toAccountId: checking.id },
+        { ...valid, amount: 0 },
+        { ...valid, amount: -100 },
+        { ...valid, amount: 10.5 },
+        { ...valid, fromAccountId: 'missing' },
+        { ...valid, toAccountId: 'missing' },
+        { ...valid, date: '2026-4-6' },
+      ]
+      for (const body of invalid) {
+        expect((yield* createTransfer(apiUrl, owner.cookie, body)).status).toBe(400)
+      }
+      const { date: _date, ...noDate } = valid
+      expect((yield* createTransfer(apiUrl, owner.cookie, noDate)).status).toBe(400)
+      // PATCH validates the merged result: collapsing from and to onto the
+      // same Account is rejected, as is a body with nothing editable.
+      expect(
+        (yield* patchTransfer(apiUrl, owner.cookie, moved.id, { fromAccountId: vault.id })).status,
+      ).toBe(400)
+      expect((yield* patchTransfer(apiUrl, owner.cookie, moved.id, {})).status).toBe(400)
+      expect((yield* patchTransfer(apiUrl, owner.cookie, moved.id, { amount: 0 })).status).toBe(400)
+
+      // Unknown Transfers 404 — and a leg id is not a Transfer id.
+      expect(
+        (yield* executeWarm(patchTransferRequest(apiUrl, owner.cookie, 'missing', { amount: 1 })))
+          .status,
+      ).toBe(404)
+      expect(
+        (yield* executeWarm(deleteTransferRequest(apiUrl, owner.cookie, 'missing'))).status,
+      ).toBe(404)
+      expect(
+        (yield* executeWarm(deleteTransferRequest(apiUrl, owner.cookie, outflow?.id ?? ''))).status,
+      ).toBe(404)
+
+      // Delete removes both legs atomically; both Balances return.
+      expect((yield* deleteTransfer(apiUrl, owner.cookie, moved.id)).status).toBe(200)
+      const afterDelete = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
+      expect(balanceOf(afterDelete, checking.id)).toBe(148000)
+      expect(balanceOf(afterDelete, savings.id)).toBe(0)
+      expect(balanceOf(afterDelete, vault.id)).toBe(5000)
+      expect(
+        (yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))).filter(
+          (entry) => entry.transferId === moved.id,
+        ),
+      ).toEqual([])
+
+      // Description is optional: an unnamed Transfer still reads as one.
+      const unnamed = yield* readTransfer(
+        yield* createTransfer(apiUrl, owner.cookie, {
+          fromAccountId: checking.id,
+          toAccountId: savings.id,
+          amount: 1000,
+          date: '2026-04-07',
+        }),
+      )
+      expect(unnamed.description).toBe('Transfer')
+      expect(
+        (yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie)))
+          .filter((entry) => entry.transferId === unnamed.id)
+          .every((entry) => entry.description === 'Transfer'),
+      ).toBe(true)
     }),
   { timeout: 600_000 },
 )

@@ -118,6 +118,18 @@ export const account = sqliteTable('account', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
+// A Transfer is a single entity linking an outflow Transaction on one
+// Account to an inflow Transaction on another (CONTEXT.md; issue #12). The
+// row itself is nearly bare — amount, date and description live on the legs,
+// kept in perfect mirror because every write goes through the pair — but it
+// is what the legs' transferId points at, so deleting it removes both legs
+// in one atomic statement (cascade). Its Household is its legs' Accounts',
+// enforced at write time like every Transaction's tenancy.
+export const transfer = sqliteTable('transfer', {
+  id: text('id').primaryKey(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
 // A Transaction is the atom of the ledger (CONTEXT.md; issue #8): a signed
 // movement of money on exactly one Account. Its Household is the Account's —
 // no denormalized householdId, so a Transaction can never disagree with its
@@ -144,6 +156,10 @@ export const transaction = sqliteTable('transaction', {
   // Category's Household is its own, a Transaction's is its Account's), so
   // the API checks the Category belongs to the caller's Household on write.
   categoryId: text('category_id').references(() => category.id, { onDelete: 'set null' }),
+  // The Transfer this row is a leg of, or NULL for every other kind (issue
+  // #12). Legs exist only in linked pairs written through /api/transfers,
+  // and the cascade removes both when their Transfer is deleted.
+  transferId: text('transfer_id').references(() => transfer.id, { onDelete: 'cascade' }),
   // The Member who entered it, kept for attribution; set null if that User
   // is removed so the ledger row survives (a User holds no financial data).
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),

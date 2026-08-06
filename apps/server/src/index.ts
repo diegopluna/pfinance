@@ -7,6 +7,7 @@ import {
   member,
   meta,
   transaction,
+  transfer,
   user,
 } from '@pfinance/db'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
@@ -50,6 +51,7 @@ import {
   parseTransactionPatch,
   transactionView,
 } from './transactions.ts'
+import { findTransfer, parseNewTransfer, parseTransferPatch, transferView } from './transfers.ts'
 
 type SessionUser = { id: string; email: string; name: string }
 
@@ -297,6 +299,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const row = {
         id: crypto.randomUUID(),
         ...fields,
+        // Never a Transfer leg: those are created only through /api/transfers.
+        transferId: null,
         createdBy: c.var.user.id,
         createdAt: new Date(),
       }
@@ -315,6 +319,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
       if (existing === undefined) {
         return c.json({ error: 'Transaction not found.' }, 404)
+      }
+      // A Transfer leg is not independently editable (issue #12): the pair
+      // can never drift, so every change goes through /api/transfers.
+      if (existing.transferId !== null) {
+        return c.json({ error: 'Transfer legs are edited through their transfer.' }, 400)
       }
       const patch = c.req.valid('json')
       if (
@@ -346,7 +355,124 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     if (existing === undefined) {
       return c.json({ error: 'Transaction not found.' }, 404)
     }
+    // Deleting one leg would leave half a Transfer (issue #12): both legs go
+    // together through DELETE /api/transfers/:id.
+    if (existing.transferId !== null) {
+      return c.json({ error: 'Transfer legs are deleted through their transfer.' }, 400)
+    }
     await db.delete(transaction).where(eq(transaction.id, existing.id))
+    return c.json({ ok: true })
+  })
+  // --- Transfers (issue #12) — member-level like the rest of the ledger. A
+  // Transfer is one entity whose two legs can never drift: every write lands
+  // on both legs in one atomic D1 batch (the auth.ts pattern), and delete
+  // cascades from the transfer row itself. Legs are read through
+  // /api/transactions like any Transaction and excluded from the
+  // Expense/Income views by kind (transactions.ts).
+  .post(
+    '/api/transfers',
+    validator('json', (value, c) => {
+      const parsed = parseNewTransfer(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const fields = c.req.valid('json')
+      for (const accountId of [fields.fromAccountId, fields.toAccountId]) {
+        if (!(await accountInHousehold(db, c.var.membership.householdId, accountId))) {
+          return c.json({ error: 'Unknown account.' }, 400)
+        }
+      }
+      const id = crypto.randomUUID()
+      const shared = {
+        date: fields.date,
+        description: fields.description,
+        kind: 'transfer' as const,
+        categoryId: null,
+        transferId: id,
+        createdBy: c.var.user.id,
+        createdAt: new Date(),
+      }
+      const outflow = {
+        id: crypto.randomUUID(),
+        accountId: fields.fromAccountId,
+        amount: -fields.amount,
+        ...shared,
+      }
+      const inflow = {
+        id: crypto.randomUUID(),
+        accountId: fields.toAccountId,
+        amount: fields.amount,
+        ...shared,
+      }
+      // One atomic D1 transaction: the entity and both legs land together or
+      // not at all.
+      await db.batch([
+        db.insert(transfer).values({ id, createdAt: shared.createdAt }),
+        db.insert(transaction).values([outflow, inflow]),
+      ])
+      return c.json({ transfer: transferView(id, outflow, inflow) })
+    },
+  )
+  .patch(
+    '/api/transfers/:id',
+    validator('json', (value, c) => {
+      const parsed = parseTransferPatch(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      const found = await findTransfer(db, householdId, c.req.param('id'))
+      if (found === undefined) {
+        return c.json({ error: 'Transfer not found.' }, 404)
+      }
+      const patch = c.req.valid('json')
+      // The two-different-accounts rule holds on the merged result: a patch
+      // naming only one side can still collapse the pair onto one Account.
+      const fromAccountId = patch.fromAccountId ?? found.outflow.accountId
+      const toAccountId = patch.toAccountId ?? found.inflow.accountId
+      if (fromAccountId === toAccountId) {
+        return c.json({ error: 'A transfer needs two different accounts.' }, 400)
+      }
+      for (const accountId of [patch.fromAccountId, patch.toAccountId]) {
+        if (accountId !== undefined && !(await accountInHousehold(db, householdId, accountId))) {
+          return c.json({ error: 'Unknown account.' }, 400)
+        }
+      }
+      const amount = patch.amount ?? found.inflow.amount
+      const date = patch.date ?? found.inflow.date
+      const description = patch.description ?? found.inflow.description
+      // Both legs are rewritten in one atomic batch, mirrored by
+      // construction: same date and description, opposite signs.
+      await db.batch([
+        db
+          .update(transaction)
+          .set({ accountId: fromAccountId, amount: -amount, date, description })
+          .where(eq(transaction.id, found.outflow.id)),
+        db
+          .update(transaction)
+          .set({ accountId: toAccountId, amount, date, description })
+          .where(eq(transaction.id, found.inflow.id)),
+      ])
+      return c.json({
+        transfer: transferView(
+          c.req.param('id'),
+          { accountId: fromAccountId },
+          { accountId: toAccountId, amount, date, description, createdAt: found.inflow.createdAt },
+        ),
+      })
+    },
+  )
+  .delete('/api/transfers/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const found = await findTransfer(db, c.var.membership.householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Transfer not found.' }, 404)
+    }
+    // The legs' transferId cascades: one DELETE removes the entity and both
+    // legs atomically.
+    await db.delete(transfer).where(eq(transfer.id, c.req.param('id')))
     return c.json({ ok: true })
   })
   // --- Categories (issue #10, ADR 0003) — member-level like the rest of the

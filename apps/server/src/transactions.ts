@@ -7,7 +7,8 @@ import {
   type Db,
   type TransactionKind,
 } from '@pfinance/db'
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { Parsed } from './parsed.ts'
 
 // Parsing and shaping for the /api/transactions surface (issue #8). A
@@ -31,7 +32,7 @@ export interface TransactionFields {
 // touch it.
 const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
-const isCalendarDate = (value: unknown): value is string => {
+export const isCalendarDate = (value: unknown): value is string => {
   if (typeof value !== 'string') return false
   const match = CALENDAR_DATE.exec(value)
   if (match === null) return false
@@ -44,7 +45,7 @@ const isCalendarDate = (value: unknown): value is string => {
   return day <= (daysInMonth[month - 1] ?? 0)
 }
 
-const parseDescription = (value: unknown): string | undefined => {
+export const parseDescription = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed === '' ? undefined : trimmed
@@ -79,8 +80,13 @@ export const parseNewTransaction = (body: unknown): Parsed<TransactionFields> =>
   const description = parseDescription(record.description)
   if (description === undefined) return { ok: false, error: 'A transaction needs a description.' }
   // Absent means standard — the ordinary ledger entry; anything sent must
-  // name a known kind (transaction-kinds.ts), never be silently coerced.
+  // name a known kind (transaction-kinds.ts), never be silently coerced. The
+  // transfer kind is known but never writable here: a lone leg can only
+  // exist through /api/transfers (issue #12).
   const kind = record.kind === undefined ? 'standard' : record.kind
+  if (kind === 'transfer') {
+    return { ok: false, error: 'Transfer legs are created through /api/transfers.' }
+  }
   if (!isTransactionKind(kind)) return { ok: false, error: 'Unknown transaction kind.' }
   const categoryId = parseCategoryId(record.categoryId)
   if (categoryId === undefined) {
@@ -124,7 +130,11 @@ export const parseTransactionPatch = (body: unknown): Parsed<Partial<Transaction
     patch.description = description
   }
   if ('kind' in record) {
-    // No undefined-means-default here: a kind that is sent must be valid.
+    // No undefined-means-default here: a kind that is sent must be valid —
+    // and a row can't become a lone Transfer leg (issue #12).
+    if (record.kind === 'transfer') {
+      return { ok: false, error: 'A transaction cannot become a transfer leg; use /api/transfers.' }
+    }
     if (!isTransactionKind(record.kind)) {
       return { ok: false, error: 'Unknown transaction kind.' }
     }
@@ -164,9 +174,9 @@ export interface TransactionFilters {
 }
 
 // Expense and Income are derived views, not stored kinds (CONTEXT.md): the
-// sign carries the direction, and Balance Adjustments are excluded by
-// definition (issue #9). Transfer legs will join the exclusion with issue
-// #12. Issue #19's aggregates must reuse this predicate.
+// sign carries the direction, and only the standard kind is spending or
+// earning — Balance Adjustments (issue #9) and Transfer legs (issue #12) are
+// excluded by definition. Issue #19's aggregates must reuse this predicate.
 export const DERIVED_VIEW_VALUES = ['expense', 'income'] as const
 
 export type DerivedView = (typeof DERIVED_VIEW_VALUES)[number]
@@ -252,9 +262,24 @@ export const transactionView = (
   description: row.description,
   kind: row.kind,
   categoryId: row.categoryId,
+  transferId: row.transferId,
+  // The other leg's Account when this row is a Transfer leg (issue #12) —
+  // the client renders and edits the whole Transfer from either leg. This
+  // mapper serves POST /api/transactions, which never creates legs.
+  counterpartAccountId: null as string | null,
   enteredBy,
   createdAt: row.createdAt,
 })
+
+// The sibling alias joins each Transfer leg to its other half; rows with no
+// transferId match nothing (NULL never equals NULL), so counterpart stays
+// null for everything but legs.
+const siblingLeg = alias(transaction, 'sibling_leg')
+
+const siblingLegJoin = and(
+  eq(siblingLeg.transferId, transaction.transferId),
+  ne(siblingLeg.id, transaction.id),
+)
 
 const transactionSelection = {
   id: transaction.id,
@@ -264,6 +289,8 @@ const transactionSelection = {
   description: transaction.description,
   kind: transaction.kind,
   categoryId: transaction.categoryId,
+  transferId: transaction.transferId,
+  counterpartAccountId: siblingLeg.accountId,
   enteredBy: user.name,
   createdAt: transaction.createdAt,
 } satisfies Record<keyof ReturnType<typeof transactionView>, unknown>
@@ -281,6 +308,7 @@ export const listTransactions = (db: Db, householdId: string, filters: Transacti
     .from(transaction)
     .innerJoin(account, eq(account.id, transaction.accountId))
     .leftJoin(user, eq(user.id, transaction.createdBy))
+    .leftJoin(siblingLeg, siblingLegJoin)
     .where(
       and(
         eq(account.householdId, householdId),
@@ -310,6 +338,7 @@ export const findTransaction = async (db: Db, householdId: string, id: string) =
     .from(transaction)
     .innerJoin(account, eq(account.id, transaction.accountId))
     .leftJoin(user, eq(user.id, transaction.createdBy))
+    .leftJoin(siblingLeg, siblingLegJoin)
     .where(and(eq(transaction.id, id), eq(account.householdId, householdId)))
     .limit(1)
   return row
