@@ -263,6 +263,8 @@ export const transactionView = (
   kind: row.kind,
   categoryId: row.categoryId,
   transferId: row.transferId,
+  // The Import this row came from (issue #13), or null for manual entries.
+  importId: row.importId,
   // The other leg's Account when this row is a Transfer leg (issue #12) —
   // the client renders and edits the whole Transfer from either leg. This
   // mapper serves POST /api/transactions, which never creates legs.
@@ -290,6 +292,7 @@ const transactionSelection = {
   kind: transaction.kind,
   categoryId: transaction.categoryId,
   transferId: transaction.transferId,
+  importId: transaction.importId,
   counterpartAccountId: siblingLeg.accountId,
   enteredBy: user.name,
   createdAt: transaction.createdAt,
