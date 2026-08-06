@@ -6,7 +6,7 @@
   "scripts": {
     "ready": "vp check && vp run -r test && vp run -r build",
     "dev": "alchemy dev",
-    "deploy": "alchemy deploy stacks/github.ts --profile admin --yes",
+    "deploy": "alchemy deploy stacks/github.ts --yes",
     "prepare": "vp config"
   },
   "dependencies": {
