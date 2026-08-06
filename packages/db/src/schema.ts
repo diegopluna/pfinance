@@ -190,10 +190,13 @@ export const csvImport = sqliteTable('import', {
   mapping: text('mapping'),
   // Data rows in the file (header excluded), counted once at upload.
   rowCount: integer('row_count').notNull(),
-  // Set at confirm: rows that became Transactions, and malformed rows that
-  // were surfaced in the preview and skipped. NULL while pending.
+  // Set at confirm: rows that became Transactions, malformed rows that were
+  // surfaced in the preview and skipped, and duplicate rows that matched an
+  // existing Transaction and were skipped without an override (issue #14).
+  // NULL while pending.
   createdCount: integer('created_count'),
   malformedCount: integer('malformed_count'),
+  duplicateCount: integer('duplicate_count'),
   // The Member who uploaded it; set null if that User is removed (a User
   // holds no financial data).
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
