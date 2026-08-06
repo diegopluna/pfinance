@@ -36,6 +36,9 @@ jobs:
           cache: true
       - run: vp install
       - run: vp check
+      - name: Docs build
+        run: vp run build
+        working-directory: apps/docs
       - name: Integration tests
         run: vp test
         env:
