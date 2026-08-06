@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import type { InferResponseType } from 'hono/client'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
@@ -7,6 +6,7 @@ import { Badge } from '@pfinance/ui/components/badge'
 import { buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
+import { useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/')({
@@ -23,25 +23,17 @@ type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accoun
 // /api/accounts surface the Accounts screen manages — Balances arrive
 // server-derived (ADR 0001), active Accounts only.
 function Dashboard() {
-  const { data: me } = useMe()
+  const meQuery = useMe()
+  const me = meQuery.data
+  const accountsQuery = useAccounts(false)
 
-  // Every amount renders in the Household Currency (ADR 0002). The USD
-  // fallback only covers the frame before /api/me resolves.
-  const currency: CurrencyCode =
-    me !== undefined && isSupportedCurrency(me.household.currency) ? me.household.currency : 'USD'
-
-  // Same key as the Accounts screen's active-only list, so the two share one
-  // cache entry and a mutation there refreshes the dashboard too.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts', false],
-    queryFn: async () => {
-      const response = await api.api.accounts.$get({ query: { includeArchived: 'false' } })
-      if (!response.ok) {
-        throw new Error('Failed to load accounts')
-      }
-      return response.json()
-    },
-  })
+  // Every amount renders in the Household Currency (ADR 0002), so no
+  // Balance is shown before /api/me resolves — a fallback currency would
+  // flash wrongly-formatted amounts when the accounts query wins the race.
+  const currency: CurrencyCode | undefined =
+    me !== undefined && isSupportedCurrency(me.household.currency)
+      ? me.household.currency
+      : undefined
 
   const accounts = accountsQuery.data?.accounts ?? []
 
@@ -60,13 +52,13 @@ function Dashboard() {
         <h2 id="balances-heading" className="text-sm font-semibold tracking-tight">
           Balances
         </h2>
-        {accountsQuery.isPending ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading…
-          </p>
-        ) : accountsQuery.isError ? (
+        {accountsQuery.isError || meQuery.isError ? (
           <p role="alert" className="text-sm text-destructive">
             Couldn&apos;t load accounts.
+          </p>
+        ) : accountsQuery.isPending || currency === undefined ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading…
           </p>
         ) : accounts.length === 0 ? (
           <div className="flex flex-col items-start gap-1">
