@@ -41,9 +41,8 @@ import {
   pendingInviteFilter,
 } from './invites.ts'
 import {
-  existingDuplicateKeys,
   findImport,
-  flagDuplicates,
+  flaggedPreviewRows,
   householdCurrency,
   IMPORT_INSERT_CHUNK,
   IMPORT_MAX_ROWS,
@@ -54,7 +53,6 @@ import {
   parseImportConfirm,
   parseImportMapping,
   parseNewImport,
-  previewRows,
   type ImportMapping,
 } from './imports.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
@@ -589,11 +587,16 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       }
       const stored = JSON.stringify(mapping)
       await db.update(csvImport).set({ mapping: stored }).where(eq(csvImport.id, found.id))
-      const rows = previewRows(data, mapping, await householdCurrency(db, householdId))
       return c.json({
         import: importView({ ...found, mapping: stored }),
         columns: header?.cells ?? [],
-        rows: flagDuplicates(rows, await existingDuplicateKeys(db, found.accountId, rows)),
+        rows: await flaggedPreviewRows(
+          db,
+          found.accountId,
+          data,
+          mapping,
+          await householdCurrency(db, householdId),
+        ),
       })
     },
   )
@@ -624,8 +627,13 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const [, ...data] = parseCsv(found.csv)
       // Duplicates are re-checked against the ledger now, not trusted from the
       // preview: whatever landed since can never be double-counted.
-      const parsed = previewRows(data, mapping, await householdCurrency(db, householdId))
-      const rows = flagDuplicates(parsed, await existingDuplicateKeys(db, found.accountId, parsed))
+      const rows = await flaggedPreviewRows(
+        db,
+        found.accountId,
+        data,
+        mapping,
+        await householdCurrency(db, householdId),
+      )
       const valid = rows.flatMap((row) =>
         row.parsed === null
           ? []

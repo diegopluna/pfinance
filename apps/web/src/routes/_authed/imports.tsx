@@ -543,6 +543,8 @@ function MappingCard({
                 <TableBody>
                   {rows.map((row) => {
                     const skipped = row.duplicate && !overrides.has(row.line)
+                    // Skipped duplicates stay readable but visibly dimmed.
+                    const dimmed = skipped ? ' opacity-50' : ''
                     return (
                       <TableRow key={row.line}>
                         <TableCell className="text-xs text-muted-foreground tabular-nums">
@@ -557,17 +559,17 @@ function MappingCard({
                         ) : (
                           <>
                             <TableCell
-                              className={`text-xs text-muted-foreground tabular-nums${skipped ? ' opacity-50' : ''}`}
+                              className={`text-xs text-muted-foreground tabular-nums${dimmed}`}
                             >
                               {formatCalendarDate(row.parsed.date)}
                             </TableCell>
-                            <TableCell className={skipped ? 'opacity-50' : undefined}>
+                            <TableCell className={dimmed.trim()}>
                               <span className="block max-w-96 truncate text-sm">
                                 {row.parsed.description}
                               </span>
                             </TableCell>
                             <TableCell
-                              className={`text-right text-sm font-medium tabular-nums${skipped ? ' opacity-50' : ''}`}
+                              className={`text-right text-sm font-medium tabular-nums${dimmed}`}
                             >
                               {formatAmount(row.parsed.amount, currency)}
                             </TableCell>

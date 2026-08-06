@@ -406,10 +406,9 @@ export const IMPORT_INSERT_CHUNK = 8
 /**
  * The duplicateKeys already on the Account, for flagging preview rows
  * (issue #14). Bounded by the parsed rows' date range — ISO dates compare
- * lexicographically, and a bank export covers a contiguous window, so the
- * query never scans the whole ledger.
+ * lexicographically — which limits the scan to the export's window.
  */
-export const existingDuplicateKeys = async (
+const existingDuplicateKeys = async (
   db: Db,
   accountId: string,
   rows: PreviewRow[],
@@ -438,6 +437,22 @@ export const existingDuplicateKeys = async (
       ),
     )
   return new Set(existing.map(duplicateKey))
+}
+
+/**
+ * Parse + duplicate-flag in one step. Preview and confirm both run this
+ * pipeline over the same stored bytes, so a row's fate can never differ
+ * between what the preview showed and what confirm skips or creates.
+ */
+export const flaggedPreviewRows = async (
+  db: Db,
+  accountId: string,
+  records: CsvRecord[],
+  mapping: ImportMapping,
+  currency: CurrencyCode,
+): Promise<PreviewRow[]> => {
+  const rows = previewRows(records, mapping, currency)
+  return flagDuplicates(rows, await existingDuplicateKeys(db, accountId, rows))
 }
 
 // Amount cells parse in the Household's Currency (ADR 0002). The code is
