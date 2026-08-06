@@ -29,12 +29,13 @@ export const isCalendarMonth = (value: unknown): value is string =>
 // zone for "which month is it": ledger data itself carries no timezone.
 export const currentUtcMonth = () => new Date().toISOString().slice(0, 7)
 
-const nextMonth = (month: string): string => {
-  const year = Number(month.slice(0, 4))
-  const monthNumber = Number(month.slice(5, 7))
-  return monthNumber === 12
-    ? `${String(year + 1).padStart(4, '0')}-01`
-    : `${month.slice(0, 5)}${String(monthNumber + 1).padStart(2, '0')}`
+// Month arithmetic on YYYY-MM strings — shared with the income-expense
+// aggregate, so every chart steps months the same way.
+export const addMonths = (month: string, delta: number): string => {
+  const zeroBased = Number(month.slice(0, 4)) * 12 + (Number(month.slice(5, 7)) - 1) + delta
+  const year = Math.floor(zeroBased / 12)
+  const monthNumber = (zeroBased % 12) + 1
+  return `${String(year).padStart(4, '0')}-${String(monthNumber).padStart(2, '0')}`
 }
 
 // Safety valve, not pagination: a mistyped year (0206-01-05 is a valid
@@ -84,7 +85,7 @@ export const monthlyNetWorthSeries = async (
   // first month, so they seed the running sum.
   let netWorth = accounts.reduce((sum, row) => sum + row.openingBalance, 0)
   const points: NetWorthPoint[] = []
-  for (let month = start; month <= end; month = nextMonth(month)) {
+  for (let month = start; month <= end; month = addMonths(month, 1)) {
     netWorth += deltaByMonth.get(month) ?? 0
     points.push({ month, netWorth })
   }

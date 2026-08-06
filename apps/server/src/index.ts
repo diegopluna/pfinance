@@ -55,6 +55,7 @@ import {
   parseNewImport,
   type ImportMapping,
 } from './imports.ts'
+import { monthlyIncomeExpense } from './income-expense.ts'
 import { currentUtcMonth, isCalendarMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
@@ -859,6 +860,28 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const month = c.req.valid('query').month ?? currentUtcMonth()
       const slices = await spendingByCategory(db, c.var.membership.householdId, month)
       return c.json({ month, slices })
+    },
+  )
+  .get(
+    '/api/income-vs-expense',
+    // ?through=YYYY-MM sets the window's right edge — the tests use it to pin
+    // the totals without depending on today's date; the web app omits it and
+    // gets the current month. Malformed values are rejected, never silently
+    // defaulted.
+    validator('query', (value, c) => {
+      if (value.through === undefined || value.through === '') return { through: undefined }
+      if (!isCalendarMonth(value.through)) {
+        return c.json({ error: 'The through filter must be a calendar month like 2026-01.' }, 400)
+      }
+      return { through: value.through }
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      // The resolved edge echoes back so the client can label the default
+      // view without re-deriving "the current month" and risking a skew.
+      const through = c.req.valid('query').through ?? currentUtcMonth()
+      const months = await monthlyIncomeExpense(db, c.var.membership.householdId, through)
+      return c.json({ through, months })
     },
   )
   // --- Member & Invite management (issue #6) — owner-only, so the guard
