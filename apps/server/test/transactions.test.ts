@@ -6,6 +6,7 @@ import { expect } from 'vite-plus/test'
 import {
   cookieHeader,
   createAccount,
+  createTransaction,
   executeWarm,
   freshApiUrl,
   listAccounts,
@@ -64,15 +65,6 @@ const readTransactions = (response: HttpClientResponse) =>
   Effect.map(
     response.json,
     (body) => (body as unknown as { transactions: TransactionView[] }).transactions,
-  )
-
-const createTransaction = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
-  Test.executeWhenReady(
-    HttpClientRequest.post(`${apiUrl}/api/transactions`).pipe(
-      trustedOrigin,
-      withCookie(cookie),
-      HttpClientRequest.bodyJsonUnsafe(body),
-    ),
   )
 
 const patchRequest = (apiUrl: string, cookie: string, id: string, body: Record<string, unknown>) =>

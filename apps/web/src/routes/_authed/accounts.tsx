@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
 import {
@@ -25,6 +25,7 @@ import {
 import { FieldGroup } from '@pfinance/ui/components/field'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
+import { useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/accounts')({
@@ -78,18 +79,7 @@ function AccountsScreen() {
   const currency: CurrencyCode =
     me !== undefined && isSupportedCurrency(me.household.currency) ? me.household.currency : 'USD'
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts', showArchived],
-    queryFn: async () => {
-      const response = await api.api.accounts.$get({
-        query: { includeArchived: showArchived ? 'true' : 'false' },
-      })
-      if (!response.ok) {
-        throw new Error('Failed to load accounts')
-      }
-      return response.json()
-    },
-  })
+  const accountsQuery = useAccounts(showArchived)
 
   const saveAccount = useMutation({
     mutationFn: async ({ id, fields }: { id: string | null; fields: AccountFields }) => {
