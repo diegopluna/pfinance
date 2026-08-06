@@ -1,6 +1,7 @@
 import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
+import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import { expect } from 'vite-plus/test'
 import {
   cookieHeader,
@@ -321,6 +322,177 @@ test.provider(
         ['Old Savings', 26000, true],
         ['Visa', -80000, false],
       ])
+    }),
+  { timeout: 600_000 },
+)
+
+// --- Net Worth over time (issue #17) ---
+
+interface NetWorthPoint {
+  month: string
+  netWorth: number
+}
+
+const readSeries = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => (body as unknown as { series: NetWorthPoint[] }).series)
+
+const netWorthSeries = (apiUrl: string, cookie: string, query = '') =>
+  Test.executeWhenReady(
+    HttpClientRequest.get(`${apiUrl}/api/net-worth${query}`).pipe(withCookie(cookie)),
+  )
+
+// The chart's exact read, pinned against a known ledger. Liabilities
+// contribute negatively through the ledger's own sign convention: a credit
+// card in debt carries a negative Balance (see the dashboard test above), so
+// its months pull the series down — no kind-based sign flip anywhere.
+test.provider(
+  'Net worth series: monthly line from a known ledger, liabilities negative, boundaries exact',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+
+      // Household data: no session, no access.
+      const anonymous = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/net-worth`),
+      )
+      expect(anonymous.status).toBe(401)
+
+      const owner = yield* signUpOwner(apiUrl, 'net-worth-owner@example.com', {
+        householdName: 'Ledger House',
+        currency: 'BRL',
+      })
+
+      // No Accounts, no series — the dashboard shows its empty state instead.
+      expect(yield* readSeries(yield* netWorthSeries(apiUrl, owner.cookie))).toEqual([])
+
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 100000,
+        }),
+      )
+      const visa = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Visa',
+          type: 'credit_card',
+          openingBalance: -50000,
+        }),
+      )
+      const savings = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Old Savings',
+          type: 'savings',
+          openingBalance: 25000,
+        }),
+      )
+
+      // Accounts but an empty ledger: a single point at the requested month —
+      // the opening balances, the liability's negative one included:
+      // 100000 − 50000 + 25000 = 75000.
+      expect(
+        yield* readSeries(yield* netWorthSeries(apiUrl, owner.cookie, '?through=2026-03')),
+      ).toEqual([{ month: '2026-03', netWorth: 75000 }])
+
+      // The known ledger. The 2025-12-01 entry is the boundary case (issue #1
+      // story 48): dated the 1st, it must land in December — if it leaked
+      // into November, that month would read 222500 below. 2025-11-30 pins
+      // the other edge of the same boundary.
+      const ledger: Record<string, unknown>[] = [
+        { accountId: checking.id, date: '2025-11-30', amount: 150000, description: 'Salary' },
+        { accountId: checking.id, date: '2025-12-01', amount: -2500, description: 'Groceries' },
+        {
+          accountId: checking.id,
+          date: '2025-12-20',
+          amount: -500,
+          description: 'Fee drift',
+          // Adjustments move the Balance like any Transaction (ADR 0001), so
+          // they move Net Worth too — only Expense/Income views exclude them.
+          kind: 'balance_adjustment',
+        },
+        { accountId: savings.id, date: '2025-12-15', amount: 1000, description: 'Interest' },
+        { accountId: visa.id, date: '2026-02-10', amount: -30000, description: 'Flights' },
+      ]
+      for (const entry of ledger) {
+        expect((yield* createTransaction(apiUrl, owner.cookie, entry)).status).toBe(200)
+      }
+
+      // A Transfer moves money between the Household's own Accounts: its legs
+      // cancel inside the sum, so paying the card must not move Net Worth.
+      const transfer = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/transfers`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+          HttpClientRequest.bodyJsonUnsafe({
+            fromAccountId: checking.id,
+            toAccountId: visa.id,
+            amount: 40000,
+            date: '2026-02-14',
+            description: 'Card payoff',
+          }),
+        ),
+      )
+      expect(transfer.status).toBe(200)
+
+      // Archiving hides an Account from the dashboard cards, but its history
+      // stays in the series — Savings' opening 25000 and December interest
+      // remain in every number below.
+      expect((yield* archiveAccount(apiUrl, owner.cookie, savings.id, 'archive')).status).toBe(200)
+
+      // The exact series: openings 75000, then Nov +150000 → 225000,
+      // Dec −2500 −500 +1000 → 223000, Jan flat (a gap month still gets its
+      // point), Feb −30000 → 193000, Mar flat through the requested edge.
+      expect(
+        yield* readSeries(yield* netWorthSeries(apiUrl, owner.cookie, '?through=2026-03')),
+      ).toEqual([
+        { month: '2025-11', netWorth: 225000 },
+        { month: '2025-12', netWorth: 223000 },
+        { month: '2026-01', netWorth: 223000 },
+        { month: '2026-02', netWorth: 193000 },
+        { month: '2026-03', netWorth: 193000 },
+      ])
+
+      // A `through` inside the ledger's span never truncates the line: the
+      // ledger's own last month wins the right edge.
+      expect(
+        yield* readSeries(yield* netWorthSeries(apiUrl, owner.cookie, '?through=2025-11')),
+      ).toEqual([
+        { month: '2025-11', netWorth: 225000 },
+        { month: '2025-12', netWorth: 223000 },
+        { month: '2026-01', netWorth: 223000 },
+        { month: '2026-02', netWorth: 193000 },
+      ])
+
+      // Omitting `through` ends the series at the current month — the shape
+      // the dashboard reads. The tail is flat: no Transactions since February.
+      const defaultSeries = yield* readSeries(yield* netWorthSeries(apiUrl, owner.cookie))
+      expect(defaultSeries.at(-1)).toEqual({
+        month: new Date().toISOString().slice(0, 7),
+        netWorth: 193000,
+      })
+      expect(defaultSeries.at(0)).toEqual({ month: '2025-11', netWorth: 225000 })
+
+      // Malformed months are rejected, never silently defaulted.
+      const malformed = yield* netWorthSeries(apiUrl, owner.cookie, '?through=2026-13')
+      expect(malformed.status).toBe(400)
+
+      // The safety valve: a mistyped ancient year must not balloon the
+      // response. One stray 1500 entry spans 6315 months; only the most
+      // recent 1200 points survive, and the window's values still carry the
+      // old amount — the sum accumulates from the ledger's true start.
+      const mistyped = yield* createTransaction(apiUrl, owner.cookie, {
+        accountId: checking.id,
+        date: '1500-01-10',
+        amount: 1,
+        description: 'Mistyped year',
+      })
+      expect(mistyped.status).toBe(200)
+      const capped = yield* readSeries(
+        yield* netWorthSeries(apiUrl, owner.cookie, '?through=2026-03'),
+      )
+      expect(capped).toHaveLength(1200)
+      expect(capped.at(0)).toEqual({ month: '1926-04', netWorth: 75001 })
+      expect(capped.at(-1)).toEqual({ month: '2026-03', netWorth: 193001 })
     }),
   { timeout: 600_000 },
 )

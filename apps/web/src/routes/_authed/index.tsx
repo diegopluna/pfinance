@@ -6,8 +6,10 @@ import { Badge } from '@pfinance/ui/components/badge'
 import { buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
+import { NetWorthChart } from '@/components/net-worth-chart'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
+import { useNetWorth } from '@/hooks/use-net-worth'
 
 export const Route = createFileRoute('/_authed/')({
   component: Dashboard,
@@ -26,6 +28,7 @@ function Dashboard() {
   const meQuery = useMe()
   const me = meQuery.data
   const accountsQuery = useAccounts(false)
+  const netWorthQuery = useNetWorth()
 
   // Every amount renders in the Household Currency (ADR 0002), so no
   // Balance is shown before /api/me resolves — a fallback currency would
@@ -81,7 +84,58 @@ function Dashboard() {
           </div>
         )}
       </section>
+
+      <NetWorthSection query={netWorthQuery} currency={currency} />
     </div>
+  )
+}
+
+// The monthly Net Worth line (issue #17), server-derived like the Balances
+// above. The current value — the series' last point — rides the header as
+// text: the endpoint label the chart itself stays too quiet to carry.
+function NetWorthSection({
+  query,
+  currency,
+}: {
+  query: ReturnType<typeof useNetWorth>
+  currency: CurrencyCode | undefined
+}) {
+  const series = query.data?.series ?? []
+  const current = series.at(-1)
+  return (
+    <section aria-labelledby="net-worth-heading" className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 id="net-worth-heading" className="text-sm font-semibold tracking-tight">
+          Net worth
+        </h2>
+        {current !== undefined && currency !== undefined && (
+          <p className="text-sm font-semibold tracking-tight tabular-nums">
+            {formatAmount(current.netWorth, currency)}
+          </p>
+        )}
+      </div>
+      {query.isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t load net worth.
+        </p>
+      ) : query.isPending || currency === undefined ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
+      ) : series.length === 0 ? (
+        // No Accounts yet: the Balances section above already carries the
+        // call to action, so this stays a quiet one-liner.
+        <p className="max-w-prose text-sm text-muted-foreground">
+          The chart starts with the ledger — it appears once there are accounts.
+        </p>
+      ) : (
+        <Card size="sm">
+          <CardContent>
+            <NetWorthChart series={series} currency={currency} />
+          </CardContent>
+        </Card>
+      )}
+    </section>
   )
 }
 
