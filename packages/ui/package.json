@@ -20,6 +20,7 @@
     "date-fns": "catalog:",
     "lucide-react": "catalog:",
     "react-day-picker": "catalog:",
+    "recharts": "catalog:",
     "shadcn": "catalog:",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11",
