@@ -160,10 +160,45 @@ export const transaction = sqliteTable('transaction', {
   // #12). Legs exist only in linked pairs written through /api/transfers,
   // and the cascade removes both when their Transfer is deleted.
   transferId: text('transfer_id').references(() => transfer.id, { onDelete: 'cascade' }),
+  // The Import this row came from, or NULL for manually entered rows (issue
+  // #13). Deleting an Import deletes its Transactions (CONTEXT.md; the
+  // revert in issue #15 rides on this cascade).
+  importId: text('import_id').references(() => csvImport.id, { onDelete: 'cascade' }),
   // The Member who entered it, kept for attribution; set null if that User
   // is removed so the ledger row survives (a User holds no financial data).
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
+// An Import is a revertible batch of Transactions created from one CSV file
+// into exactly one Account (CONTEXT.md; issue #13): upload, map columns,
+// preview, confirm. The raw CSV and the chosen mapping persist so preview
+// and confirm re-parse the same bytes — what was previewed is what gets
+// created — and status is derived, never stored (the invite pattern):
+// pending until confirmedAt is set. Named csvImport because `import` is a
+// reserved word in JS; the SQL table keeps the domain name.
+export const csvImport = sqliteTable('import', {
+  id: text('id').primaryKey(),
+  accountId: text('account_id')
+    .notNull()
+    .references(() => account.id, { onDelete: 'cascade' }),
+  fileName: text('file_name').notNull(),
+  // The uploaded file verbatim; size-capped at the API (issue #13).
+  csv: text('csv').notNull(),
+  // JSON ImportMapping (apps/server imports module), or NULL until the map
+  // step first previews.
+  mapping: text('mapping'),
+  // Data rows in the file (header excluded), counted once at upload.
+  rowCount: integer('row_count').notNull(),
+  // Set at confirm: rows that became Transactions, and malformed rows that
+  // were surfaced in the preview and skipped. NULL while pending.
+  createdCount: integer('created_count'),
+  malformedCount: integer('malformed_count'),
+  // The Member who uploaded it; set null if that User is removed (a User
+  // holds no financial data).
+  createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  confirmedAt: integer('confirmed_at', { mode: 'timestamp' }),
 })
 
 // A Category is a household-owned label for spending/income analysis

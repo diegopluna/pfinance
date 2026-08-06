@@ -1,0 +1,354 @@
+import {
+  getCurrency,
+  isSupportedCurrency,
+  toMinorUnits,
+  type CurrencyCode,
+} from '@pfinance/currency'
+import { account, csvImport, household, type Db } from '@pfinance/db'
+import { and, asc, desc, eq } from 'drizzle-orm'
+import type { Parsed } from './parsed.ts'
+import { isCalendarDate } from './transactions.ts'
+
+// Parsing for the /api/imports surface (issue #13): CSV text → records,
+// cells → calendar dates and integer minor units (ADR 0006), records +
+// mapping → preview rows. Malformed rows are surfaced with their line and
+// offending cell, never silently dropped. Pure functions — the routes in
+// index.ts own the DB.
+
+export interface CsvRecord {
+  /** 1-based line the record starts on — truthful across quoted newlines. */
+  line: number
+  cells: string[]
+}
+
+// RFC 4180-ish: comma-separated, LF or CRLF, double quotes wrap cells that
+// contain commas, quotes ("" escapes one), or newlines. Blank lines are not
+// records, but the lines they occupy still count.
+export const parseCsv = (text: string): CsvRecord[] => {
+  const records: CsvRecord[] = []
+  let cells: string[] = []
+  let cell = ''
+  let inQuotes = false
+  let line = 1
+  let recordLine = 1
+  const endRecord = () => {
+    cells.push(cell)
+    cell = ''
+    if (cells.length > 1 || cells[0] !== '') {
+      records.push({ line: recordLine, cells })
+    }
+    cells = []
+  }
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (char === '\r' || char === '\n') {
+      if (char === '\r' && text[i + 1] === '\n') i++
+      if (inQuotes) {
+        cell += '\n'
+      } else {
+        endRecord()
+        recordLine = line + 1
+      }
+      line++
+    } else if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        cell += char
+      }
+    } else if (char === '"' && cell === '') {
+      inQuotes = true
+    } else if (char === ',') {
+      cells.push(cell)
+      cell = ''
+    } else {
+      cell += char
+    }
+  }
+  if (cell !== '' || cells.length > 0) endRecord()
+  return records
+}
+
+// The three date shapes banks export, named by part order; the separator may
+// be -, / or . in any of them. Two-digit years are rejected — guessing the
+// century would silently misdate a ledger.
+export const IMPORT_DATE_FORMAT_VALUES = ['ymd', 'dmy', 'mdy'] as const
+
+export type ImportDateFormat = (typeof IMPORT_DATE_FORMAT_VALUES)[number]
+
+export const isImportDateFormat = (value: unknown): value is ImportDateFormat =>
+  (IMPORT_DATE_FORMAT_VALUES as readonly unknown[]).includes(value)
+
+export const DATE_FORMAT_LABELS: Record<ImportDateFormat, string> = {
+  ymd: 'YYYY-MM-DD',
+  dmy: 'DD/MM/YYYY',
+  mdy: 'MM/DD/YYYY',
+}
+
+const DATE_PARTS = /^(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})$/
+
+/** Cell → ISO `YYYY-MM-DD`, or undefined when it isn't a real date in the format. */
+export const parseCsvDate = (cell: string, format: ImportDateFormat): string | undefined => {
+  const match = DATE_PARTS.exec(cell.trim())
+  if (match === null) return undefined
+  const [, first = '', second = '', third = ''] = match
+  const [year, month, day] =
+    format === 'ymd'
+      ? [first, second, third]
+      : format === 'dmy'
+        ? [third, second, first]
+        : [third, first, second]
+  if (year.length !== 4 || day.length > 2) return undefined
+  const date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  return isCalendarDate(date) ? date : undefined
+}
+
+// Integer-part digit grouping: bare digits, or 1–3 digits followed by
+// consistent groups of exactly 3 ("1.234.567", never "12,34").
+const groupedDigits = /^\d{1,3}(?:([.,])\d{3})(?:\1\d{3})*$/
+
+const stripGrouping = (part: string): string | undefined => {
+  if (/^\d+$/.test(part)) return part
+  return groupedDigits.test(part) ? part.replaceAll(/[.,]/g, '') : undefined
+}
+
+/**
+ * Bank-style amount cell → signed integer minor units, or undefined. Handles
+ * either separator convention (the last of `.`/`,` is the decimal one when
+ * both appear), space thousands, accounting parentheses, and a lone
+ * three-digit group read by the Currency's exponent. Precision beyond the
+ * Currency is rejected (toMinorUnits), never rounded.
+ */
+export const parseCsvAmount = (cell: string, currency: CurrencyCode): number | undefined => {
+  let text = cell.trim()
+  let sign = ''
+  if (text.startsWith('(') && text.endsWith(')')) {
+    sign = '-'
+    text = text.slice(1, -1).trim()
+  } else if (text.startsWith('-')) {
+    sign = '-'
+    text = text.slice(1).trim()
+  } else if (text.startsWith('+')) {
+    text = text.slice(1).trim()
+  }
+  // \s covers regular and no-break spaces — space-grouped thousands.
+  text = text.replaceAll(/\s/g, '')
+  if (text === '' || !/^[\d.,]+$/.test(text)) return undefined
+  const lastDot = text.lastIndexOf('.')
+  const lastComma = text.lastIndexOf(',')
+  let decimalAt = -1
+  if (lastDot !== -1 && lastComma !== -1) {
+    decimalAt = Math.max(lastDot, lastComma)
+  } else if (lastDot !== -1 || lastComma !== -1) {
+    const at = Math.max(lastDot, lastComma)
+    const separator = text[at]
+    const single = text.indexOf(separator ?? '') === at
+    const digitsAfter = text.length - at - 1
+    // A lone separator is a decimal point unless it reads as a thousands
+    // group — exactly 3 digits after — which itself reads as a decimal for a
+    // 3-minor-digit Currency ("1.234" BHD).
+    if (single && (digitsAfter !== 3 || getCurrency(currency).minorUnitExponent === 3)) {
+      decimalAt = at
+    }
+  }
+  const integerPart = decimalAt === -1 ? text : text.slice(0, decimalAt)
+  const fractionPart = decimalAt === -1 ? '' : text.slice(decimalAt + 1)
+  const digits = stripGrouping(integerPart)
+  if (digits === undefined) return undefined
+  if (fractionPart !== '' && !/^\d+$/.test(fractionPart)) return undefined
+  try {
+    return toMinorUnits(
+      `${sign}${digits}${fractionPart === '' ? '' : `.${fractionPart}`}`,
+      currency,
+    )
+  } catch {
+    return undefined
+  }
+}
+
+// The column mapping a Member chooses on the map step: which cell is the
+// date, the description, and the amount, plus the date shape. Persisted on
+// the Import as JSON so confirm creates exactly what preview showed.
+export interface ImportMapping {
+  dateColumn: number
+  descriptionColumn: number
+  amountColumn: number
+  dateFormat: ImportDateFormat
+}
+
+export interface ImportRowFields {
+  date: string
+  description: string
+  amount: number
+}
+
+export interface PreviewRow {
+  line: number
+  /** The mapped cells verbatim, so a malformed row shows what the bank sent. */
+  raw: { date: string; description: string; amount: string }
+  parsed: ImportRowFields | null
+  error: string | null
+}
+
+const previewRow = (
+  record: CsvRecord,
+  mapping: ImportMapping,
+  currency: CurrencyCode,
+): PreviewRow => {
+  const raw = {
+    date: record.cells[mapping.dateColumn] ?? '',
+    description: record.cells[mapping.descriptionColumn] ?? '',
+    amount: record.cells[mapping.amountColumn] ?? '',
+  }
+  const failed = (error: string): PreviewRow => ({ line: record.line, raw, parsed: null, error })
+  const needed = Math.max(mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn) + 1
+  if (record.cells.length < needed) {
+    return failed(`The row has ${record.cells.length} columns; the mapping needs ${needed}.`)
+  }
+  const date = parseCsvDate(raw.date, mapping.dateFormat)
+  if (date === undefined) {
+    return failed(`Not a ${DATE_FORMAT_LABELS[mapping.dateFormat]} date: "${raw.date}"`)
+  }
+  const amount = parseCsvAmount(raw.amount, currency)
+  if (amount === undefined) {
+    return failed(`Not a ${currency} amount: "${raw.amount}"`)
+  }
+  const description = raw.description.trim()
+  if (description === '') {
+    return failed('The description is empty.')
+  }
+  return { line: record.line, raw, parsed: { date, description, amount }, error: null }
+}
+
+/** Data records (header excluded) + mapping → one preview row each. */
+export const previewRows = (
+  records: CsvRecord[],
+  mapping: ImportMapping,
+  currency: CurrencyCode,
+): PreviewRow[] => records.map((record) => previewRow(record, mapping, currency))
+
+// Upload caps: bank exports are small, and the file is stored as one D1 TEXT
+// cell, so both bytes and rows are bounded loudly — an oversize file is
+// rejected with the limit, never truncated.
+export const IMPORT_MAX_CHARS = 512 * 1024
+export const IMPORT_MAX_ROWS = 2000
+
+export interface NewImportFields {
+  accountId: string
+  fileName: string
+  csv: string
+}
+
+export const parseNewImport = (body: unknown): Parsed<NewImportFields> => {
+  const record = (body ?? {}) as Record<string, unknown>
+  if (typeof record.accountId !== 'string' || record.accountId === '') {
+    return { ok: false, error: 'An import needs an account.' }
+  }
+  const fileName = typeof record.fileName === 'string' ? record.fileName.trim() : ''
+  if (fileName === '') {
+    return { ok: false, error: 'An import needs the file name.' }
+  }
+  if (typeof record.csv !== 'string' || record.csv.trim() === '') {
+    return { ok: false, error: 'An import needs the CSV text.' }
+  }
+  if (record.csv.length > IMPORT_MAX_CHARS) {
+    return {
+      ok: false,
+      error: `The CSV is too large — the limit is ${IMPORT_MAX_CHARS / 1024} KB.`,
+    }
+  }
+  return { ok: true, value: { accountId: record.accountId, fileName, csv: record.csv } }
+}
+
+const parseColumn = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+
+// Structural validation only: whether the named columns exist in the file is
+// checked against the header where the Import is loaded (index.ts).
+export const parseImportMapping = (body: unknown): Parsed<ImportMapping> => {
+  const record = (body ?? {}) as Record<string, unknown>
+  const dateColumn = parseColumn(record.dateColumn)
+  const descriptionColumn = parseColumn(record.descriptionColumn)
+  const amountColumn = parseColumn(record.amountColumn)
+  if (dateColumn === undefined || descriptionColumn === undefined || amountColumn === undefined) {
+    return {
+      ok: false,
+      error: 'A mapping names the date, description, and amount columns by index.',
+    }
+  }
+  // Absent means ISO — the unambiguous default; anything sent must be known.
+  const dateFormat = record.dateFormat === undefined ? 'ymd' : record.dateFormat
+  if (!isImportDateFormat(dateFormat)) {
+    return { ok: false, error: 'The date format must be "ymd", "dmy", or "mdy".' }
+  }
+  return { ok: true, value: { dateColumn, descriptionColumn, amountColumn, dateFormat } }
+}
+
+export const mappingColumnError = (
+  mapping: ImportMapping,
+  columnCount: number,
+): string | undefined => {
+  const highest = Math.max(mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn)
+  return highest < columnCount
+    ? undefined
+    : `The file has ${columnCount} columns; the mapping names column ${highest + 1}.`
+}
+
+// The API shape of an Import: the row minus the raw CSV (large, and clients
+// re-read it through preview), with status derived from confirmedAt — the
+// invite pattern, so pending vs confirmed can never disagree with the
+// timestamps.
+export const importView = (row: typeof csvImport.$inferSelect) => ({
+  id: row.id,
+  accountId: row.accountId,
+  fileName: row.fileName,
+  status: (row.confirmedAt === null ? 'pending' : 'confirmed') as 'pending' | 'confirmed',
+  mapping: row.mapping === null ? null : (JSON.parse(row.mapping) as ImportMapping),
+  rowCount: row.rowCount,
+  createdCount: row.createdCount,
+  malformedCount: row.malformedCount,
+  createdAt: row.createdAt,
+  confirmedAt: row.confirmedAt,
+})
+
+// Tenancy rides on the Account, like Transactions: reads join through it.
+export const findImport = async (db: Db, householdId: string, id: string) => {
+  const [found] = await db
+    .select({ row: csvImport })
+    .from(csvImport)
+    .innerJoin(account, eq(account.id, csvImport.accountId))
+    .where(and(eq(csvImport.id, id), eq(account.householdId, householdId)))
+    .limit(1)
+  return found?.row
+}
+
+// Import history, newest upload first; id breaks same-second ties.
+export const listImports = async (db: Db, householdId: string) => {
+  const rows = await db
+    .select({ row: csvImport })
+    .from(csvImport)
+    .innerJoin(account, eq(account.id, csvImport.accountId))
+    .where(eq(account.householdId, householdId))
+    .orderBy(desc(csvImport.createdAt), asc(csvImport.id))
+  return rows.map(({ row }) => importView(row))
+}
+
+// D1 caps bound parameters per statement at 100; a Transaction row binds 12
+// columns, so 8 rows per INSERT stays clear of the cap.
+export const IMPORT_INSERT_CHUNK = 8
+
+// Amount cells parse in the Household's Currency (ADR 0002). The code is
+// validated at sign-up, so the USD arm only narrows the type.
+export const householdCurrency = async (db: Db, householdId: string): Promise<CurrencyCode> => {
+  const [row] = await db
+    .select({ currency: household.currency })
+    .from(household)
+    .where(eq(household.id, householdId))
+    .limit(1)
+  return isSupportedCurrency(row?.currency) ? row.currency : 'USD'
+}

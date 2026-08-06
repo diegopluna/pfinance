@@ -71,6 +71,14 @@ export function Shell() {
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    isActive={pathname.startsWith('/imports')}
+                    render={<Link to="/imports" />}
+                  >
+                    Imports
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
                     isActive={pathname.startsWith('/categories')}
                     render={<Link to="/categories" />}
                   >

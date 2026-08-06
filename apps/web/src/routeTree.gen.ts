@@ -15,6 +15,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedAccountsRouteImport } from './routes/_authed/accounts'
 import { Route as AuthedCategoriesRouteImport } from './routes/_authed/categories'
+import { Route as AuthedImportsRouteImport } from './routes/_authed/imports'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
 import { Route as AuthedTransactionsRouteImport } from './routes/_authed/transactions'
 
@@ -47,6 +48,11 @@ const AuthedCategoriesRoute = AuthedCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedImportsRoute = AuthedImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedMembersRoute = AuthedMembersRouteImport.update({
   id: '/members',
   path: '/members',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/accounts': typeof AuthedAccountsRoute
   '/categories': typeof AuthedCategoriesRoute
+  '/imports': typeof AuthedImportsRoute
   '/members': typeof AuthedMembersRoute
   '/transactions': typeof AuthedTransactionsRoute
 }
@@ -72,6 +79,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/accounts': typeof AuthedAccountsRoute
   '/categories': typeof AuthedCategoriesRoute
+  '/imports': typeof AuthedImportsRoute
   '/members': typeof AuthedMembersRoute
   '/transactions': typeof AuthedTransactionsRoute
   '/': typeof AuthedIndexRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/accounts': typeof AuthedAccountsRoute
   '/_authed/categories': typeof AuthedCategoriesRoute
+  '/_authed/imports': typeof AuthedImportsRoute
   '/_authed/members': typeof AuthedMembersRoute
   '/_authed/transactions': typeof AuthedTransactionsRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/accounts'
     | '/categories'
+    | '/imports'
     | '/members'
     | '/transactions'
   fileRoutesByTo: FileRoutesByTo
@@ -103,6 +113,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/accounts'
     | '/categories'
+    | '/imports'
     | '/members'
     | '/transactions'
     | '/'
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/accounts'
     | '/_authed/categories'
+    | '/_authed/imports'
     | '/_authed/members'
     | '/_authed/transactions'
     | '/_authed/'
@@ -168,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedCategoriesRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/imports': {
+      id: '/_authed/imports'
+      path: '/imports'
+      fullPath: '/imports'
+      preLoaderRoute: typeof AuthedImportsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/members': {
       id: '/_authed/members'
       path: '/members'
@@ -188,6 +207,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedAccountsRoute: typeof AuthedAccountsRoute
   AuthedCategoriesRoute: typeof AuthedCategoriesRoute
+  AuthedImportsRoute: typeof AuthedImportsRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
   AuthedTransactionsRoute: typeof AuthedTransactionsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
@@ -196,6 +216,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAccountsRoute: AuthedAccountsRoute,
   AuthedCategoriesRoute: AuthedCategoriesRoute,
+  AuthedImportsRoute: AuthedImportsRoute,
   AuthedMembersRoute: AuthedMembersRoute,
   AuthedTransactionsRoute: AuthedTransactionsRoute,
   AuthedIndexRoute: AuthedIndexRoute,

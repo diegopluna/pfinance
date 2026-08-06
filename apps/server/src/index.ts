@@ -2,6 +2,7 @@ import {
   account,
   category,
   createDb,
+  csvImport,
   household,
   invite,
   member,
@@ -39,6 +40,20 @@ import {
   INVITE_MAX_TTL_SECONDS,
   pendingInviteFilter,
 } from './invites.ts'
+import {
+  findImport,
+  householdCurrency,
+  IMPORT_INSERT_CHUNK,
+  IMPORT_MAX_ROWS,
+  importView,
+  listImports,
+  mappingColumnError,
+  parseCsv,
+  parseImportMapping,
+  parseNewImport,
+  previewRows,
+  type ImportMapping,
+} from './imports.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import {
@@ -301,6 +316,9 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         ...fields,
         // Never a Transfer leg: those are created only through /api/transfers.
         transferId: null,
+        // Manual entry — Import-born rows are created only through
+        // /api/imports/:id/confirm.
+        importId: null,
         createdBy: c.var.user.id,
         createdAt: new Date(),
       }
@@ -390,6 +408,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         kind: 'transfer' as const,
         categoryId: null,
         transferId: id,
+        importId: null,
         createdBy: c.var.user.id,
         createdAt: new Date(),
       }
@@ -474,6 +493,169 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // legs atomically.
     await db.delete(transfer).where(eq(transfer.id, c.req.param('id')))
     return c.json({ ok: true })
+  })
+  // --- CSV Imports (issue #13) — member-level like the rest of the ledger.
+  // An Import is a batch of Transactions from one CSV file into one Account
+  // (CONTEXT.md): upload stores the file, preview persists the column
+  // mapping and shows every row's fate — malformed rows surfaced, never
+  // silently dropped — and confirm re-parses the stored file with the stored
+  // mapping, so exactly what was previewed is created. Tenancy rides on the
+  // Account like Transactions (imports.ts). CONTEXT.md's duplicate-skip and
+  // revert are deliberately not here: they are issues #14 and #15 (revert
+  // will ride the import_id cascade).
+  .get('/api/imports', async (c) => {
+    const db = createDb(c.env.DB)
+    return c.json({ imports: await listImports(db, c.var.membership.householdId) })
+  })
+  .post(
+    '/api/imports',
+    validator('json', (value, c) => {
+      const parsed = parseNewImport(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const fields = c.req.valid('json')
+      if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
+        return c.json({ error: 'Unknown account.' }, 400)
+      }
+      const [header, ...data] = parseCsv(fields.csv)
+      if (header === undefined || data.length === 0) {
+        return c.json({ error: 'The CSV needs a header row and at least one data row.' }, 400)
+      }
+      if (data.length > IMPORT_MAX_ROWS) {
+        return c.json(
+          { error: `The file has ${data.length} rows; the limit is ${IMPORT_MAX_ROWS}.` },
+          400,
+        )
+      }
+      const row = {
+        id: crypto.randomUUID(),
+        accountId: fields.accountId,
+        fileName: fields.fileName,
+        csv: fields.csv,
+        mapping: null,
+        rowCount: data.length,
+        createdCount: null,
+        malformedCount: null,
+        createdBy: c.var.user.id,
+        createdAt: new Date(),
+        confirmedAt: null,
+      }
+      await db.insert(csvImport).values(row)
+      // The header rides along so the map step can offer the columns.
+      return c.json({ import: importView(row), columns: header.cells })
+    },
+  )
+  .get('/api/imports/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const found = await findImport(db, c.var.membership.householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Import not found.' }, 404)
+    }
+    return c.json({ import: importView(found), columns: parseCsv(found.csv)[0]?.cells ?? [] })
+  })
+  // The map step: persists the mapping on the pending Import — confirm takes
+  // no body, so what was last previewed is exactly what confirm creates —
+  // and returns every data row's fate.
+  .post(
+    '/api/imports/:id/preview',
+    validator('json', (value, c) => {
+      const parsed = parseImportMapping(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      const found = await findImport(db, householdId, c.req.param('id'))
+      if (found === undefined) {
+        return c.json({ error: 'Import not found.' }, 404)
+      }
+      if (found.confirmedAt !== null) {
+        return c.json({ error: 'This import is confirmed; its mapping is frozen.' }, 400)
+      }
+      const mapping = c.req.valid('json')
+      const [header, ...data] = parseCsv(found.csv)
+      const columnError = mappingColumnError(mapping, header?.cells.length ?? 0)
+      if (columnError !== undefined) {
+        return c.json({ error: columnError }, 400)
+      }
+      const stored = JSON.stringify(mapping)
+      await db.update(csvImport).set({ mapping: stored }).where(eq(csvImport.id, found.id))
+      return c.json({
+        import: importView({ ...found, mapping: stored }),
+        columns: header?.cells ?? [],
+        rows: previewRows(data, mapping, await householdCurrency(db, householdId)),
+      })
+    },
+  )
+  .post('/api/imports/:id/confirm', async (c) => {
+    const db = createDb(c.env.DB)
+    const { householdId } = c.var.membership
+    const found = await findImport(db, householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Import not found.' }, 404)
+    }
+    if (found.confirmedAt !== null) {
+      return c.json({ error: 'This import is already confirmed.' }, 400)
+    }
+    if (found.mapping === null) {
+      return c.json({ error: 'Map the columns and preview before confirming.' }, 400)
+    }
+    const mapping = JSON.parse(found.mapping) as ImportMapping
+    const [, ...data] = parseCsv(found.csv)
+    const rows = previewRows(data, mapping, await householdCurrency(db, householdId))
+    const valid = rows.flatMap((row) =>
+      row.parsed === null ? [] : [{ line: row.line, ...row.parsed }],
+    )
+    if (valid.length === 0) {
+      return c.json({ error: 'No row parses with this mapping; nothing to import.' }, 400)
+    }
+    const confirmedAt = new Date()
+    const transactionRows = valid.map(({ line, ...fields }) => ({
+      // Deterministic per (Import, line) — the categories-seeding trick: two
+      // racing confirms build the same ids, so the loser's batch collides on
+      // the primary key and rolls back whole. The ledger can never receive
+      // the same batch twice.
+      id: `${found.id}:${line}`,
+      accountId: found.accountId,
+      ...fields,
+      // All Uncategorized — the honest default for fresh imports
+      // (CONTEXT.md) — and each row remembers its Import.
+      kind: 'standard' as const,
+      categoryId: null,
+      transferId: null,
+      importId: found.id,
+      createdBy: c.var.user.id,
+      createdAt: confirmedAt,
+    }))
+    const counts = { createdCount: valid.length, malformedCount: rows.length - valid.length }
+    const inserts = []
+    for (let at = 0; at < transactionRows.length; at += IMPORT_INSERT_CHUNK) {
+      inserts.push(
+        db.insert(transaction).values(transactionRows.slice(at, at + IMPORT_INSERT_CHUNK)),
+      )
+    }
+    // One atomic D1 batch: the Transactions and the confirmation land
+    // together or not at all.
+    try {
+      await db.batch([
+        db
+          .update(csvImport)
+          .set({ ...counts, confirmedAt })
+          .where(and(eq(csvImport.id, found.id), isNull(csvImport.confirmedAt))),
+        ...inserts,
+      ])
+    } catch (error) {
+      // The expected failure is the deterministic-id collision above: a
+      // concurrent confirm won the race. Re-check rather than guess.
+      const now = await findImport(db, householdId, found.id)
+      if (now?.confirmedAt != null) {
+        return c.json({ error: 'This import is already confirmed.' }, 400)
+      }
+      throw error
+    }
+    return c.json({ import: importView({ ...found, ...counts, confirmedAt }) })
   })
   // --- Categories (issue #10, ADR 0003) — member-level like the rest of the
   // ledger: the vocabulary is every Member's to shape (CONTEXT.md). A flat
