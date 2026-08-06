@@ -1,17 +1,19 @@
 import {
   account,
+  category,
   isTransactionKind,
   transaction,
   user,
   type Db,
   type TransactionKind,
 } from '@pfinance/db'
-import { and, asc, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, sql, type SQL } from 'drizzle-orm'
 import type { Parsed } from './parsed.ts'
 
 // Parsing and shaping for the /api/transactions surface (issue #8). A
 // Transaction's editable state is exactly { accountId, date, amount,
-// description, kind }; who entered it and when are recorded once at creation.
+// description, kind, categoryId }; who entered it and when are recorded once
+// at creation.
 
 export interface TransactionFields {
   accountId: string
@@ -19,6 +21,8 @@ export interface TransactionFields {
   amount: number
   description: string
   kind: TransactionKind
+  // Exactly one Category or null = Uncategorized (ADR 0003, issue #11).
+  categoryId: string | null
 }
 
 // A calendar date is an ISO `YYYY-MM-DD` string naming a real day — never a
@@ -53,6 +57,14 @@ const parseAmount = (value: unknown): number | undefined =>
 const parseAccountId = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined
 
+// Absent and null both mean Uncategorized — the honest default (CONTEXT.md);
+// anything else must be a plausible id, never coerced. Returns undefined
+// only for invalid input (the parsed value is string | null).
+const parseCategoryId = (value: unknown): string | null | undefined => {
+  if (value === undefined || value === null) return null
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
 export const parseNewTransaction = (body: unknown): Parsed<TransactionFields> => {
   const record = (body ?? {}) as Record<string, unknown>
   const accountId = parseAccountId(record.accountId)
@@ -70,7 +82,14 @@ export const parseNewTransaction = (body: unknown): Parsed<TransactionFields> =>
   // name a known kind (transaction-kinds.ts), never be silently coerced.
   const kind = record.kind === undefined ? 'standard' : record.kind
   if (!isTransactionKind(kind)) return { ok: false, error: 'Unknown transaction kind.' }
-  return { ok: true, value: { accountId, date: record.date, amount, description, kind } }
+  const categoryId = parseCategoryId(record.categoryId)
+  if (categoryId === undefined) {
+    return { ok: false, error: 'Category must be a category id, or absent for Uncategorized.' }
+  }
+  return {
+    ok: true,
+    value: { accountId, date: record.date, amount, description, kind, categoryId },
+  }
 }
 
 // PATCH accepts any subset of the editable fields — but at least one, so a
@@ -111,21 +130,33 @@ export const parseTransactionPatch = (body: unknown): Parsed<Partial<Transaction
     }
     patch.kind = record.kind
   }
+  if ('categoryId' in record) {
+    // An explicit null clears the Category — back to Uncategorized.
+    const categoryId = parseCategoryId(record.categoryId)
+    if (categoryId === undefined) {
+      return { ok: false, error: 'Category must be a category id, or null for Uncategorized.' }
+    }
+    patch.categoryId = categoryId
+  }
   if (Object.keys(patch).length === 0) {
     return {
       ok: false,
-      error: 'Nothing to update: send accountId, date, amount, description, or kind.',
+      error: 'Nothing to update: send accountId, date, amount, description, kind, or categoryId.',
     }
   }
   return { ok: true, value: patch }
 }
 
-// List filters: Account, inclusive date range, description search, and the
-// derived view. Dates are validated as calendar dates — a malformed bound is
-// rejected, never silently ignored (it would quietly widen the range), and
-// an unknown view is rejected the same way.
+// List filters: Account, Category, inclusive date range, description search,
+// and the derived view. Dates are validated as calendar dates — a malformed
+// bound is rejected, never silently ignored (it would quietly widen the
+// range), and an unknown view is rejected the same way.
 export interface TransactionFilters {
   accountId?: string
+  // A Category id, or null for the Uncategorized filter (the query-string
+  // sentinel `uncategorized` — ids are UUIDs or `${householdId}:${slug}`, so
+  // the bare word can never name a real one).
+  categoryId?: string | null
   from?: string
   to?: string
   q?: string
@@ -153,6 +184,9 @@ export const parseTransactionFilters = (
 ): Parsed<TransactionFilters> => {
   const filters: TransactionFilters = {}
   if (query.accountId !== undefined && query.accountId !== '') filters.accountId = query.accountId
+  if (query.categoryId !== undefined && query.categoryId !== '') {
+    filters.categoryId = query.categoryId === 'uncategorized' ? null : query.categoryId
+  }
   for (const bound of ['from', 'to'] as const) {
     const value = query[bound]
     if (value === undefined || value === '') continue
@@ -183,6 +217,24 @@ export const accountInHousehold = async (db: Db, householdId: string, accountId:
   return row !== undefined
 }
 
+// Assignment guard (issue #11): a Category is assignable when it belongs to
+// the caller's Household — the FK can't see tenancy, since a Category's
+// Household is its own while a Transaction's is its Account's — and is not
+// archived (issue #10: archiving retires a label from assignment; rows that
+// already carry it keep it, because this runs only when a write names a
+// Category). Returns the rejection message, or undefined when assignable; a
+// foreign Category reads as unknown, not forbidden.
+export const categoryAssignmentError = async (db: Db, householdId: string, categoryId: string) => {
+  const [row] = await db
+    .select({ archivedAt: category.archivedAt })
+    .from(category)
+    .where(and(eq(category.id, categoryId), eq(category.householdId, householdId)))
+    .limit(1)
+  if (row === undefined) return 'Unknown category.'
+  if (row.archivedAt !== null) return 'That category is archived; unarchive it to assign it.'
+  return undefined
+}
+
 // The API shape of a Transaction: the row plus who entered it, by name —
 // defined once as a row mapper (for the POST handler, which knows the
 // enterer directly) and mirrored by the SQL selection below (for reads,
@@ -199,6 +251,7 @@ export const transactionView = (
   amount: row.amount,
   description: row.description,
   kind: row.kind,
+  categoryId: row.categoryId,
   enteredBy,
   createdAt: row.createdAt,
 })
@@ -210,6 +263,7 @@ const transactionSelection = {
   amount: transaction.amount,
   description: transaction.description,
   kind: transaction.kind,
+  categoryId: transaction.categoryId,
   enteredBy: user.name,
   createdAt: transaction.createdAt,
 } satisfies Record<keyof ReturnType<typeof transactionView>, unknown>
@@ -231,6 +285,14 @@ export const listTransactions = (db: Db, householdId: string, filters: Transacti
       and(
         eq(account.householdId, householdId),
         ...(filters.accountId === undefined ? [] : [eq(transaction.accountId, filters.accountId)]),
+        // null filters the Uncategorized state — rows with no Category.
+        ...(filters.categoryId === undefined
+          ? []
+          : [
+              filters.categoryId === null
+                ? isNull(transaction.categoryId)
+                : eq(transaction.categoryId, filters.categoryId),
+            ]),
         // Lexicographic comparison IS chronological for YYYY-MM-DD strings.
         ...(filters.from === undefined ? [] : [gte(transaction.date, filters.from)]),
         ...(filters.to === undefined ? [] : [lte(transaction.date, filters.to)]),

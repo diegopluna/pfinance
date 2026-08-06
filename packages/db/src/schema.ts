@@ -138,6 +138,12 @@ export const transaction = sqliteTable('transaction', {
   // (issue #9). The default exists only so the column can be added to
   // pre-kind rows — the app always writes it explicitly.
   kind: text('kind', { enum: TRANSACTION_KIND_VALUES }).notNull().default('standard'),
+  // Exactly one Category or NULL = Uncategorized (ADR 0003) — no join table,
+  // no splits. Categories are archived rather than deleted, so set-null is a
+  // safety net, not a code path. The FK alone cannot see tenancy (a
+  // Category's Household is its own, a Transaction's is its Account's), so
+  // the API checks the Category belongs to the caller's Household on write.
+  categoryId: text('category_id').references(() => category.id, { onDelete: 'set null' }),
   // The Member who entered it, kept for attribution; set null if that User
   // is removed so the ledger row survives (a User holds no financial data).
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),

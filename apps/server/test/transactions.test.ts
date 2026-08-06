@@ -31,8 +31,15 @@ interface TransactionView {
   amount: number
   description: string
   kind: string
+  categoryId: string | null
   enteredBy: string | null
   createdAt: string
+}
+
+interface CategoryView {
+  id: string
+  name: string
+  archivedAt: string | null
 }
 
 const readTransaction = (response: HttpClientResponse) =>
@@ -82,6 +89,35 @@ const deleteTransaction = (apiUrl: string, cookie: string, id: string) =>
 const listTransactions = (apiUrl: string, cookie: string, query = '') =>
   Test.executeWhenReady(
     HttpClientRequest.get(`${apiUrl}/api/transactions${query}`).pipe(withCookie(cookie)),
+  )
+
+const readCategory = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => (body as unknown as { category: CategoryView }).category)
+
+const readCategories = (response: HttpClientResponse) =>
+  Effect.map(
+    response.json,
+    (body) => (body as unknown as { categories: CategoryView[] }).categories,
+  )
+
+const listCategories = (apiUrl: string, cookie: string) =>
+  Test.executeWhenReady(HttpClientRequest.get(`${apiUrl}/api/categories`).pipe(withCookie(cookie)))
+
+const createCategory = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/categories`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    ),
+  )
+
+const archiveCategory = (apiUrl: string, cookie: string, id: string) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/categories/${id}/archive`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+    ),
   )
 
 const balanceOf = (accounts: AccountView[], id: string) =>
@@ -134,6 +170,9 @@ test.provider(
       expect(groceries.amount).toBe(-2500)
       expect(groceries.description).toBe('Groceries at the market')
       expect(groceries.enteredBy).toBe('Owner')
+      // No Category sent means Uncategorized (ADR 0003) — null, not a
+      // sentinel row.
+      expect(groceries.categoryId).toBeNull()
 
       // The Account Balance genuinely sums the ledger (ADR 0001).
       expect(
@@ -489,18 +528,32 @@ test.provider(
         }),
       )
 
-      const seed: [string, string, string, number, string][] = [
-        // cookie, accountId, date, amount, description
+      // Categories are seeded at Household creation (issue #10); assignment
+      // rides on create (issue #11): exactly one Category or absent =
+      // Uncategorized.
+      const categories = yield* readCategories(yield* listCategories(apiUrl, owner.cookie))
+      const groceriesCategory = categories.find((entry) => entry.name === 'Groceries')
+      const diningOut = categories.find((entry) => entry.name === 'Dining Out')
+      expect(groceriesCategory).toBeDefined()
+      expect(diningOut).toBeDefined()
+
+      const seed: [string, string, string, number, string, string?][] = [
+        // cookie, accountId, date, amount, description, categoryId
         [owner.cookie, checking.id, '2026-01-05', -1200, 'Coffee beans'],
         [owner.cookie, checking.id, '2026-01-20', 500000, 'Salary'],
-        [memberCookie, checking.id, '2026-02-10', -8000, 'Groceries'],
+        [memberCookie, checking.id, '2026-02-10', -8000, 'Groceries', groceriesCategory?.id],
         [memberCookie, card.id, '2026-01-20', -4500, 'Streaming subscription'],
-        [owner.cookie, card.id, '2026-02-14', -15000, 'Dinner out'],
+        [owner.cookie, card.id, '2026-02-14', -15000, 'Dinner out', diningOut?.id],
       ]
-      for (const [cookie, accountId, date, amount, description] of seed) {
+      for (const [cookie, accountId, date, amount, description, categoryId] of seed) {
         expect(
-          (yield* createTransaction(apiUrl, cookie, { accountId, date, amount, description }))
-            .status,
+          (yield* createTransaction(apiUrl, cookie, {
+            accountId,
+            date,
+            amount,
+            description,
+            categoryId,
+          })).status,
         ).toBe(200)
       }
 
@@ -553,6 +606,128 @@ test.provider(
         ),
       )
       expect(combined.map((entry) => entry.description)).toEqual(['Streaming subscription'])
+
+      // The list carries each row's Category — one or null (ADR 0003).
+      expect(Object.fromEntries(all.map((entry) => [entry.description, entry.categoryId]))).toEqual(
+        {
+          'Coffee beans': null,
+          Salary: null,
+          Groceries: groceriesCategory?.id,
+          'Streaming subscription': null,
+          'Dinner out': diningOut?.id,
+        },
+      )
+
+      // Category filter, and Uncategorized as its own filter — null is a
+      // state, not a sentinel Category row.
+      const groceriesOnly = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, `?categoryId=${groceriesCategory?.id}`),
+      )
+      expect(groceriesOnly.map((entry) => entry.description)).toEqual(['Groceries'])
+      const uncategorized = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, '?categoryId=uncategorized'),
+      )
+      expect(uncategorized.map((entry) => entry.description).sort()).toEqual([
+        'Coffee beans',
+        'Salary',
+        'Streaming subscription',
+      ])
+      const uncategorizedOnCard = yield* readTransactions(
+        yield* listTransactions(
+          apiUrl,
+          owner.cookie,
+          `?categoryId=uncategorized&accountId=${card.id}`,
+        ),
+      )
+      expect(uncategorizedOnCard.map((entry) => entry.description)).toEqual([
+        'Streaming subscription',
+      ])
+
+      // Assignment on edit: set a Category, then clear back to Uncategorized
+      // with an explicit null.
+      const coffee = all.find((entry) => entry.description === 'Coffee beans')
+      expect(coffee).toBeDefined()
+      const categorized = yield* patchTransaction(apiUrl, memberCookie, coffee?.id ?? '', {
+        categoryId: diningOut?.id,
+      })
+      expect(categorized.status).toBe(200)
+      expect((yield* readTransaction(categorized)).categoryId).toBe(diningOut?.id)
+      const clearedResponse = yield* patchTransaction(apiUrl, owner.cookie, coffee?.id ?? '', {
+        categoryId: null,
+      })
+      expect(clearedResponse.status).toBe(200)
+      expect((yield* readTransaction(clearedResponse)).categoryId).toBeNull()
+
+      // Only the Household's own Categories are assignable. No second
+      // Household can exist in a scratch instance (sign-up locks after the
+      // first User, Invites join this Household), so a fabricated foreign id
+      // — well-formed, since seeded ids are `${householdId}:${slug}` —
+      // exercises the same scoping predicate on create and on edit.
+      const foreignCategory = `${crypto.randomUUID()}:groceries`
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-01',
+          amount: -100,
+          description: 'Foreign category',
+          categoryId: foreignCategory,
+        })).status,
+      ).toBe(400)
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, coffee?.id ?? '', {
+          categoryId: foreignCategory,
+        })).status,
+      ).toBe(400)
+      // Malformed category ids are rejected, never coerced.
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, coffee?.id ?? '', { categoryId: 7 })).status,
+      ).toBe(400)
+
+      // Archiving retires a Category from assignment (issue #10) while rows
+      // that already carry it keep their history and stay editable.
+      const retired = yield* readCategory(
+        yield* createCategory(apiUrl, owner.cookie, { name: 'Retired' }),
+      )
+      const retiredTx = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-02',
+          amount: -200,
+          description: 'Old vice',
+          categoryId: retired.id,
+        }),
+      )
+      expect(retiredTx.categoryId).toBe(retired.id)
+      expect((yield* archiveCategory(apiUrl, owner.cookie, retired.id)).status).toBe(200)
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-03',
+          amount: -300,
+          description: 'New vice',
+          categoryId: retired.id,
+        })).status,
+      ).toBe(400)
+      const editedRetired = yield* patchTransaction(apiUrl, owner.cookie, retiredTx.id, {
+        description: 'Old habit',
+      })
+      expect(editedRetired.status).toBe(200)
+      expect((yield* readTransaction(editedRetired)).categoryId).toBe(retired.id)
+      // …including through a client that resubmits the whole field set (the
+      // web form does): re-asserting the row's current archived Category is
+      // not an assignment…
+      const resubmitted = yield* patchTransaction(apiUrl, owner.cookie, retiredTx.id, {
+        amount: -250,
+        categoryId: retired.id,
+      })
+      expect(resubmitted.status).toBe(200)
+      expect((yield* readTransaction(resubmitted)).categoryId).toBe(retired.id)
+      // …but naming it on a row that doesn't carry it is.
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, coffee?.id ?? '', {
+          categoryId: retired.id,
+        })).status,
+      ).toBe(400)
 
       // Malformed filter dates are rejected, not silently ignored.
       expect((yield* listTransactions(apiUrl, owner.cookie, '?from=last-week')).status).toBe(400)
