@@ -58,6 +58,7 @@ import {
 import { currentUtcMonth, isCalendarMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
+import { spendingByCategory } from './spending.ts'
 import {
   accountInHousehold,
   categoryAssignmentError,
@@ -837,6 +838,27 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       const through = c.req.valid('query').through ?? currentUtcMonth()
       const series = await monthlyNetWorthSeries(db, c.var.membership.householdId, through)
       return c.json({ series })
+    },
+  )
+  .get(
+    '/api/spending-by-category',
+    // ?month=YYYY-MM picks the slice of the ledger; the web app's month
+    // selector always sends it, and omitting it reads the current month.
+    // Malformed values are rejected, never silently defaulted.
+    validator('query', (value, c) => {
+      if (value.month === undefined || value.month === '') return { month: undefined }
+      if (!isCalendarMonth(value.month)) {
+        return c.json({ error: 'The month filter must be a calendar month like 2026-01.' }, 400)
+      }
+      return { month: value.month }
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      // The resolved month echoes back so the client can label the default
+      // view without re-deriving "the current month" and risking a skew.
+      const month = c.req.valid('query').month ?? currentUtcMonth()
+      const slices = await spendingByCategory(db, c.var.membership.householdId, month)
+      return c.json({ month, slices })
     },
   )
   // --- Member & Invite management (issue #6) — owner-only, so the guard
