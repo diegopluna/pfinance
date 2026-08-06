@@ -323,9 +323,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       ) {
         return c.json({ error: 'Unknown account.' }, 400)
       }
-      // Guard only a newly named Category (null clears, undefined keeps): a
-      // row already carrying an archived Category stays editable.
-      if (patch.categoryId != null) {
+      // Guard only a newly named Category (null clears, undefined keeps, and
+      // re-asserting the row's current one is not an assignment): a row
+      // already carrying an archived Category stays editable — including
+      // through clients that resubmit the whole field set, like the web form.
+      if (patch.categoryId != null && patch.categoryId !== existing.categoryId) {
         const rejection = await categoryAssignmentError(
           db,
           c.var.membership.householdId,

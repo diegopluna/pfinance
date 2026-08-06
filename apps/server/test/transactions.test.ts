@@ -713,6 +713,21 @@ test.provider(
       })
       expect(editedRetired.status).toBe(200)
       expect((yield* readTransaction(editedRetired)).categoryId).toBe(retired.id)
+      // …including through a client that resubmits the whole field set (the
+      // web form does): re-asserting the row's current archived Category is
+      // not an assignment…
+      const resubmitted = yield* patchTransaction(apiUrl, owner.cookie, retiredTx.id, {
+        amount: -250,
+        categoryId: retired.id,
+      })
+      expect(resubmitted.status).toBe(200)
+      expect((yield* readTransaction(resubmitted)).categoryId).toBe(retired.id)
+      // …but naming it on a row that doesn't carry it is.
+      expect(
+        (yield* patchTransaction(apiUrl, owner.cookie, coffee?.id ?? '', {
+          categoryId: retired.id,
+        })).status,
+      ).toBe(400)
 
       // Malformed filter dates are rejected, not silently ignored.
       expect((yield* listTransactions(apiUrl, owner.cookie, '?from=last-week')).status).toBe(400)
