@@ -24,15 +24,19 @@ affect hosting.
 
 | Value                  | Default                                                                                  | Override                                                                                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| GitHub owner/repo      | Parsed from the clone's `origin` remote                                                  | `GITHUB_REPOSITORY=owner/repo` (GitHub Actions sets this automatically)                                                |
+| GitHub owner/repo      | Parsed from the clone's `origin` remote (github.com hosts only)                          | `GITHUB_REPOSITORY=owner/repo` (GitHub Actions sets this automatically)                                                |
 | PR preview comment     | Skipped (with a logged warning if `PULL_REQUEST` is set but no repository is detectable) | Set `PULL_REQUEST=<pr-number>` and provide a GitHub token (`GITHUB_TOKEN` / `GITHUB_ACCESS_TOKEN`, or `alchemy login`) |
 | Alchemy auth profile   | `default`                                                                                | `ALCHEMY_PROFILE=<name>`, or `--profile <name>` on any `alchemy` command (the flag wins)                               |
 | Trusted browser origin | Unset — the API trusts `*.workers.dev` broadly (fine for dev/previews)                   | `WEB_ORIGIN=https://your-web-host` on production deploys                                                               |
 | Deploy stage           | None — always passed explicitly                                                          | `--stage <name>` (`prod`, `pr-N` previews, `test-*` for the integration suite)                                         |
 
 Repository detection lives in `stacks/repository.ts`: `GITHUB_REPOSITORY`
-wins, then the `origin` remote URL (SSH or HTTPS form); both yield
-`{ owner, repository }`.
+wins, then the `origin` remote URL (scp-like `git@`, `ssh://`, or `https://`
+form); both yield `{ owner, repository }`. Remotes on hosts other than
+github.com are ignored — a GitLab or Codeberg clone must not be mistaken for
+the github.com repository that shares its slug, so mirrors set
+`GITHUB_REPOSITORY` explicitly. A malformed `GITHUB_REPOSITORY` is an error,
+never a silent skip.
 
 ## Optional: CI pipeline and PR previews
 
