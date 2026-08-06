@@ -276,6 +276,11 @@ export const transactionView = (
 // null for everything but legs.
 const siblingLeg = alias(transaction, 'sibling_leg')
 
+const siblingLegJoin = and(
+  eq(siblingLeg.transferId, transaction.transferId),
+  ne(siblingLeg.id, transaction.id),
+)
+
 const transactionSelection = {
   id: transaction.id,
   accountId: transaction.accountId,
@@ -303,10 +308,7 @@ export const listTransactions = (db: Db, householdId: string, filters: Transacti
     .from(transaction)
     .innerJoin(account, eq(account.id, transaction.accountId))
     .leftJoin(user, eq(user.id, transaction.createdBy))
-    .leftJoin(
-      siblingLeg,
-      and(eq(siblingLeg.transferId, transaction.transferId), ne(siblingLeg.id, transaction.id)),
-    )
+    .leftJoin(siblingLeg, siblingLegJoin)
     .where(
       and(
         eq(account.householdId, householdId),
@@ -336,10 +338,7 @@ export const findTransaction = async (db: Db, householdId: string, id: string) =
     .from(transaction)
     .innerJoin(account, eq(account.id, transaction.accountId))
     .leftJoin(user, eq(user.id, transaction.createdBy))
-    .leftJoin(
-      siblingLeg,
-      and(eq(siblingLeg.transferId, transaction.transferId), ne(siblingLeg.id, transaction.id)),
-    )
+    .leftJoin(siblingLeg, siblingLegJoin)
     .where(and(eq(transaction.id, id), eq(account.householdId, householdId)))
     .limit(1)
   return row
