@@ -55,6 +55,7 @@ import {
   parseNewImport,
   type ImportMapping,
 } from './imports.ts'
+import { currentUtcMonth, isCalendarMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import {
@@ -813,6 +814,31 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }
     return c.json({ category: categoryView(row) })
   })
+  // --- Charts (issue #17) — member-level like the rest of the ledger. Every
+  // aggregate a chart displays is computed server-side from the ledger and
+  // served as a dedicated endpoint (issue #1): the web app renders, it never
+  // sums. The monthly Net Worth series is the first; spending by Category
+  // (issue #18) and Income vs Expense (issue #19) are its siblings.
+  .get(
+    '/api/net-worth',
+    // ?through=YYYY-MM sets the series' right edge — the tests use it to pin
+    // the series without depending on today's date; the web app omits it and
+    // gets the current month. Malformed values are rejected, never silently
+    // defaulted (the transactions filter-parsing stance).
+    validator('query', (value, c) => {
+      if (value.through === undefined || value.through === '') return { through: undefined }
+      if (!isCalendarMonth(value.through)) {
+        return c.json({ error: 'The through filter must be a calendar month like 2026-01.' }, 400)
+      }
+      return { through: value.through }
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const through = c.req.valid('query').through ?? currentUtcMonth()
+      const series = await monthlyNetWorthSeries(db, c.var.membership.householdId, through)
+      return c.json({ series })
+    },
+  )
   // --- Member & Invite management (issue #6) — owner-only, so the guard
   // middleware covers both resources. Non-owner Members get a 403.
   .use('/api/members/*', ownerGuard)
