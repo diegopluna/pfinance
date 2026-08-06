@@ -39,6 +39,7 @@ interface ImportView {
   rowCount: number
   createdCount: number | null
   malformedCount: number | null
+  duplicateCount: number | null
   createdAt: string
   confirmedAt: string | null
 }
@@ -48,6 +49,7 @@ interface PreviewRow {
   raw: { date: string; description: string; amount: string }
   parsed: { date: string; description: string; amount: number } | null
   error: string | null
+  duplicate: boolean
 }
 
 interface TransactionView {
@@ -104,14 +106,25 @@ const previewRequest = (
 const previewImport = (apiUrl: string, cookie: string, id: string, body: Record<string, unknown>) =>
   Test.executeWhenReady(previewRequest(apiUrl, cookie, id, body))
 
-const confirmRequest = (apiUrl: string, cookie: string, id: string) =>
-  HttpClientRequest.post(`${apiUrl}/api/imports/${id}/confirm`).pipe(
+const confirmRequest = (
+  apiUrl: string,
+  cookie: string,
+  id: string,
+  body?: Record<string, unknown>,
+) => {
+  const request = HttpClientRequest.post(`${apiUrl}/api/imports/${id}/confirm`).pipe(
     trustedOrigin,
     withCookie(cookie),
   )
+  return body === undefined ? request : request.pipe(HttpClientRequest.bodyJsonUnsafe(body))
+}
 
-const confirmImport = (apiUrl: string, cookie: string, id: string) =>
-  Test.executeWhenReady(confirmRequest(apiUrl, cookie, id))
+const confirmImport = (
+  apiUrl: string,
+  cookie: string,
+  id: string,
+  body?: Record<string, unknown>,
+) => Test.executeWhenReady(confirmRequest(apiUrl, cookie, id, body))
 
 const listImports = (apiUrl: string, cookie: string) =>
   Test.executeWhenReady(HttpClientRequest.get(`${apiUrl}/api/imports`).pipe(withCookie(cookie)))
@@ -196,6 +209,7 @@ test.provider(
         raw: { date: '2026-01-15', description: 'Coffee, beans', amount: '-3.50' },
         parsed: { date: '2026-01-15', description: 'Coffee, beans', amount: -350 },
         error: null,
+        duplicate: false,
       })
       expect(preview.rows[1]?.parsed).toEqual({
         date: '2026-01-16',
@@ -299,12 +313,14 @@ test.provider(
           raw: { date: '15/01/2026', description: 'Depósito', amount: '1.234,56' },
           parsed: { date: '2026-01-15', description: 'Depósito', amount: 123456 },
           error: null,
+          duplicate: false,
         },
         {
           line: 3,
           raw: { date: '16/01/2026', description: 'Tarifa', amount: '(12,00)' },
           parsed: { date: '2026-01-16', description: 'Tarifa', amount: -1200 },
           error: null,
+          duplicate: false,
         },
       ])
       const euroDone = yield* readImport(yield* confirmImport(apiUrl, owner.cookie, euro.id))
@@ -381,6 +397,197 @@ test.provider(
         (yield* executeWarm(previewRequest(apiUrl, owner.cookie, 'missing', MAPPING))).status,
       ).toBe(404)
       expect((yield* executeWarm(confirmRequest(apiUrl, owner.cookie, 'missing'))).status).toBe(404)
+    }),
+  { timeout: 600_000 },
+)
+
+// --- Import dedup (issue #14) ---
+// Preview flags rows that exact-match an existing Transaction on account +
+// date + amount + description; flagged rows are skipped by default and a
+// per-row override (confirm body { overrides: [line] }) imports one anyway —
+// overlapping bank exports never double-count the ledger.
+
+const createTransaction = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/transactions`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    ),
+  )
+
+test.provider(
+  'Import dedup: overlapping exports are flagged and skipped by default; per-row overrides import anyway',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'dedup-owner@example.com', {
+        householdName: 'Dedup House',
+        currency: 'USD',
+      })
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 0,
+        }),
+      )
+
+      // Dedup matches any existing Transaction, not just imported ones: this
+      // manually entered row will flag the first export's identical row.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2026-03-01',
+          amount: -1999,
+          description: 'Streaming service',
+        })).status,
+      ).toBe(200)
+
+      const first = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'march-a.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-03-01,Streaming service,-19.99',
+            '2026-03-02,Coffee,-4.00',
+            '2026-03-03,Salary,2000.00',
+          ].join('\n'),
+        }),
+      )
+      const firstPreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, first.id, MAPPING),
+      )
+      expect(firstPreview.rows.map((row) => row.duplicate)).toEqual([true, false, false])
+
+      // Confirm without overrides: flagged rows are skipped, so the manual
+      // row is never double-counted.
+      const firstDone = yield* readImport(yield* confirmImport(apiUrl, owner.cookie, first.id))
+      expect(firstDone.createdCount).toBe(2)
+      expect(firstDone.duplicateCount).toBe(1)
+      expect(firstDone.malformedCount).toBe(0)
+      const afterFirst = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(afterFirst).toHaveLength(3)
+      expect(afterFirst.filter((entry) => entry.description === 'Streaming service')).toHaveLength(
+        1,
+      )
+
+      // An overlapping second export: two rows repeat the first one, one is
+      // new, one is malformed. Malformed rows are never duplicate-flagged —
+      // there is nothing parsed to match.
+      const second = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'march-b.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-03-02,Coffee,-4.00',
+            '2026-03-03,Salary,2000.00',
+            '2026-03-04,Books,-15.00',
+            'bad-date,Oops,-1.00',
+          ].join('\n'),
+        }),
+      )
+      const secondPreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, second.id, MAPPING),
+      )
+      expect(secondPreview.rows.map((row) => row.duplicate)).toEqual([true, true, false, false])
+      expect(secondPreview.rows[0]).toEqual({
+        line: 2,
+        raw: { date: '2026-03-02', description: 'Coffee', amount: '-4.00' },
+        parsed: { date: '2026-03-02', description: 'Coffee', amount: -400 },
+        error: null,
+        duplicate: true,
+      })
+
+      // Malformed overrides are rejected loudly before anything is created.
+      const badBodies: Record<string, unknown>[] = [
+        { overrides: 'all' },
+        { overrides: [1.5] },
+        { overrides: ['2'] },
+        { overrides: [-1] },
+      ]
+      for (const body of badBodies) {
+        expect((yield* confirmImport(apiUrl, owner.cookie, second.id, body)).status).toBe(400)
+      }
+
+      // Override line 2 (Coffee): the Member chooses to import it anyway;
+      // Salary stays skipped. The confirmed count matches those choices.
+      const secondDone = yield* readImport(
+        yield* confirmImport(apiUrl, owner.cookie, second.id, { overrides: [2] }),
+      )
+      expect(secondDone.createdCount).toBe(2)
+      expect(secondDone.duplicateCount).toBe(1)
+      expect(secondDone.malformedCount).toBe(1)
+      const afterSecond = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(afterSecond).toHaveLength(5)
+      // The override created a second identical Coffee row — the Member's
+      // choice; Salary still appears exactly once.
+      expect(afterSecond.filter((entry) => entry.description === 'Coffee')).toHaveLength(2)
+      expect(afterSecond.filter((entry) => entry.description === 'Salary')).toHaveLength(1)
+      // -1999 - 400 + 200000 - 400 - 1500.
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(195701)
+
+      // Re-uploading an already-imported file: everything is flagged, and a
+      // bodyless confirm succeeds creating nothing — the ledger is unchanged.
+      const rerun = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'march-a-again.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-03-01,Streaming service,-19.99',
+            '2026-03-02,Coffee,-4.00',
+            '2026-03-03,Salary,2000.00',
+          ].join('\n'),
+        }),
+      )
+      const rerunPreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, rerun.id, MAPPING),
+      )
+      expect(rerunPreview.rows.every((row) => row.duplicate)).toBe(true)
+      const rerunDone = yield* readImport(yield* confirmImport(apiUrl, owner.cookie, rerun.id))
+      expect(rerunDone.status).toBe('confirmed')
+      expect(rerunDone.createdCount).toBe(0)
+      expect(rerunDone.duplicateCount).toBe(3)
+      expect(yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))).toHaveLength(5)
+
+      // Dedup is account-scoped: the same rows into another Account are not
+      // duplicates, and an explicit empty overrides body works like none.
+      const savings = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Savings',
+          type: 'savings',
+          openingBalance: 0,
+        }),
+      )
+      const elsewhere = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: savings.id,
+          fileName: 'savings.csv',
+          csv: 'Date,Description,Amount\n2026-03-02,Coffee,-4.00\n',
+        }),
+      )
+      const elsewherePreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, elsewhere.id, MAPPING),
+      )
+      expect(elsewherePreview.rows.map((row) => row.duplicate)).toEqual([false])
+      const elsewhereDone = yield* readImport(
+        yield* confirmImport(apiUrl, owner.cookie, elsewhere.id, { overrides: [] }),
+      )
+      expect(elsewhereDone.createdCount).toBe(1)
+      expect(elsewhereDone.duplicateCount).toBe(0)
+
+      // The history reports every Import's dedup outcome.
+      const history = yield* readImports(yield* listImports(apiUrl, owner.cookie))
+      const byFile = Object.fromEntries(history.map((entry) => [entry.fileName, entry]))
+      expect(byFile['march-a.csv']?.duplicateCount).toBe(1)
+      expect(byFile['march-b.csv']?.duplicateCount).toBe(1)
+      expect(byFile['march-a-again.csv']?.duplicateCount).toBe(3)
+      expect(byFile['savings.csv']?.duplicateCount).toBe(0)
     }),
   { timeout: 600_000 },
 )

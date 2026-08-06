@@ -6,6 +6,7 @@ import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/
 import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
+import { Checkbox } from '@pfinance/ui/components/checkbox'
 import { Field, FieldLabel } from '@pfinance/ui/components/field'
 import { Input } from '@pfinance/ui/components/input'
 import {
@@ -75,6 +76,8 @@ function ImportsScreen() {
 
   const [active, setActive] = useState<ActiveImport | null>(null)
   const [mapping, setMapping] = useState<MappingFields | null>(null)
+  // Lines of duplicate-flagged rows the Member chose to import anyway.
+  const [overrides, setOverrides] = useState<ReadonlySet<number>>(new Set())
 
   // All Accounts, archived included, so history rows on a closed Account
   // still name it; the upload picker below offers only open ones.
@@ -106,6 +109,19 @@ function ImportsScreen() {
   const startMapping = (entry: ActiveImport) => {
     setActive(entry)
     setMapping(guessMapping(entry.columns))
+    setOverrides(new Set())
+  }
+
+  const toggleOverride = (line: number) => {
+    setOverrides((current) => {
+      const next = new Set(current)
+      if (next.has(line)) {
+        next.delete(line)
+      } else {
+        next.add(line)
+      }
+      return next
+    })
   }
 
   const upload = useMutation({
@@ -148,6 +164,7 @@ function ImportsScreen() {
         rowCount: batch.rowCount,
       })
       setMapping(batch.mapping ?? guessMapping(columns))
+      setOverrides(new Set())
     },
   })
 
@@ -173,8 +190,11 @@ function ImportsScreen() {
   })
 
   const confirm = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.imports[':id'].confirm.$post({ param: { id } })
+    mutationFn: async (fields: { id: string; overrides: number[] }) => {
+      const response = await api.api.imports[':id'].confirm.$post({
+        param: { id: fields.id },
+        json: { overrides: fields.overrides },
+      })
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null
         throw new Error(body?.error ?? 'Failed to confirm the import')
@@ -189,6 +209,7 @@ function ImportsScreen() {
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
       setActive(null)
       setMapping(null)
+      setOverrides(new Set())
     },
   })
 
@@ -196,6 +217,7 @@ function ImportsScreen() {
     confirm.reset()
     setActive(null)
     setMapping(null)
+    setOverrides(new Set())
   }
 
   return (
@@ -226,8 +248,10 @@ function ImportsScreen() {
           previewError={previewQuery.isError ? previewQuery.error.message : null}
           confirming={confirm.isPending}
           confirmError={confirm.isError ? confirm.error.message : null}
+          overrides={overrides}
+          onToggleOverride={toggleOverride}
           onMappingChange={setMapping}
-          onConfirm={() => confirm.mutate(active.id)}
+          onConfirm={() => confirm.mutate({ id: active.id, overrides: [...overrides] })}
           onClose={closeWizard}
         />
       )}
@@ -347,7 +371,8 @@ function UploadCard({
 // Steps 2–3 — map and preview: three column selects plus the date shape,
 // with the parsed result of every row underneath. Malformed rows are shown
 // with their line and reason — they are skipped on confirm, never silently
-// dropped.
+// dropped. Rows matching an existing Transaction are flagged as duplicates
+// and skipped by default; a per-row checkbox imports one anyway (issue #14).
 function MappingCard({
   active,
   mapping,
@@ -358,6 +383,8 @@ function MappingCard({
   previewError,
   confirming,
   confirmError,
+  overrides,
+  onToggleOverride,
   onMappingChange,
   onConfirm,
   onClose,
@@ -371,6 +398,8 @@ function MappingCard({
   previewError: string | null
   confirming: boolean
   confirmError: string | null
+  overrides: ReadonlySet<number>
+  onToggleOverride: (line: number) => void
   onMappingChange: (mapping: MappingFields) => void
   onConfirm: () => void
   onClose: () => void
@@ -382,6 +411,10 @@ function MappingCard({
   const rows = preview?.rows ?? []
   const readyCount = rows.filter((row) => row.parsed !== null).length
   const malformedCount = rows.length - readyCount
+  const skippedDuplicates = rows.filter(
+    (row) => row.parsed !== null && row.duplicate && !overrides.has(row.line),
+  ).length
+  const importCount = readyCount - skippedDuplicates
 
   const columnSelect = (
     id: string,
@@ -478,12 +511,19 @@ function MappingCard({
         ) : (
           <>
             <p className="text-sm">
-              {readyCount} of {rows.length} rows will import
+              {importCount} of {rows.length} rows will import
               {malformedCount > 0 && (
                 <span className="text-destructive">
                   {' '}
                   · {malformedCount} malformed {malformedCount === 1 ? 'row' : 'rows'} will be
                   skipped
+                </span>
+              )}
+              {skippedDuplicates > 0 && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  · {skippedDuplicates} {skippedDuplicates === 1 ? 'duplicate' : 'duplicates'} will
+                  be skipped
                 </span>
               )}
             </p>
@@ -495,37 +535,61 @@ function MappingCard({
                     <TableHead>Date</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Duplicate</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.line}>
-                      <TableCell className="text-xs text-muted-foreground tabular-nums">
-                        {row.line}
-                      </TableCell>
-                      {row.parsed === null ? (
-                        <TableCell colSpan={3}>
-                          <span className="text-sm text-destructive">
-                            {row.error} — skipped on confirm
-                          </span>
+                  {rows.map((row) => {
+                    const skipped = row.duplicate && !overrides.has(row.line)
+                    return (
+                      <TableRow key={row.line}>
+                        <TableCell className="text-xs text-muted-foreground tabular-nums">
+                          {row.line}
                         </TableCell>
-                      ) : (
-                        <>
-                          <TableCell className="text-xs text-muted-foreground tabular-nums">
-                            {formatCalendarDate(row.parsed.date)}
-                          </TableCell>
-                          <TableCell>
-                            <span className="block max-w-96 truncate text-sm">
-                              {row.parsed.description}
+                        {row.parsed === null ? (
+                          <TableCell colSpan={4}>
+                            <span className="text-sm text-destructive">
+                              {row.error} — skipped on confirm
                             </span>
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium tabular-nums">
-                            {formatAmount(row.parsed.amount, currency)}
-                          </TableCell>
-                        </>
-                      )}
-                    </TableRow>
-                  ))}
+                        ) : (
+                          <>
+                            <TableCell
+                              className={`text-xs text-muted-foreground tabular-nums${skipped ? ' opacity-50' : ''}`}
+                            >
+                              {formatCalendarDate(row.parsed.date)}
+                            </TableCell>
+                            <TableCell className={skipped ? 'opacity-50' : undefined}>
+                              <span className="block max-w-96 truncate text-sm">
+                                {row.parsed.description}
+                              </span>
+                            </TableCell>
+                            <TableCell
+                              className={`text-right text-sm font-medium tabular-nums${skipped ? ' opacity-50' : ''}`}
+                            >
+                              {formatAmount(row.parsed.amount, currency)}
+                            </TableCell>
+                            <TableCell>
+                              {row.duplicate && (
+                                <span className="flex items-center justify-end gap-2">
+                                  <Badge>Duplicate</Badge>
+                                  <label className="flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
+                                    <Checkbox
+                                      checked={overrides.has(row.line)}
+                                      onCheckedChange={() => onToggleOverride(row.line)}
+                                    />
+                                    Import anyway
+                                  </label>
+                                </span>
+                              )}
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -547,7 +611,9 @@ function MappingCard({
           >
             {confirming
               ? 'Importing…'
-              : `Import ${readyCount} ${readyCount === 1 ? 'transaction' : 'transactions'}`}
+              : importCount === 0
+                ? 'Finish without importing'
+                : `Import ${importCount} ${importCount === 1 ? 'transaction' : 'transactions'}`}
           </Button>
         </div>
       </CardContent>
@@ -606,7 +672,11 @@ function ImportHistoryTable({
             <TableCell className="text-xs text-muted-foreground">
               {entry.status === 'confirmed'
                 ? `${entry.createdCount} imported${
-                    (entry.malformedCount ?? 0) > 0 ? ` · ${entry.malformedCount} skipped` : ''
+                    (entry.malformedCount ?? 0) > 0 ? ` · ${entry.malformedCount} malformed` : ''
+                  }${
+                    (entry.duplicateCount ?? 0) > 0
+                      ? ` · ${entry.duplicateCount} ${entry.duplicateCount === 1 ? 'duplicate' : 'duplicates'} skipped`
+                      : ''
                   }`
                 : `${entry.rowCount} rows`}
             </TableCell>

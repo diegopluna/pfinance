@@ -1,8 +1,11 @@
 import { expect, test } from 'vite-plus/test'
 import {
+  duplicateKey,
+  flagDuplicates,
   parseCsv,
   parseCsvAmount,
   parseCsvDate,
+  parseImportConfirm,
   previewRows,
   type ImportMapping,
 } from '../src/imports.ts'
@@ -116,6 +119,7 @@ test('previewRows parses valid rows and surfaces malformed ones with their line 
     raw: { date: '2026-01-15', description: 'Coffee', amount: '-3.50' },
     parsed: { date: '2026-01-15', description: 'Coffee', amount: -350 },
     error: null,
+    duplicate: false,
   })
 
   // Malformed rows are surfaced, never silently dropped: each names what
@@ -146,6 +150,50 @@ test('previewRows honors the mapping: reordered columns and non-ISO dates', () =
       raw: { date: '15/01/2026', description: 'Depósito, ok', amount: '1.234,56' },
       parsed: { date: '2026-01-15', description: 'Depósito, ok', amount: 123456 },
       error: null,
+      duplicate: false,
     },
   ])
+})
+
+// --- Import dedup (issue #14): the pure key + flagging seam. ---
+
+test('duplicateKey matches on exact date + amount + description and nothing looser', () => {
+  const fields = { date: '2026-01-15', description: 'Coffee', amount: -350 }
+  expect(duplicateKey({ ...fields })).toBe(duplicateKey(fields))
+  expect(duplicateKey({ ...fields, date: '2026-01-16' })).not.toBe(duplicateKey(fields))
+  expect(duplicateKey({ ...fields, amount: -351 })).not.toBe(duplicateKey(fields))
+  expect(duplicateKey({ ...fields, description: 'coffee' })).not.toBe(duplicateKey(fields))
+  // Delimiter-looking descriptions can't collide across fields.
+  expect(duplicateKey({ date: '2026-01-15', description: '-350', amount: -350 })).not.toBe(
+    duplicateKey({ date: '2026-01-15', description: '-350,-350', amount: -350 }),
+  )
+})
+
+test('flagDuplicates flags rows whose parsed fields match an existing key; malformed rows never flag', () => {
+  const records = parseCsv(
+    [
+      'Date,Memo,Value',
+      '2026-01-15,Coffee,-3.50',
+      '2026-01-16,Salary,1000.00',
+      'bad-date,Coffee,-3.50',
+    ].join('\n'),
+  )
+  const existing = new Set([
+    duplicateKey({ date: '2026-01-15', description: 'Coffee', amount: -350 }),
+  ])
+  const rows = flagDuplicates(previewRows(records.slice(1), mapping, 'USD'), existing)
+  expect(rows.map((row) => row.duplicate)).toEqual([true, false, false])
+})
+
+test('parseImportConfirm accepts absent or integer-line overrides and rejects other shapes', () => {
+  expect(parseImportConfirm(undefined)).toEqual({ ok: true, value: { overrides: [] } })
+  expect(parseImportConfirm({})).toEqual({ ok: true, value: { overrides: [] } })
+  expect(parseImportConfirm({ overrides: [2, 5] })).toEqual({
+    ok: true,
+    value: { overrides: [2, 5] },
+  })
+  expect(parseImportConfirm({ overrides: 'all' }).ok).toBe(false)
+  expect(parseImportConfirm({ overrides: [1.5] }).ok).toBe(false)
+  expect(parseImportConfirm({ overrides: ['2'] }).ok).toBe(false)
+  expect(parseImportConfirm({ overrides: [-1] }).ok).toBe(false)
 })

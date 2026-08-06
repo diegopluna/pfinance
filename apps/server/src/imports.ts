@@ -4,8 +4,8 @@ import {
   toMinorUnits,
   type CurrencyCode,
 } from '@pfinance/currency'
-import { account, csvImport, household, type Db } from '@pfinance/db'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { account, csvImport, household, transaction, type Db } from '@pfinance/db'
+import { and, asc, desc, eq, gte, lte } from 'drizzle-orm'
 import type { Parsed } from './parsed.ts'
 import { isCalendarDate } from './transactions.ts'
 
@@ -193,7 +193,20 @@ export interface PreviewRow {
   raw: { date: string; description: string; amount: string }
   parsed: ImportRowFields | null
   error: string | null
+  /**
+   * The parsed row exact-matches an existing Transaction (issue #14):
+   * skipped on confirm unless the Member overrides it by line.
+   */
+  duplicate: boolean
 }
+
+/**
+ * The exact-match identity dedup compares on — date + amount + description
+ * (the account is the query's scope). JSON keeps the fields from colliding
+ * however the description is shaped.
+ */
+export const duplicateKey = (fields: ImportRowFields): string =>
+  JSON.stringify([fields.date, fields.amount, fields.description])
 
 const previewRow = (
   record: CsvRecord,
@@ -205,7 +218,13 @@ const previewRow = (
     description: record.cells[mapping.descriptionColumn] ?? '',
     amount: record.cells[mapping.amountColumn] ?? '',
   }
-  const failed = (error: string): PreviewRow => ({ line: record.line, raw, parsed: null, error })
+  const failed = (error: string): PreviewRow => ({
+    line: record.line,
+    raw,
+    parsed: null,
+    error,
+    duplicate: false,
+  })
   const needed = Math.max(mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn) + 1
   if (record.cells.length < needed) {
     return failed(`The row has ${record.cells.length} columns; the mapping needs ${needed}.`)
@@ -222,15 +241,36 @@ const previewRow = (
   if (description === '') {
     return failed('The description is empty.')
   }
-  return { line: record.line, raw, parsed: { date, description, amount }, error: null }
+  return {
+    line: record.line,
+    raw,
+    parsed: { date, description, amount },
+    error: null,
+    duplicate: false,
+  }
 }
 
-/** Data records (header excluded) + mapping → one preview row each. */
+/**
+ * Data records (header excluded) + mapping → one preview row each, not yet
+ * duplicate-flagged (flagDuplicates owns that, once the ledger is queried).
+ */
 export const previewRows = (
   records: CsvRecord[],
   mapping: ImportMapping,
   currency: CurrencyCode,
 ): PreviewRow[] => records.map((record) => previewRow(record, mapping, currency))
+
+/**
+ * Flags every row whose parsed fields appear in `existing` (duplicateKey per
+ * Transaction already on the Account). Malformed rows never flag — there is
+ * nothing parsed to match.
+ */
+export const flagDuplicates = (rows: PreviewRow[], existing: ReadonlySet<string>): PreviewRow[] =>
+  rows.map((row) =>
+    row.parsed !== null && existing.has(duplicateKey(row.parsed))
+      ? { ...row, duplicate: true }
+      : row,
+  )
 
 // Upload caps: bank exports are small, and the file is stored as one D1 TEXT
 // cell, so both bytes and rows are bounded loudly — an oversize file is
@@ -289,6 +329,26 @@ export const parseImportMapping = (body: unknown): Parsed<ImportMapping> => {
   return { ok: true, value: { dateColumn, descriptionColumn, amountColumn, dateFormat } }
 }
 
+export interface ImportConfirmFields {
+  /** File lines of flagged rows the Member chose to import anyway. */
+  overrides: number[]
+}
+
+// Confirm's body is optional — absent means "skip every flagged duplicate".
+// Lines that aren't flagged duplicates are harmless: an override only ever
+// admits a row the preview flagged.
+export const parseImportConfirm = (body: unknown): Parsed<ImportConfirmFields> => {
+  const record = (body ?? {}) as Record<string, unknown>
+  const overrides = record.overrides === undefined ? [] : record.overrides
+  if (
+    !Array.isArray(overrides) ||
+    !overrides.every((line) => typeof line === 'number' && Number.isSafeInteger(line) && line > 0)
+  ) {
+    return { ok: false, error: 'Overrides name flagged rows by their file line.' }
+  }
+  return { ok: true, value: { overrides } }
+}
+
 export const mappingColumnError = (
   mapping: ImportMapping,
   columnCount: number,
@@ -312,6 +372,7 @@ export const importView = (row: typeof csvImport.$inferSelect) => ({
   rowCount: row.rowCount,
   createdCount: row.createdCount,
   malformedCount: row.malformedCount,
+  duplicateCount: row.duplicateCount,
   createdAt: row.createdAt,
   confirmedAt: row.confirmedAt,
 })
@@ -341,6 +402,43 @@ export const listImports = async (db: Db, householdId: string) => {
 // D1 caps bound parameters per statement at 100; a Transaction row binds 12
 // columns, so 8 rows per INSERT stays clear of the cap.
 export const IMPORT_INSERT_CHUNK = 8
+
+/**
+ * The duplicateKeys already on the Account, for flagging preview rows
+ * (issue #14). Bounded by the parsed rows' date range — ISO dates compare
+ * lexicographically, and a bank export covers a contiguous window, so the
+ * query never scans the whole ledger.
+ */
+export const existingDuplicateKeys = async (
+  db: Db,
+  accountId: string,
+  rows: PreviewRow[],
+): Promise<Set<string>> => {
+  const dates = rows.flatMap((row) => (row.parsed === null ? [] : [row.parsed.date]))
+  const [first] = dates
+  if (first === undefined) return new Set()
+  let min = first
+  let max = first
+  for (const date of dates) {
+    if (date < min) min = date
+    if (date > max) max = date
+  }
+  const existing = await db
+    .select({
+      date: transaction.date,
+      amount: transaction.amount,
+      description: transaction.description,
+    })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.accountId, accountId),
+        gte(transaction.date, min),
+        lte(transaction.date, max),
+      ),
+    )
+  return new Set(existing.map(duplicateKey))
+}
 
 // Amount cells parse in the Household's Currency (ADR 0002). The code is
 // validated at sign-up, so the USD arm only narrows the type.
