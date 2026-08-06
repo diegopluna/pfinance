@@ -3,6 +3,16 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@pfinance/ui/components/alert-dialog'
 import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -78,6 +88,8 @@ function ImportsScreen() {
   const [mapping, setMapping] = useState<MappingFields | null>(null)
   // Lines of duplicate-flagged rows the Member chose to import anyway.
   const [overrides, setOverrides] = useState<ReadonlySet<number>>(new Set())
+  // The history row awaiting delete confirmation, if any.
+  const [pendingDelete, setPendingDelete] = useState<ImportEntry | null>(null)
 
   // All Accounts, archived included, so history rows on a closed Account
   // still name it; the upload picker below offers only open ones.
@@ -294,17 +306,7 @@ function ImportsScreen() {
               resuming={resume.isPending}
               deleting={deleteImport.isPending}
               onResume={(id) => resume.mutate(id)}
-              onDelete={(entry) => {
-                const cascadeWarning =
-                  entry.status === 'confirmed' && (entry.createdCount ?? 0) > 0
-                    ? ` Its ${entry.createdCount} imported ${
-                        entry.createdCount === 1 ? 'transaction goes' : 'transactions go'
-                      } too.`
-                    : ''
-                if (window.confirm(`Delete import "${entry.fileName}"?${cascadeWarning}`)) {
-                  deleteImport.mutate(entry.id)
-                }
-              }}
+              onDelete={setPendingDelete}
             />
           </CardContent>
         </Card>
@@ -319,6 +321,43 @@ function ImportsScreen() {
           Couldn&apos;t delete that import.
         </p>
       )}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete import?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete !== null &&
+                `"${pendingDelete.fileName}" will be removed from the history.${
+                  pendingDelete.status === 'confirmed' && (pendingDelete.createdCount ?? 0) > 0
+                    ? ` Its ${pendingDelete.createdCount} imported ${
+                        pendingDelete.createdCount === 1 ? 'transaction goes' : 'transactions go'
+                      } too.`
+                    : ''
+                }`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete !== null) {
+                  deleteImport.mutate(pendingDelete.id)
+                }
+                setPendingDelete(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
