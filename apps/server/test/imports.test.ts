@@ -5,6 +5,7 @@ import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse
 import { expect } from 'vite-plus/test'
 import {
   createAccount,
+  createTransaction,
   executeWarm,
   freshApiUrl,
   listAccounts,
@@ -406,15 +407,6 @@ test.provider(
 // date + amount + description; flagged rows are skipped by default and a
 // per-row override (confirm body { overrides: [line] }) imports one anyway —
 // overlapping bank exports never double-count the ledger.
-
-const createTransaction = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
-  Test.executeWhenReady(
-    HttpClientRequest.post(`${apiUrl}/api/transactions`).pipe(
-      trustedOrigin,
-      withCookie(cookie),
-      HttpClientRequest.bodyJsonUnsafe(body),
-    ),
-  )
 
 test.provider(
   'Import dedup: overlapping exports are flagged and skipped by default; per-row overrides import anyway',

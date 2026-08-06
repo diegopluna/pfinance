@@ -145,6 +145,15 @@ export const listAccounts = (apiUrl: string, cookie: string, query = '') =>
     HttpClientRequest.get(`${apiUrl}/api/accounts${query}`).pipe(withCookie(cookie)),
   )
 
+export const createTransaction = (apiUrl: string, cookie: string, body: Record<string, unknown>) =>
+  Test.executeWhenReady(
+    HttpClientRequest.post(`${apiUrl}/api/transactions`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    ),
+  )
+
 // Bootstrap an owner on a fresh instance and return their cookie + household.
 export const signUpOwner = (
   apiUrl: string,
