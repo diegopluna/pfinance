@@ -8,9 +8,11 @@ import { Badge } from '@pfinance/ui/components/badge'
 import { Button, buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
+import { IncomeVsExpenseChart } from '@/components/income-vs-expense-chart'
 import { NetWorthChart } from '@/components/net-worth-chart'
 import { SpendingByCategoryChart } from '@/components/spending-by-category-chart'
 import { useAccounts } from '@/hooks/use-accounts'
+import { useIncomeExpense } from '@/hooks/use-income-expense'
 import { useMe } from '@/hooks/use-me'
 import { useNetWorth } from '@/hooks/use-net-worth'
 import { useSpending } from '@/hooks/use-spending'
@@ -92,8 +94,48 @@ function Dashboard() {
 
       <NetWorthSection query={netWorthQuery} currency={currency} />
 
+      <IncomeExpenseSection currency={currency} />
+
       <SpendingSection currency={currency} />
     </div>
+  )
+}
+
+// Income vs Expense by month (issue #19), server-summed over a recent window
+// — the "am I saving anything" view. No month stepper: the window always ends
+// at the current month, so the section reads as a standing answer rather than
+// a browsable slice.
+function IncomeExpenseSection({ currency }: { currency: CurrencyCode | undefined }) {
+  const query = useIncomeExpense()
+  const months = query.data?.months ?? []
+  return (
+    <section aria-labelledby="income-expense-heading" className="flex flex-col gap-3">
+      <h2 id="income-expense-heading" className="text-sm font-semibold tracking-tight">
+        Income vs expense
+      </h2>
+      {query.isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t load income vs expense.
+        </p>
+      ) : query.isPending || currency === undefined ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
+      ) : months.length === 0 ? (
+        // No Income or Expense yet: the Balances section above already
+        // carries the call to action, so this stays a quiet one-liner.
+        <p className="max-w-prose text-sm text-muted-foreground">
+          The chart starts with the ledger — it appears once there are income or expense
+          transactions.
+        </p>
+      ) : (
+        <Card size="sm">
+          <CardContent>
+            <IncomeVsExpenseChart months={months} currency={currency} />
+          </CardContent>
+        </Card>
+      )}
+    </section>
   )
 }
 

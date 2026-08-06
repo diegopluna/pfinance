@@ -1038,3 +1038,195 @@ test.provider(
     }),
   { timeout: 600_000 },
 )
+
+// --- Income vs Expense by month (issue #19) ---
+// The chart's read: per-month Income and Expense totals over a recent window,
+// computed server-side (issue #1) — the web app renders, it never sums.
+
+interface IncomeExpensePoint {
+  month: string
+  income: number
+  expense: number
+}
+
+interface IncomeExpenseView {
+  through: string
+  months: IncomeExpensePoint[]
+}
+
+const readIncomeExpense = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => body as unknown as IncomeExpenseView)
+
+// executeWarm, not executeWhenReady: every call below runs after signUpOwner
+// has converged the edge, and a warm request lets a missing route fail as a
+// 404 instead of retrying into the test timeout.
+const incomeVsExpense = (apiUrl: string, cookie: string, query = '') =>
+  executeWarm(
+    HttpClientRequest.get(`${apiUrl}/api/income-vs-expense${query}`).pipe(withCookie(cookie)),
+  )
+
+test.provider(
+  'Income vs Expense by month: sign-derived totals, Transfers and Adjustments excluded',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'income-expense-owner@example.com', {
+        householdName: 'Savings House',
+        currency: 'BRL',
+      })
+
+      // Household data: no session, no access. (After signUpOwner so the
+      // worker is warm — see the executeWarm note above.)
+      const anonymous = yield* executeWarm(HttpClientRequest.get(`${apiUrl}/api/income-vs-expense`))
+      expect(anonymous.status).toBe(401)
+
+      // An empty ledger has no months at all — no zero-padded window.
+      expect(
+        yield* readIncomeExpense(yield* incomeVsExpense(apiUrl, owner.cookie, '?through=2026-04')),
+      ).toEqual({ through: '2026-04', months: [] })
+
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 500000,
+        }),
+      )
+      const visa = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Visa',
+          type: 'credit_card',
+          openingBalance: 0,
+        }),
+      )
+
+      // The known ledger. The boundary dates (the 31st and the 1st) pin that
+      // bucketing is by calendar month; March has no entries, so it must show
+      // as an explicit zero month rather than a hole in the axis.
+      const ledger: Record<string, unknown>[] = [
+        { accountId: checking.id, date: '2026-01-05', amount: 500000, description: 'Salary' },
+        { accountId: checking.id, date: '2026-01-10', amount: -30000, description: 'Market' },
+        { accountId: checking.id, date: '2026-01-31', amount: -150000, description: 'Rent' },
+        { accountId: checking.id, date: '2026-02-01', amount: 500000, description: 'Salary' },
+        // Expense sums across Accounts, cards included.
+        { accountId: visa.id, date: '2026-02-07', amount: -40000, description: 'Market' },
+        // A refund is Income by the sign rule: it must raise February's
+        // Income to 502500, never shrink its Expense to 37500.
+        { accountId: checking.id, date: '2026-02-12', amount: 2500, description: 'Refund' },
+        // A Balance Adjustment corrects drift, it is neither: included, it
+        // would inflate February's Expense to 40500.
+        {
+          accountId: checking.id,
+          date: '2026-02-20',
+          amount: -500,
+          description: 'Drift',
+          kind: 'balance_adjustment',
+        },
+        { accountId: checking.id, date: '2026-04-03', amount: -700, description: 'Cash' },
+      ]
+      for (const entry of ledger) {
+        expect((yield* createTransaction(apiUrl, owner.cookie, entry)).status).toBe(200)
+      }
+
+      // A Transfer moves money between the Household's own Accounts and is
+      // excluded from income and spending charts by definition (CONTEXT.md):
+      // counted, its legs would add 40000 to both sides of February.
+      expect(
+        (yield* createTransfer(apiUrl, owner.cookie, {
+          fromAccountId: checking.id,
+          toAccountId: visa.id,
+          amount: 40000,
+          date: '2026-02-18',
+          description: 'Card payoff',
+        })).status,
+      ).toBe(200)
+
+      // Exact totals in positive minor units, from the first month with
+      // Income or Expense data through the requested edge — no zero-padding
+      // back before the ledger starts.
+      const recent: IncomeExpensePoint[] = [
+        { month: '2026-01', income: 500000, expense: 180000 },
+        { month: '2026-02', income: 502500, expense: 40000 },
+        { month: '2026-03', income: 0, expense: 0 },
+        { month: '2026-04', income: 0, expense: 700 },
+      ]
+      expect(
+        yield* readIncomeExpense(yield* incomeVsExpense(apiUrl, owner.cookie, '?through=2026-04')),
+      ).toEqual({ through: '2026-04', months: recent })
+
+      // A future-dated entry extends the window rather than vanishing off its
+      // right edge — the Net Worth convention. Ten months out, it also pins
+      // that the left edge anchors to `through`: a lone mis-dated entry must
+      // not drag the genuinely recent months off the chart.
+      const early = yield* readTransaction(
+        yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2027-02-15',
+          amount: 12300,
+          description: 'Early salary',
+        }),
+      )
+      expect(
+        yield* readIncomeExpense(yield* incomeVsExpense(apiUrl, owner.cookie, '?through=2026-04')),
+      ).toEqual({
+        through: '2026-04',
+        months: [
+          ...recent,
+          ...[
+            '2026-05',
+            '2026-06',
+            '2026-07',
+            '2026-08',
+            '2026-09',
+            '2026-10',
+            '2026-11',
+            '2026-12',
+            '2027-01',
+          ].map((month) => ({ month, income: 0, expense: 0 })),
+          { month: '2027-02', income: 12300, expense: 0 },
+        ],
+      })
+      expect((yield* deleteTransaction(apiUrl, owner.cookie, early.id)).status).toBe(200)
+
+      // The window is the 12 most recent months: ledger history from before
+      // it drops off the left edge instead of stretching the chart, and its
+      // amounts appear nowhere.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          date: '2024-01-15',
+          amount: -9999,
+          description: 'Ancient rent',
+        })).status,
+      ).toBe(200)
+      expect(
+        yield* readIncomeExpense(yield* incomeVsExpense(apiUrl, owner.cookie, '?through=2026-04')),
+      ).toEqual({
+        through: '2026-04',
+        months: [
+          ...[
+            '2025-05',
+            '2025-06',
+            '2025-07',
+            '2025-08',
+            '2025-09',
+            '2025-10',
+            '2025-11',
+            '2025-12',
+          ].map((month) => ({ month, income: 0, expense: 0 })),
+          ...recent,
+        ],
+      })
+
+      // Omitting through reads up to the current UTC month — the dashboard's
+      // initial state. Only the resolved edge is pinned: the window depends
+      // on today's date, which this ledger deliberately does not.
+      const current = yield* readIncomeExpense(yield* incomeVsExpense(apiUrl, owner.cookie))
+      expect(current.through).toBe(new Date().toISOString().slice(0, 7))
+
+      // Malformed months are rejected, never silently defaulted.
+      expect((yield* incomeVsExpense(apiUrl, owner.cookie, '?through=2026-13')).status).toBe(400)
+      expect((yield* incomeVsExpense(apiUrl, owner.cookie, '?through=April')).status).toBe(400)
+    }),
+  { timeout: 600_000 },
+)
