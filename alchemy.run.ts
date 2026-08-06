@@ -10,6 +10,7 @@ import * as Config from 'effect/Config'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
 import type { ServerEnv } from './apps/server/src/env.ts'
+import { detectRepository } from './stacks/repository.ts'
 
 // Drizzle schema (packages/db) is the source of truth; alchemy regenerates
 // pending migration SQL on deploy whenever the schema drifts.
@@ -87,19 +88,33 @@ export default Alchemy.Stack(
       },
     })
 
+    // PR preview comments are optional: they need PULL_REQUEST (set by the
+    // deploy workflow) plus a detectable repository (GITHUB_REPOSITORY or
+    // the clone's origin remote — see stacks/repository.ts and
+    // docs/fork-deploy.md). A fork that only hosts the app never enters
+    // this branch and needs no GitHub credentials.
     if (process.env.PULL_REQUEST) {
-      yield* GitHub.Comment('preview-comment', {
-        owner: 'diegopluna',
-        repository: 'pfinance',
-        issueNumber: Number(process.env.PULL_REQUEST),
-        body: Output.interpolate`
-          ## Preview Deployed
-          
-          **Web Deployment URL:** ${web.url}
-          **Server Deployment URL:** ${api.url}
-          **Docs Deployment URL:** ${docs.url}
-        `,
-      })
+      const repo = detectRepository()
+      if (repo === undefined) {
+        yield* Effect.logWarning(
+          'PULL_REQUEST is set but no GitHub repository was detected ' +
+            '(set GITHUB_REPOSITORY=owner/repo); skipping the PR preview comment.',
+        )
+      } else {
+        yield* GitHub.Comment('preview-comment', {
+          owner: repo.owner,
+          repository: repo.repository,
+          issueNumber: Number(process.env.PULL_REQUEST),
+          // interpolate joins the template raw (no dedent), so the body is
+          // left-aligned to keep the comment valid markdown.
+          body: Output.interpolate`## Preview Deployed
+
+**Web Deployment URL:** ${web.url}
+**Server Deployment URL:** ${api.url}
+**Docs Deployment URL:** ${docs.url}
+`,
+        })
+      }
     }
 
     return {

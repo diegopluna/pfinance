@@ -4,6 +4,7 @@ import * as Cloudflare from 'alchemy/Cloudflare'
 import * as GitHub from 'alchemy/GitHub'
 import * as Effect from 'effect/Effect'
 import * as Redacted from 'effect/Redacted'
+import { detectRepository } from './repository.ts'
 
 export default Alchemy.Stack(
   'github',
@@ -12,6 +13,20 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
+    // This stack writes CI secrets into a specific GitHub repository, so
+    // unlike the app stack it cannot run without one. Forks get their own
+    // repo from GITHUB_REPOSITORY or their clone's origin remote
+    // (docs/fork-deploy.md).
+    const repo = detectRepository()
+    if (repo === undefined) {
+      return yield* Effect.die(
+        new Error(
+          'Cannot determine which GitHub repository to write CI secrets to. ' +
+            'Set GITHUB_REPOSITORY=owner/repo or run from a clone whose origin remote points at github.com.',
+        ),
+      )
+    }
+
     const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
 
     const apiToken = yield* Cloudflare.ApiToken.AccountApiToken('CIToken', {
@@ -38,15 +53,15 @@ export default Alchemy.Stack(
     })
 
     yield* GitHub.Secret('cf-api-token', {
-      owner: 'diegopluna',
-      repository: 'pfinance',
+      owner: repo.owner,
+      repository: repo.repository,
       name: 'CLOUDFLARE_API_TOKEN',
       value: apiToken.value,
     })
 
     yield* GitHub.Secret('cf-account-id', {
-      owner: 'diegopluna',
-      repository: 'pfinance',
+      owner: repo.owner,
+      repository: repo.repository,
       name: 'CLOUDFLARE_ACCOUNT_ID',
       value: Redacted.make(accountId),
     })
