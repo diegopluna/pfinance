@@ -42,6 +42,7 @@ import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import {
   accountInHousehold,
+  categoryAssignmentError,
   findTransaction,
   listTransactions,
   parseNewTransaction,
@@ -285,6 +286,14 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
         return c.json({ error: 'Unknown account.' }, 400)
       }
+      if (fields.categoryId !== null) {
+        const rejection = await categoryAssignmentError(
+          db,
+          c.var.membership.householdId,
+          fields.categoryId,
+        )
+        if (rejection !== undefined) return c.json({ error: rejection }, 400)
+      }
       const row = {
         id: crypto.randomUUID(),
         ...fields,
@@ -313,6 +322,16 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         !(await accountInHousehold(db, c.var.membership.householdId, patch.accountId))
       ) {
         return c.json({ error: 'Unknown account.' }, 400)
+      }
+      // Guard only a newly named Category (null clears, undefined keeps): a
+      // row already carrying an archived Category stays editable.
+      if (patch.categoryId != null) {
+        const rejection = await categoryAssignmentError(
+          db,
+          c.var.membership.householdId,
+          patch.categoryId,
+        )
+        if (rejection !== undefined) return c.json({ error: rejection }, 400)
       }
       await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
       // enteredBy stays the creator: editing a row doesn't re-attribute it.

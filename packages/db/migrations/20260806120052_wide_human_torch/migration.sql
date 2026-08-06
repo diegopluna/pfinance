@@ -1,0 +1,1 @@
+ALTER TABLE `transaction` ADD `category_id` text REFERENCES category(id) ON DELETE SET NULL;

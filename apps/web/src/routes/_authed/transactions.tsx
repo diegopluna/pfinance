@@ -58,6 +58,11 @@ type TransactionEntry = InferResponseType<
   200
 >['transactions'][number]
 type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accounts'][number]
+type CategoryEntry = InferResponseType<typeof api.api.categories.$get, 200>['categories'][number]
+
+// The filter sentinel for the Uncategorized state — a state, not a Category
+// row, so it can't collide with a real id (transactions.ts server-side).
+const UNCATEGORIZED = 'uncategorized'
 
 // Format guidance in the Household Currency, signed: money out is negative.
 const amountExample = (currency: CurrencyCode) => {
@@ -67,12 +72,14 @@ const amountExample = (currency: CurrencyCode) => {
 
 interface Filters {
   accountId: string
+  // '' = all, the UNCATEGORIZED sentinel, or a Category id.
+  categoryId: string
   from: string
   to: string
   q: string
 }
 
-const noFilters: Filters = { accountId: '', from: '', to: '', q: '' }
+const noFilters: Filters = { accountId: '', categoryId: '', from: '', to: '', q: '' }
 
 function TransactionsScreen() {
   const queryClient = useQueryClient()
@@ -111,12 +118,33 @@ function TransactionsScreen() {
     ...accounts.map((entry) => ({ value: entry.id, label: entry.name })),
   ]
 
+  // All Categories, archived included, for the same reason as Accounts:
+  // rows that carry a retired label must still name it (ADR 0003).
+  const categoriesQuery = useQuery({
+    queryKey: ['categories', true],
+    queryFn: async () => {
+      const response = await api.api.categories.$get({ query: { includeArchived: 'true' } })
+      if (!response.ok) {
+        throw new Error('Failed to load categories')
+      }
+      return response.json()
+    },
+  })
+  const categories = categoriesQuery.data?.categories ?? []
+  const categoryNames = new Map(categories.map((entry) => [entry.id, entry.name]))
+  const categoryFilterOptions = [
+    { value: '', label: 'All categories' },
+    { value: UNCATEGORIZED, label: 'Uncategorized' },
+    ...categories.map((entry) => ({ value: entry.id, label: entry.name })),
+  ]
+
   const transactionsQuery = useQuery({
     queryKey: ['transactions', filters],
     queryFn: async () => {
       const response = await api.api.transactions.$get({
         query: {
           ...(filters.accountId !== '' && { accountId: filters.accountId }),
+          ...(filters.categoryId !== '' && { categoryId: filters.categoryId }),
           ...(filters.from !== '' && { from: filters.from }),
           ...(filters.to !== '' && { to: filters.to }),
           ...(filters.q.trim() !== '' && { q: filters.q.trim() }),
@@ -173,7 +201,11 @@ function TransactionsScreen() {
 
   const transactions = transactionsQuery.data?.transactions ?? []
   const filtering =
-    filters.accountId !== '' || filters.from !== '' || filters.to !== '' || filters.q.trim() !== ''
+    filters.accountId !== '' ||
+    filters.categoryId !== '' ||
+    filters.from !== '' ||
+    filters.to !== '' ||
+    filters.q.trim() !== ''
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -194,6 +226,7 @@ function TransactionsScreen() {
         open={dialogOpen}
         entry={target.entry}
         accounts={accounts}
+        categories={categories}
         currency={currency}
         error={saveTransaction.isError ? saveTransaction.error.message : null}
         onSubmit={(fields) =>
@@ -230,6 +263,29 @@ function TransactionsScreen() {
             </SelectTrigger>
             <SelectContent>
               {accountFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field className="w-44 gap-1">
+          <FieldLabel htmlFor="filter-category" className="text-xs text-muted-foreground">
+            Category
+          </FieldLabel>
+          <Select
+            items={categoryFilterOptions}
+            value={filters.categoryId}
+            onValueChange={(value: string | null) =>
+              setFilters((current) => ({ ...current, categoryId: value ?? '' }))
+            }
+          >
+            <SelectTrigger id="filter-category" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {categoryFilterOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -303,6 +359,7 @@ function TransactionsScreen() {
             <TransactionsTable
               transactions={transactions}
               accountNames={accountNames}
+              categoryNames={categoryNames}
               currency={currency}
               deleting={deleteTransaction.isPending}
               onEdit={openDialog}
@@ -331,6 +388,7 @@ function TransactionsScreen() {
 function TransactionsTable({
   transactions,
   accountNames,
+  categoryNames,
   currency,
   deleting,
   onEdit,
@@ -338,6 +396,7 @@ function TransactionsTable({
 }: {
   transactions: TransactionEntry[]
   accountNames: Map<string, string>
+  categoryNames: Map<string, string>
   currency: CurrencyCode
   deleting: boolean
   onEdit: (entry: TransactionEntry) => void
@@ -374,6 +433,18 @@ function TransactionsTable({
       cell: ({ row }) => (
         <Badge>{accountNames.get(row.original.accountId) ?? 'Unknown account'}</Badge>
       ),
+    },
+    {
+      id: 'category',
+      header: 'Category',
+      // Exactly one Category or Uncategorized (ADR 0003); the quiet text for
+      // the latter keeps real labels visually distinct from the default.
+      cell: ({ row }) =>
+        row.original.categoryId === null ? (
+          <span className="text-xs text-muted-foreground">Uncategorized</span>
+        ) : (
+          <Badge>{categoryNames.get(row.original.categoryId) ?? 'Unknown category'}</Badge>
+        ),
     },
     {
       accessorKey: 'enteredBy',
@@ -464,6 +535,7 @@ function TransactionFormDialog({
   open,
   entry,
   accounts,
+  categories,
   currency,
   error,
   onSubmit,
@@ -472,6 +544,7 @@ function TransactionFormDialog({
   open: boolean
   entry: TransactionEntry | null
   accounts: AccountEntry[]
+  categories: CategoryEntry[]
   currency: CurrencyCode
   error: string | null
   onSubmit: (fields: TransactionFields) => Promise<void>
@@ -484,6 +557,16 @@ function TransactionFormDialog({
     .filter((account) => account.archivedAt === null || account.id === entry?.accountId)
     .map((account) => ({ value: account.id, label: account.name }))
 
+  // Same round-trip rule for Categories: archived labels are retired from
+  // assignment (issue #10) but a row already carrying one keeps it
+  // choosable. The explicit head option is how a Category is cleared.
+  const categoryOptions = [
+    { value: '', label: 'Uncategorized' },
+    ...categories
+      .filter((category) => category.archivedAt === null || category.id === entry?.categoryId)
+      .map((category) => ({ value: category.id, label: category.name })),
+  ]
+
   const form = useAppForm({
     defaultValues: {
       accountId: entry?.accountId ?? '',
@@ -491,6 +574,7 @@ function TransactionFormDialog({
       amount: entry === null ? '' : fromMinorUnits(entry.amount, currency),
       description: entry?.description ?? '',
       balanceAdjustment: entry?.kind === 'balance_adjustment',
+      categoryId: entry?.categoryId ?? '',
     },
     onSubmitInvalid: focusFirstInvalid,
     onSubmit: async ({ value }) => {
@@ -504,6 +588,8 @@ function TransactionFormDialog({
         // The checkbox is the Balance Adjustment flavor (issue #9): it moves
         // the Balance but never counts as spending or income.
         kind: value.balanceAdjustment ? 'balance_adjustment' : 'standard',
+        // '' is the form's Uncategorized; the API's is null (ADR 0003).
+        categoryId: value.categoryId === '' ? null : value.categoryId,
       })
     },
   })
@@ -590,6 +676,16 @@ function TransactionFormDialog({
                   searchPlaceholder="Search accounts…"
                   emptyText="No account found."
                   options={accountOptions}
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="categoryId">
+              {(field) => (
+                <field.ComboboxField
+                  label="Category"
+                  searchPlaceholder="Search categories…"
+                  emptyText="No category found."
+                  options={categoryOptions}
                 />
               )}
             </form.AppField>
