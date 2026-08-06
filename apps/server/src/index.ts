@@ -504,8 +504,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // an existing Transaction on account + date + amount + description are
   // flagged and skipped by default, overridable per row (issue #14), so
   // overlapping bank exports never double-count the ledger. Tenancy rides on
-  // the Account like Transactions (imports.ts). CONTEXT.md's revert is
-  // deliberately not here: it is issue #15 (riding the import_id cascade).
+  // the Account like Transactions (imports.ts). CONTEXT.md's revert is the
+  // DELETE (issue #15), riding the import_id cascade.
   .get('/api/imports', async (c) => {
     const db = createDb(c.env.DB)
     return c.json({ imports: await listImports(db, c.var.membership.householdId) })
@@ -698,6 +698,20 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       return c.json({ import: importView({ ...found, ...counts, confirmedAt }) })
     },
   )
+  // The revert (CONTEXT.md): a bad column mapping is one click to undo,
+  // whether pending or confirmed.
+  .delete('/api/imports/:id', async (c) => {
+    const db = createDb(c.env.DB)
+    const found = await findImport(db, c.var.membership.householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Import not found.' }, 404)
+    }
+    // The Transactions' importId cascades: one DELETE removes the Import and
+    // every Transaction it created atomically. Balances are derived (ADR
+    // 0001), so they return to their pre-Import values on the next read.
+    await db.delete(csvImport).where(eq(csvImport.id, found.id))
+    return c.json({ ok: true })
+  })
   // --- Categories (issue #10, ADR 0003) — member-level like the rest of the
   // ledger: the vocabulary is every Member's to shape (CONTEXT.md). A flat
   // list; archiving retires a label from assignment (enforced when

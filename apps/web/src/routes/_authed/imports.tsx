@@ -3,6 +3,16 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@pfinance/ui/components/alert-dialog'
 import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -78,6 +88,8 @@ function ImportsScreen() {
   const [mapping, setMapping] = useState<MappingFields | null>(null)
   // Lines of duplicate-flagged rows the Member chose to import anyway.
   const [overrides, setOverrides] = useState<ReadonlySet<number>>(new Set())
+  // The history row awaiting delete confirmation, if any.
+  const [pendingDelete, setPendingDelete] = useState<ImportEntry | null>(null)
 
   // All Accounts, archived included, so history rows on a closed Account
   // still name it; the upload picker below offers only open ones.
@@ -189,6 +201,14 @@ function ImportsScreen() {
     },
   })
 
+  // Confirming creates Transactions and reverting deletes them, so both
+  // refresh every ledger view.
+  const invalidateLedger = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['imports'] })
+    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+  }
+
   const confirm = useMutation({
     mutationFn: async (fields: { id: string; overrides: number[] }) => {
       const response = await api.api.imports[':id'].confirm.$post({
@@ -202,15 +222,23 @@ function ImportsScreen() {
       return response.json()
     },
     onSuccess: async () => {
-      // The Transactions and their Balances now exist; every ledger view
-      // refreshes.
-      await queryClient.invalidateQueries({ queryKey: ['imports'] })
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      await invalidateLedger()
       setActive(null)
       setMapping(null)
       setOverrides(new Set())
     },
+  })
+
+  // The revert (issue #15): deleting an Import deletes every Transaction it
+  // created server-side.
+  const deleteImport = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.api.imports[':id'].$delete({ param: { id } })
+      if (!response.ok) {
+        throw new Error('Failed to delete the import')
+      }
+    },
+    onSuccess: invalidateLedger,
   })
 
   const closeWizard = () => {
@@ -276,7 +304,9 @@ function ImportsScreen() {
               imports={imports}
               accountNames={accountNames}
               resuming={resume.isPending}
+              deleting={deleteImport.isPending}
               onResume={(id) => resume.mutate(id)}
+              onDelete={setPendingDelete}
             />
           </CardContent>
         </Card>
@@ -286,6 +316,48 @@ function ImportsScreen() {
           Couldn&apos;t reopen that import.
         </p>
       )}
+      {deleteImport.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t delete that import.
+        </p>
+      )}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete import?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete !== null &&
+                `"${pendingDelete.fileName}" will be removed from the history.${
+                  pendingDelete.status === 'confirmed' && (pendingDelete.createdCount ?? 0) > 0
+                    ? ` Its ${pendingDelete.createdCount} imported ${
+                        pendingDelete.createdCount === 1 ? 'transaction goes' : 'transactions go'
+                      } too.`
+                    : ''
+                }`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete !== null) {
+                  deleteImport.mutate(pendingDelete.id)
+                }
+                setPendingDelete(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -627,12 +699,16 @@ function ImportHistoryTable({
   imports,
   accountNames,
   resuming,
+  deleting,
   onResume,
+  onDelete,
 }: {
   imports: ImportEntry[]
   accountNames: Map<string, string>
   resuming: boolean
+  deleting: boolean
   onResume: (id: string) => void
+  onDelete: (entry: ImportEntry) => void
 }) {
   return (
     <Table>
@@ -683,8 +759,8 @@ function ImportHistoryTable({
                 : `${entry.rowCount} rows`}
             </TableCell>
             <TableCell>
-              {entry.status === 'pending' && (
-                <span className="flex justify-end">
+              <span className="flex justify-end">
+                {entry.status === 'pending' && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -694,8 +770,17 @@ function ImportHistoryTable({
                   >
                     Resume
                   </Button>
-                </span>
-              )}
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={deleting}
+                  onClick={() => onDelete(entry)}
+                >
+                  Delete
+                </Button>
+              </span>
             </TableCell>
           </TableRow>
         ))}
