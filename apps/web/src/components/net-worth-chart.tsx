@@ -1,6 +1,6 @@
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import type { InferResponseType } from 'hono/client'
-import { formatAmount, getCurrency, type CurrencyCode } from '@pfinance/currency'
+import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import {
   ChartContainer,
   ChartTooltip,
@@ -8,6 +8,8 @@ import {
   type ChartConfig,
 } from '@pfinance/ui/components/chart'
 import { api } from '@/lib/api'
+import { compactAmount } from '@/lib/format'
+import { monthLabel } from '@/lib/month'
 
 // The monthly Net Worth line (issue #17), drawn with the shared shadcn chart
 // primitives over recharts. The series arrives server-derived — this
@@ -28,28 +30,6 @@ const chartConfig = {
     theme: { light: 'var(--chart-1)', dark: 'oklch(0.58 0.2 264.376)' },
   },
 } satisfies ChartConfig
-
-// `YYYY-MM` → a human month. The Date is built in UTC and formatted in UTC,
-// so no viewer timezone can shift the label across a month boundary.
-const monthLabel = (month: string, style: 'tick' | 'full') => {
-  const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
-  return new Intl.DateTimeFormat(undefined, {
-    month: style === 'tick' ? 'short' : 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
-}
-
-// Axis ticks get the compact form ("R$ 2 mil"); exact amounts live in the
-// tooltip and the table via formatAmount. Ticks are display-only geometry, so
-// the one float division here never touches a ledger amount that is kept.
-const compactAmount = (minorUnits: number, currency: CurrencyCode) =>
-  new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency,
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(minorUnits / 10 ** getCurrency(currency).minorUnitExponent)
 
 export function NetWorthChart({
   series,

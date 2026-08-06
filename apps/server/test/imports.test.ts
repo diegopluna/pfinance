@@ -699,3 +699,126 @@ test.provider(
     }),
   { timeout: 600_000 },
 )
+
+// --- Amount sign strategy (issue #42) ---
+// Credit-card statements commonly invert the ledger's convention: positive =
+// charge, negative = payment. The mapping's amountSign: 'flip' negates every
+// parsed amount at parse time, so preview, dedup, and confirm all see
+// ledger-true signs — what was previewed is what gets created.
+
+// A card statement: two charges (positive), one payment (negative), one
+// refund in accounting parentheses (parses negative, so the flip lands it
+// positive — money back onto the card).
+const CARD_CSV = [
+  'Date,Description,Amount',
+  '2026-05-03,COFFEE SHOP,4.50',
+  '2026-05-04,SUPERMARKET,120.00',
+  '2026-05-10,PAYMENT RECEIVED - THANK YOU,-150.00',
+  '2026-05-15,AIRLINE REFUND,(2.25)',
+].join('\n')
+
+const CARD_MAPPING = { dateColumn: 0, descriptionColumn: 1, amountColumn: 2, dateFormat: 'ymd' }
+
+test.provider(
+  "Import amount sign: 'flip' lands a card statement's charges as Expenses; dedup keys on the flipped amount",
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'card-sign-owner@example.com', {
+        householdName: 'Card House',
+      })
+      const visa = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Visa',
+          type: 'credit_card',
+          openingBalance: 0,
+        }),
+      )
+
+      // This charge already exists on the Account with the ledger-true sign —
+      // the dedup must flag its CSV row by the FLIPPED amount, or a re-import
+      // of an already-entered statement double-counts.
+      expect(
+        (yield* createTransaction(apiUrl, owner.cookie, {
+          accountId: visa.id,
+          date: '2026-05-04',
+          amount: -12000,
+          description: 'SUPERMARKET',
+        })).status,
+      ).toBe(200)
+
+      const batch = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: visa.id,
+          fileName: 'visa-may.csv',
+          csv: CARD_CSV,
+        }),
+      )
+
+      // An unknown sign strategy is rejected, never silently ignored — an
+      // ignored flip would import a whole statement inverted.
+      expect(
+        (yield* previewImport(apiUrl, owner.cookie, batch.id, {
+          ...CARD_MAPPING,
+          amountSign: 'banana',
+        })).status,
+      ).toBe(400)
+
+      // Omitted means as-is: today's behavior, untouched — the charge reads
+      // as a positive amount exactly as the file says.
+      const asIs = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, batch.id, CARD_MAPPING),
+      )
+      expect(asIs.rows.map((row) => row.parsed?.amount)).toEqual([450, 12000, -15000, -225])
+      // As-is, nothing matches the existing -12000 Transaction.
+      expect(asIs.rows.every((row) => !row.duplicate)).toBe(true)
+
+      // Flipped: charges negative (Expenses), the payment positive, the
+      // parenthesized refund back to positive — and the mapping echoes the
+      // choice so the map step can restore it.
+      const flipped = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, batch.id, {
+          ...CARD_MAPPING,
+          amountSign: 'flip',
+        }),
+      )
+      expect(flipped.rows.map((row) => row.parsed?.amount)).toEqual([-450, -12000, 15000, 225])
+      expect(flipped.import.mapping).toEqual({ ...CARD_MAPPING, amountSign: 'flip' })
+      // Dedup now sees the flipped charge colliding with the existing row.
+      expect(flipped.rows.map((row) => row.duplicate)).toEqual([false, true, false, false])
+
+      // Confirm creates what the flipped preview showed, skipping the flagged
+      // duplicate: -450 + 15000 + 225 on top of the existing -12000.
+      const confirmed = yield* readImport(yield* confirmImport(apiUrl, owner.cookie, batch.id))
+      expect(confirmed.createdCount).toBe(3)
+      expect(confirmed.duplicateCount).toBe(1)
+      const created = yield* readTransactions(
+        yield* listTransactions(apiUrl, owner.cookie, `?accountId=${visa.id}`),
+      )
+      expect(created.map((row) => [row.description, row.amount])).toEqual([
+        ['AIRLINE REFUND', 225],
+        ['PAYMENT RECEIVED - THANK YOU', 15000],
+        ['SUPERMARKET', -12000],
+        ['COFFEE SHOP', -450],
+      ])
+
+      // The Balance derives from ledger-true signs: 0 - 12000 - 450 + 15000
+      // + 225 = 2775 — the card ends in credit after the payment and refund.
+      const accounts = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
+      expect(balanceOf(accounts, visa.id)).toBe(2775)
+
+      // The spending chart's read (issue #18): only the flipped charges are
+      // Expenses. May's slices hold exactly the coffee and the existing
+      // supermarket charge — the payment and refund never count as spending.
+      const spending = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/spending-by-category?month=2026-05`).pipe(
+          withCookie(owner.cookie),
+        ),
+      )
+      const spendingBody = (yield* spending.json) as unknown as {
+        slices: { categoryId: string | null; total: number }[]
+      }
+      expect(spendingBody.slices).toEqual([{ categoryId: null, name: null, total: 12450 }])
+    }),
+  { timeout: 600_000 },
+)

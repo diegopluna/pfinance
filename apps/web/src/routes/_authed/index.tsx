@@ -1,15 +1,20 @@
+import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import type { InferResponseType } from 'hono/client'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import { Badge } from '@pfinance/ui/components/badge'
-import { buttonVariants } from '@pfinance/ui/components/button'
+import { Button, buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
 import { NetWorthChart } from '@/components/net-worth-chart'
+import { SpendingByCategoryChart } from '@/components/spending-by-category-chart'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
 import { useNetWorth } from '@/hooks/use-net-worth'
+import { useSpending } from '@/hooks/use-spending'
+import { addMonths, currentUtcMonth, monthLabel } from '@/lib/month'
 
 export const Route = createFileRoute('/_authed/')({
   component: Dashboard,
@@ -86,6 +91,8 @@ function Dashboard() {
       </section>
 
       <NetWorthSection query={netWorthQuery} currency={currency} />
+
+      <SpendingSection currency={currency} />
     </div>
   )
 }
@@ -132,6 +139,67 @@ function NetWorthSection({
         <Card size="sm">
           <CardContent>
             <NetWorthChart series={series} currency={currency} />
+          </CardContent>
+        </Card>
+      )}
+    </section>
+  )
+}
+
+// Spending by Category (issue #18), server-summed per month like every chart
+// aggregate. The month selector is a stepper: unbounded in both directions,
+// because the ledger is — a future-dated expense is as real as an old one,
+// and a quiet month shows its empty state rather than being unreachable.
+function SpendingSection({ currency }: { currency: CurrencyCode | undefined }) {
+  const [month, setMonth] = useState(currentUtcMonth)
+  const query = useSpending(month)
+  const slices = query.data?.slices ?? []
+  return (
+    <section aria-labelledby="spending-heading" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="spending-heading" className="text-sm font-semibold tracking-tight">
+          Spending by category
+        </h2>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Previous month"
+            onClick={() => setMonth((current) => addMonths(current, -1))}
+          >
+            <ChevronLeftIcon aria-hidden />
+          </Button>
+          {/* aria-live: the month change a stepper click causes is otherwise
+              silent to a screen reader. */}
+          <span aria-live="polite" className="min-w-32 text-center text-sm tabular-nums">
+            {monthLabel(month, 'full')}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Next month"
+            onClick={() => setMonth((current) => addMonths(current, 1))}
+          >
+            <ChevronRightIcon aria-hidden />
+          </Button>
+        </div>
+      </div>
+      {query.isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t load spending.
+        </p>
+      ) : query.isPending || currency === undefined ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
+      ) : slices.length === 0 ? (
+        <p className="max-w-prose text-sm text-muted-foreground">
+          No spending recorded in {monthLabel(month, 'full')}.
+        </p>
+      ) : (
+        <Card size="sm">
+          <CardContent>
+            <SpendingByCategoryChart slices={slices} currency={currency} />
           </CardContent>
         </Card>
       )}

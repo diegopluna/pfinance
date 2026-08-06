@@ -64,6 +64,14 @@ const DATE_FORMAT_OPTIONS = [
   { value: 'mdy', label: 'Month first — 01/31/2026' },
 ] satisfies { value: MappingFields['dateFormat']; label: string }[]
 
+// Credit-card statements commonly invert the ledger's convention — positive
+// = charge (issue #42). The flip is applied server-side at parse time, so
+// the preview below already shows the signs that will land in the ledger.
+const AMOUNT_SIGN_OPTIONS = [
+  { value: 'as-is', label: 'As the file says — negative is money out' },
+  { value: 'flip', label: 'Flipped — credit-card statements' },
+] satisfies { value: NonNullable<MappingFields['amountSign']>; label: string }[]
+
 // Guess the mapping from the header names so most files start correct; the
 // Member confirms or fixes it on the map step either way.
 const guessColumn = (columns: string[], pattern: RegExp, fallback: number) => {
@@ -563,6 +571,33 @@ function MappingCard({
               </SelectTrigger>
               <SelectContent>
                 {DATE_FORMAT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field className="w-72 gap-1">
+            <FieldLabel htmlFor="map-amount-sign" className="text-xs text-muted-foreground">
+              Amount signs
+            </FieldLabel>
+            <Select
+              items={AMOUNT_SIGN_OPTIONS}
+              value={mapping?.amountSign ?? 'as-is'}
+              onValueChange={(value: string | null) =>
+                mapping !== null &&
+                onMappingChange({
+                  ...mapping,
+                  amountSign: (value ?? 'as-is') as NonNullable<MappingFields['amountSign']>,
+                })
+              }
+            >
+              <SelectTrigger id="map-amount-sign" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AMOUNT_SIGN_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

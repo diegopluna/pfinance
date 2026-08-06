@@ -5,8 +5,11 @@ import { expect } from 'vite-plus/test'
 import type { HttpClientResponse } from 'effect/unstable/http/HttpClientResponse'
 import {
   cookieHeader,
+  createAccount,
+  createTransaction,
   executeWarm,
   freshApiUrl,
+  readAccount,
   signUpOwner,
   signUpRequest,
   test,
@@ -239,6 +242,232 @@ test.provider(
       expect(ownerView).toHaveLength(SEED_NAMES.length + 1)
       expect(ownerView.find((entry) => entry.id === added.id)?.name).toBe('Gifts')
       expect(ownerView.find((entry) => entry.name === 'Rent')?.archivedAt).not.toBeNull()
+    }),
+  { timeout: 600_000 },
+)
+
+// --- Spending by Category (issue #18) ---
+// The chart's read: one month of Expenses grouped by Category, computed
+// server-side (issue #1) — the web app renders, it never sums.
+
+interface SpendingSlice {
+  // null is the Uncategorized slice — a state, not a Category (CONTEXT.md),
+  // so no name is invented for it server-side.
+  categoryId: string | null
+  name: string | null
+  // Positive minor units: the ledger stores an Expense as a negative amount,
+  // but a spending total is a magnitude — the sign already did its job
+  // selecting the Expense view.
+  total: number
+}
+
+interface SpendingView {
+  month: string
+  slices: SpendingSlice[]
+}
+
+const readSpending = (response: HttpClientResponse) =>
+  Effect.map(response.json, (body) => body as unknown as SpendingView)
+
+// executeWarm, not executeWhenReady: every call below runs after signUpOwner
+// has converged the edge, and a warm request lets a missing route fail as a
+// 404 instead of retrying into the test timeout.
+const spendingByCategory = (apiUrl: string, cookie: string, query = '') =>
+  executeWarm(
+    HttpClientRequest.get(`${apiUrl}/api/spending-by-category${query}`).pipe(withCookie(cookie)),
+  )
+
+test.provider(
+  "Spending by Category: a month's Expenses grouped honestly, Transfers and Adjustments excluded",
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'spending-owner@example.com', {
+        householdName: 'Spending House',
+        currency: 'BRL',
+      })
+
+      // Household data: no session, no access. (After signUpOwner so the
+      // worker is warm — see the executeWarm note above.)
+      const anonymous = yield* executeWarm(
+        HttpClientRequest.get(`${apiUrl}/api/spending-by-category`),
+      )
+      expect(anonymous.status).toBe(401)
+
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 500000,
+        }),
+      )
+      const visa = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Visa',
+          type: 'credit_card',
+          openingBalance: 0,
+        }),
+      )
+
+      const seeded = yield* readCategories(yield* listCategories(apiUrl, owner.cookie))
+      const idOf = (name: string) => seeded.find((entry) => entry.name === name)?.id ?? ''
+      const groceries = idOf('Groceries')
+      const transport = idOf('Transport')
+      const entertainment = idOf('Entertainment')
+      const salary = idOf('Salary')
+
+      // An empty ledger has no spending in any month.
+      expect(
+        yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-03')),
+      ).toEqual({ month: '2026-03', slices: [] })
+
+      // The known ledger. March 2026 is the month under test; the boundary
+      // dates (the 1st and the 31st) pin that bucketing is by calendar month,
+      // and the February/April entries pin that neighbors stay out.
+      const ledger: Record<string, unknown>[] = [
+        {
+          accountId: checking.id,
+          date: '2026-03-01',
+          amount: -2500,
+          description: 'Market',
+          categoryId: groceries,
+        },
+        {
+          accountId: checking.id,
+          date: '2026-03-31',
+          amount: -1500,
+          description: 'Market again',
+          categoryId: groceries,
+        },
+        // A refund is Income, not negative spending: it must not shrink the
+        // Groceries slice from 4000 to 2000.
+        {
+          accountId: checking.id,
+          date: '2026-03-10',
+          amount: 2000,
+          description: 'Refund',
+          categoryId: groceries,
+        },
+        // Two Categories tied at 1000, one on the credit card: spending sums
+        // across Accounts, and the tie pins the name order.
+        {
+          accountId: visa.id,
+          date: '2026-03-05',
+          amount: -1000,
+          description: 'Bus pass',
+          categoryId: transport,
+        },
+        {
+          accountId: checking.id,
+          date: '2026-03-06',
+          amount: -1000,
+          description: 'Cinema',
+          categoryId: entertainment,
+        },
+        // Uncategorized spending is its own honest slice, never folded into
+        // an "Other" bucket.
+        {
+          accountId: checking.id,
+          date: '2026-03-12',
+          amount: -700,
+          description: 'Cash withdrawal',
+        },
+        // Income never counts as spending.
+        {
+          accountId: checking.id,
+          date: '2026-03-15',
+          amount: 300000,
+          description: 'Salary',
+          categoryId: salary,
+        },
+        // A Balance Adjustment corrects drift, it is not spending: included,
+        // it would inflate Uncategorized to 1200.
+        {
+          accountId: checking.id,
+          date: '2026-03-20',
+          amount: -500,
+          description: 'Drift',
+          kind: 'balance_adjustment',
+        },
+        {
+          accountId: checking.id,
+          date: '2026-02-28',
+          amount: -9999,
+          description: 'February market',
+          categoryId: groceries,
+        },
+        {
+          accountId: checking.id,
+          date: '2026-04-01',
+          amount: -4444,
+          description: 'April market',
+          categoryId: groceries,
+        },
+      ]
+      for (const entry of ledger) {
+        expect((yield* createTransaction(apiUrl, owner.cookie, entry)).status).toBe(200)
+      }
+
+      // A Transfer moves money between the Household's own Accounts and is
+      // excluded from spending by definition (CONTEXT.md): if the outflow leg
+      // counted, Uncategorized would balloon by 40000.
+      const transfer = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/transfers`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+          HttpClientRequest.bodyJsonUnsafe({
+            fromAccountId: checking.id,
+            toAccountId: visa.id,
+            amount: 40000,
+            date: '2026-03-18',
+            description: 'Card payoff',
+          }),
+        ),
+      )
+      expect(transfer.status).toBe(200)
+
+      // March, exact: positive minor-unit totals, largest first, names
+      // breaking the tie, the Uncategorized slice under its own flag.
+      const march: SpendingView = {
+        month: '2026-03',
+        slices: [
+          { categoryId: groceries, name: 'Groceries', total: 4000 },
+          { categoryId: entertainment, name: 'Entertainment', total: 1000 },
+          { categoryId: transport, name: 'Transport', total: 1000 },
+          { categoryId: null, name: null, total: 700 },
+        ],
+      }
+      expect(
+        yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-03')),
+      ).toEqual(march)
+
+      // Neighboring months hold only their own entries.
+      expect(
+        yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-02')),
+      ).toEqual({
+        month: '2026-02',
+        slices: [{ categoryId: groceries, name: 'Groceries', total: 9999 }],
+      })
+      expect(
+        yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-01')),
+      ).toEqual({ month: '2026-01', slices: [] })
+
+      // Archiving retires a label from assignment, not from history: March's
+      // Transport slice survives the archive untouched.
+      expect((yield* archiveCategory(apiUrl, owner.cookie, transport, 'archive')).status).toBe(200)
+      expect(
+        yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-03')),
+      ).toEqual(march)
+
+      // Omitting the month reads the current UTC month — the dashboard's
+      // initial state. Only the resolved month is pinned: the slices depend
+      // on today's date, which this ledger deliberately does not.
+      const current = yield* readSpending(yield* spendingByCategory(apiUrl, owner.cookie))
+      expect(current.month).toBe(new Date().toISOString().slice(0, 7))
+
+      // Malformed months are rejected, never silently defaulted.
+      expect((yield* spendingByCategory(apiUrl, owner.cookie, '?month=2026-13')).status).toBe(400)
+      expect((yield* spendingByCategory(apiUrl, owner.cookie, '?month=March')).status).toBe(400)
     }),
   { timeout: 600_000 },
 )
