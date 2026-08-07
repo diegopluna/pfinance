@@ -2,8 +2,10 @@
 
 The deploy path contains no hardcoded repository or account values: a fork
 deploys without editing source. This page records the defaults and the knobs
-that override them (issue #20); the user-facing docs ticket should present
-this material, not duplicate the values elsewhere.
+that override them (issue #20). The user-facing presentation lives in the
+docs site (issue #21): `apps/docs/src/content/docs/guides/quickstart.md`,
+`reference/environment-variables.md`, and `guides/ci-pipeline.md` — when a
+default or knob changes, update those pages alongside this one.
 
 ## Hosting only (no CI, no previews)
 

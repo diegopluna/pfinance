@@ -1,39 +1,37 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: pfinance
+description: A self-hostable, Cloudflare-native personal finance app for individuals and households.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
-  image:
-    file: ../../assets/houston.webp
+  tagline: A self-hostable, Cloudflare-native personal finance app. Fork it, deploy it to your own Cloudflare account, and claim it.
   actions:
-    - text: Example Guide
-      link: /guides/example/
-      icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
+    - text: Fork & host quickstart
+      link: /guides/quickstart/
+      icon: rocket
+    - text: View on GitHub
+      link: https://github.com/diegopluna/pfinance
       icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components'
 
-## Next steps
+## What you get
 
 <CardGrid stagger>
-  <Card title="Update content" icon="pencil">
-    Edit `src/content/docs/index.mdx` to see this page change.
+  <Card title="Your Household's ledger" icon="seti:db">
+    Accounts, transactions, and categories belong to a Household — yours alone, or shared with
+    invited members.
   </Card>
-  <Card title="Change page layout" icon="document">
-    Delete `template: splash` in `src/content/docs/index.mdx` to display a sidebar on this page.
+  <Card title="Manual & CSV transactions" icon="add-document">
+    Record transactions by hand or import them from CSV in revertible batches, with duplicate rows
+    flagged and skipped.
   </Card>
-  <Card title="Add new content" icon="add-document">
-    Add Markdown or MDX files to `src/content/docs` to create new pages.
+  <Card title="Charts that matter" icon="puzzle">
+    Net worth over time and spending by category, derived straight from the ledger.
   </Card>
-  <Card title="Configure your site" icon="setting">
-    Edit your `sidebar` and other config in `astro.config.mjs`.
-  </Card>
-  <Card title="Read the docs" icon="open-book">
-    Learn more in [the Starlight Docs](https://starlight.astro.build/).
+  <Card title="Runs in your Cloudflare account" icon="cloud-download">
+    Workers, D1, and static assets on the free plan. Deploy with one command — no source edits, no
+    secrets to manage.
   </Card>
 </CardGrid>
