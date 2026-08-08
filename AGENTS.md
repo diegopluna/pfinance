@@ -35,7 +35,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ### Design
 
-Visual decisions come from the Claude Design project, mirrored into `docs/design/` — the visual source of truth. Never invent tokens; raise the gap on the issue. See `docs/agents/design.md`.
+Visual decisions come from the Claude Design project, mirrored into `docs/design/` — start at `docs/design/DECISIONS.md`. Never invent tokens; raise the gap on the issue. See `docs/agents/design.md`.
 
 ### Database & integration tests
 

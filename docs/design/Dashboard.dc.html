@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet data-dc-atomics>
+        <meta name="design_doc_mode" content="canvas" />
+        <style>
+          body { margin: 0; background: #f0eee9; font-family: system-ui, sans-serif; }
+          a { color: #1a1a1a; }
+          a:hover { color: #000000; }
+          .dv-turn { padding: 40px 44px 32px; border-bottom: 1px solid rgba(0,0,0,0.08); scroll-margin-top: 16px; }
+          .dv-thd { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+          .dv-tid { font: 600 10px ui-monospace, Menlo, monospace; padding: 3px 7px; background: #1a1a1a; color: #ffffff; border-radius: 4px; text-decoration: none; }
+          .dv-tname { font: 600 13px/1.2 system-ui, sans-serif; color: #1a1a1a; }
+          .dv-note { font: 400 11.5px/1.5 system-ui, sans-serif; color: rgba(0,0,0,0.55); margin: 0 0 20px; max-width: 880px; }
+          .dv-opts { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+          .dv-opt { flex: none; display: flex; flex-direction: column; gap: 9px; scroll-margin-top: 16px; }
+          .dv-oid { font: 600 10.5px ui-monospace, Menlo, monospace; padding: 3px 7px; background: rgba(0,0,0,0.08); color: #1a1a1a; border-radius: 5px; text-decoration: none; }
+          .dv-olabel { display: flex; align-items: baseline; gap: 8px; font: 400 11px/1.3 system-ui, sans-serif; color: rgba(0,0,0,0.55); }
+          .dv-card { max-width: 100%; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; }
+          .dv-opt:target .dv-oid { background: #2a78d6; color: #ffffff; }
+          .dv-next { margin: 22px 0 0; font: 12px/1.5 system-ui, sans-serif; color: rgba(0,0,0,0.5); }
+
+          .pf { --bg: #ffffff; --fg: #0a0a0a; --card: #ffffff; --muted: #f5f5f5; --mutfg: #737373; --border: #e5e5e5; --sidebar: #fafafa; --primary: #171717; --primary-fg: #fafafa; --grid: #efefef; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --sx: #a1a1a1; --good: #006300; --area: rgba(42,120,214,0.08); --shadow: 0 1px 2px rgba(0,0,0,0.08); }
+          .pfd { --bg: #0a0a0a; --fg: #fafafa; --card: #171717; --muted: #262626; --mutfg: #a1a1a1; --border: rgba(255,255,255,0.10); --sidebar: #111111; --primary: #e5e5e5; --primary-fg: #171717; --grid: #232323; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --sx: #737373; --good: #0ca30c; --area: rgba(57,135,229,0.12); --shadow: 0 1px 2px rgba(0,0,0,0.4); }
+
+          .frame { display: flex; width: 1280px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; text-align: left; }
+          .side { width: 232px; flex: none; background: var(--sidebar); border-right: 1px solid var(--border); padding: 20px 12px 16px; display: flex; flex-direction: column; box-sizing: border-box; }
+          .logo { display: flex; align-items: center; gap: 9px; padding: 0 10px 18px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+          .logomark { width: 20px; height: 20px; border-radius: 6px; background: var(--fg); }
+          .nav { display: flex; flex-direction: column; gap: 2px; }
+          .nav div { padding: 7px 10px; border-radius: 8px; color: var(--mutfg); font-size: 13.5px; font-weight: 500; }
+          .nav .on { background: var(--muted); color: var(--fg); font-weight: 600; }
+          .sfoot { margin-top: auto; border-top: 1px solid var(--border); padding: 12px 10px 0; display: flex; align-items: center; gap: 9px; }
+          .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--muted); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 650; color: var(--mutfg); }
+          .hh { display: flex; flex-direction: column; }
+          .hhn { font-size: 12.5px; font-weight: 600; }
+          .hhc { font-size: 11px; color: var(--mutfg); }
+
+          .main { flex: 1; min-width: 0; padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 18px; box-sizing: border-box; }
+          .top { display: flex; align-items: center; justify-content: space-between; }
+          .h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.015em; }
+          .topr { display: flex; align-items: center; gap: 10px; }
+          .btn { background: var(--primary); color: var(--primary-fg); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; }
+          .seg { display: flex; background: var(--muted); border-radius: 8px; padding: 2px; font-size: 12.5px; font-weight: 550; }
+          .seg span { padding: 5px 11px; border-radius: 6px; color: var(--mutfg); }
+          .seg .on { background: var(--card); color: var(--fg); box-shadow: var(--shadow); font-weight: 600; }
+
+          .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; box-sizing: border-box; }
+          .chd { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+          .ct { font-size: 13px; font-weight: 600; }
+          .cs { font-size: 11.5px; color: var(--mutfg); }
+          .foot { font-size: 11px; color: var(--mutfg); margin-top: 10px; }
+
+          .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+          .tlab { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--mutfg); font-weight: 550; }
+          .tv { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 6px; }
+          .tsub { font-size: 11.5px; color: var(--mutfg); margin-top: 2px; }
+          .badge { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; border: 1px solid var(--border); border-radius: 99px; padding: 1px 7px; color: var(--mutfg); }
+
+          .row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+          .legend { display: flex; gap: 14px; align-items: center; font-size: 11.5px; color: var(--mutfg); }
+          .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: 0; }
+          .xaxis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--mutfg); margin-top: 6px; font-variant-numeric: tabular-nums; }
+          .pos { position: relative; }
+
+          .ivx { display: flex; align-items: flex-end; justify-content: space-between; height: 170px; padding-top: 8px; }
+          .pair { display: flex; align-items: flex-end; gap: 2px; }
+          .bar { width: 14px; border-radius: 4px 4px 0 0; }
+          .blab { font-size: 10px; color: var(--mutfg); text-align: center; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+
+          .cats { display: flex; flex-direction: column; gap: 11px; margin-top: 10px; }
+          .crow { display: flex; align-items: center; gap: 12px; }
+          .cname { width: 110px; flex: none; font-size: 12.5px; color: var(--fg); font-weight: 500; }
+          .ctrack { flex: 1; display: flex; align-items: center; }
+          .cbar { height: 12px; border-radius: 0 4px 4px 0; }
+          .cval { width: 100px; flex: none; text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+          .cpct { color: var(--mutfg); font-size: 11px; margin-left: 6px; }
+
+          .alist { display: flex; flex-direction: column; margin-top: 4px; }
+          .arow { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
+          .arow:last-child { border-bottom: 0; }
+          .aname { font-size: 13px; font-weight: 550; }
+          .asub { font-size: 11px; color: var(--mutfg); }
+          .aval { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+          .hero { display: flex; flex-direction: column; gap: 2px; }
+          .heroLabel { font-size: 12.5px; font-weight: 550; color: var(--mutfg); }
+          .heroVal { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+          .heroDelta { font-size: 12.5px; font-weight: 600; color: var(--good); }
+          .heroDelta em { font-style: normal; color: var(--mutfg); font-weight: 500; }
+          .tip { position: absolute; background: var(--fg); color: var(--bg); border-radius: 8px; padding: 8px 11px; font-size: 11.5px; line-height: 1.5; box-shadow: 0 4px 12px rgba(0,0,0,0.18); white-space: nowrap; }
+          .tip b { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+        </style>
+      </helmet>
+
+      <section class="dv-turn" id="t1">
+        <div class="dv-thd">
+          <a class="dv-tid" href="#t1">1</a><span class="dv-tname">pfinance dashboard — three directions + dark</span>
+        </div>
+        <p class="dv-note">Base-luma tokens from packages/ui. Chart palette is the CVD-validated 5-slot set (shadcn defaults failed validation — swap proposed for --chart-1..5). Mock household: BRL, 4 accounts, Aug 2026. Sidebar shell per Diego. Spending &amp; income/expense exclude Transfers and Balance Adjustments by definition.</p>
+        <div class="dv-opts">
+
+          <div class="dv-opt" id="1a">
+            <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Grid classic — tiles up top, charts below</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="1a Grid classic (light)">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div class="on">Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div>Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top">
+                    <div class="h1">Dashboard</div>
+                    <div class="topr">
+                      <div class="seg"><span>Jun</span><span>Jul</span><span class="on">Aug 2026</span></div>
+                      <div class="btn">Add transaction</div>
+                    </div>
+                  </div>
+                  <div class="tiles">
+                    <div class="card"><div class="tlab">Checking</div><div class="tv">R$ 12.480,55</div><div class="tsub">Nubank</div></div>
+                    <div class="card"><div class="tlab">Savings</div><div class="tv">R$ 38.950,00</div><div class="tsub">Itaú</div></div>
+                    <div class="card"><div class="tlab">Cash</div><div class="tv">R$ 640,00</div><div class="tsub">Wallet</div></div>
+                    <div class="card"><div class="tlab">Credit card<span class="badge">LIABILITY</span></div><div class="tv">−R$ 3.210,44</div><div class="tsub">Nubank · closes Aug 28</div></div>
+                  </div>
+                  <div class="row2">
+                    <div class="card">
+                      <div class="chd"><span class="ct">Net worth</span><span class="cs">Jan – Aug 2026</span></div>
+                      <div class="pos">
+                        <svg width="611" height="180" viewBox="0 0 611 180">
+                          <line x1="36" y1="34.7" x2="603" y2="34.7" stroke="var(--grid)" stroke-width="1"></line>
+                          <line x1="36" y1="88" x2="603" y2="88" stroke="var(--grid)" stroke-width="1"></line>
+                          <line x1="36" y1="141.3" x2="603" y2="141.3" stroke="var(--grid)" stroke-width="1"></line>
+                          <text x="2" y="38" font-size="10" fill="var(--mutfg)">48k</text>
+                          <text x="2" y="91" font-size="10" fill="var(--mutfg)">44k</text>
+                          <text x="2" y="144" font-size="10" fill="var(--mutfg)">40k</text>
+                          <path d="M36,125.3 L115.4,104 L194.9,113.3 L274.3,81.3 L353.7,62.7 L433.1,72 L512.6,44 L592,22.7 L592,180 L36,180 Z" fill="var(--area)" stroke="none"></path>
+                          <path d="M36,125.3 L115.4,104 L194.9,113.3 L274.3,81.3 L353.7,62.7 L433.1,72 L512.6,44 L592,22.7" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+                          <circle cx="592" cy="22.7" r="4" fill="var(--s1)" stroke="var(--card)" stroke-width="2"></circle>
+                        </svg>
+                        <div class="xaxis" style="padding-left:36px"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                      </div>
+                    </div>
+                    <div class="card">
+                      <div class="chd"><span class="ct">Income vs expense</span></div>
+                      <div class="legend"><span><span class="dot" style="background:var(--s1)"></span>Income</span><span><span class="dot" style="background:var(--s2)"></span>Expense</span></div>
+                      <div class="ivx">
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:118px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:106px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:148px;background:var(--s1)"></div></div><div><div class="bar" style="height:125px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:129px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:113px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="blab">11,0k</div><div class="bar" style="height:160px;background:var(--s1)"></div></div><div><div class="blab">8,2k</div><div class="bar" style="height:119px;background:var(--s2)"></div></div></div>
+                      </div>
+                      <div class="xaxis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="chd"><span class="ct">Spending by category</span><span class="cs">Aug 2026</span></div>
+                    <div class="cats">
+                      <div class="crow"><span class="cname">Rent</span><span class="ctrack"><span class="cbar" style="width:640px;background:var(--s1)"></span></span><span class="cval">R$ 2.800</span></div>
+                      <div class="crow"><span class="cname">Groceries</span><span class="ctrack"><span class="cbar" style="width:375px;background:var(--s2)"></span></span><span class="cval">R$ 1.642</span></div>
+                      <div class="crow"><span class="cname">Dining</span><span class="ctrack"><span class="cbar" style="width:205px;background:var(--s3)"></span></span><span class="cval">R$ 897</span></div>
+                      <div class="crow"><span class="cname">Transport</span><span class="ctrack"><span class="cbar" style="width:117px;background:var(--s4)"></span></span><span class="cval">R$ 512</span></div>
+                      <div class="crow"><span class="cname">Uncategorized</span><span class="ctrack"><span class="cbar" style="width:88px;background:var(--sx)"></span></span><span class="cval">R$ 386</span></div>
+                      <div class="crow"><span class="cname">Subscriptions</span><span class="ctrack"><span class="cbar" style="width:49px;background:var(--s5)"></span></span><span class="cval">R$ 214</span></div>
+                    </div>
+                    <div class="foot">Excludes transfers and balance adjustments</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="1b">
+            <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Net-worth hero — headline first, tooltip interaction shown</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="1b Net-worth hero (light)">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div class="on">Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div>Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top">
+                    <div class="h1">Dashboard</div>
+                    <div class="topr"><div class="btn">Add transaction</div></div>
+                  </div>
+                  <div class="card">
+                    <div class="hero">
+                      <span class="heroLabel">Net worth</span>
+                      <span class="heroVal">R$ 48.860,11</span>
+                      <span class="heroDelta">▲ R$ 1.560 (3,3%) <em>vs Jul</em></span>
+                    </div>
+                    <div class="pos" style="margin-top:14px">
+                      <svg width="940" height="210" viewBox="0 0 940 210">
+                        <line x1="36" y1="40" x2="930" y2="40" stroke="var(--grid)" stroke-width="1"></line>
+                        <line x1="36" y1="104" x2="930" y2="104" stroke="var(--grid)" stroke-width="1"></line>
+                        <line x1="36" y1="168" x2="930" y2="168" stroke="var(--grid)" stroke-width="1"></line>
+                        <text x="2" y="43" font-size="10" fill="var(--mutfg)">48k</text>
+                        <text x="2" y="107" font-size="10" fill="var(--mutfg)">44k</text>
+                        <text x="2" y="171" font-size="10" fill="var(--mutfg)">40k</text>
+                        <path d="M36,148.8 L163.7,123.2 L291.4,134.4 L419.1,96 L546.9,73.6 L674.6,84.8 L802.3,51.2 L930,25.6 L930,210 L36,210 Z" fill="var(--area)" stroke="none"></path>
+                        <line x1="802.3" y1="16" x2="802.3" y2="196" stroke="var(--mutfg)" stroke-width="1" stroke-dasharray="3,3"></line>
+                        <path d="M36,148.8 L163.7,123.2 L291.4,134.4 L419.1,96 L546.9,73.6 L674.6,84.8 L802.3,51.2 L930,25.6" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+                        <circle cx="802.3" cy="51.2" r="4.5" fill="var(--s1)" stroke="var(--card)" stroke-width="2"></circle>
+                      </svg>
+                      <div class="tip" style="left:700px;top:0">Jul 2026<br /><b>R$ 47.300,20</b> · <span style="color:#0ca30c">+R$ 2.100</span></div>
+                      <div class="xaxis" style="padding-left:36px"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+                    <div class="card">
+                      <div class="chd"><span class="ct">Accounts</span></div>
+                      <div class="alist">
+                        <div class="arow"><span><span class="aname">Checking</span><br /><span class="asub">Nubank</span></span><span class="aval">R$ 12.480,55</span></div>
+                        <div class="arow"><span><span class="aname">Savings</span><br /><span class="asub">Itaú</span></span><span class="aval">R$ 38.950,00</span></div>
+                        <div class="arow"><span><span class="aname">Cash</span><br /><span class="asub">Wallet</span></span><span class="aval">R$ 640,00</span></div>
+                        <div class="arow"><span><span class="aname">Credit card</span><br /><span class="asub">Nubank · liability</span></span><span class="aval">−R$ 3.210,44</span></div>
+                      </div>
+                    </div>
+                    <div class="card">
+                      <div class="chd"><span class="ct">Income vs expense</span></div>
+                      <div class="legend"><span><span class="dot" style="background:var(--s1)"></span>Income</span><span><span class="dot" style="background:var(--s2)"></span>Expense</span></div>
+                      <div class="ivx" style="height:120px">
+                        <div class="pair"><div><div class="bar" style="height:97px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:83px;background:var(--s2);width:11px"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:97px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:74px;background:var(--s2);width:11px"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:104px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:88px;background:var(--s2);width:11px"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:97px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:90px;background:var(--s2);width:11px"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:97px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:79px;background:var(--s2);width:11px"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:113px;background:var(--s1);width:11px"></div></div><div><div class="bar" style="height:84px;background:var(--s2);width:11px"></div></div></div>
+                      </div>
+                      <div class="xaxis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                    </div>
+                    <div class="card">
+                      <div class="chd"><span class="ct">Spending · Aug</span></div>
+                      <div class="cats" style="gap:9px">
+                        <div class="crow"><span class="cname" style="width:88px;font-size:12px">Rent</span><span class="ctrack"><span class="cbar" style="width:100px;height:10px;background:var(--s1)"></span></span><span class="cval" style="width:64px;font-size:12px">2.800</span></div>
+                        <div class="crow"><span class="cname" style="width:88px;font-size:12px">Groceries</span><span class="ctrack"><span class="cbar" style="width:59px;height:10px;background:var(--s2)"></span></span><span class="cval" style="width:64px;font-size:12px">1.642</span></div>
+                        <div class="crow"><span class="cname" style="width:88px;font-size:12px">Dining</span><span class="ctrack"><span class="cbar" style="width:32px;height:10px;background:var(--s3)"></span></span><span class="cval" style="width:64px;font-size:12px">897</span></div>
+                        <div class="crow"><span class="cname" style="width:88px;font-size:12px">Transport</span><span class="ctrack"><span class="cbar" style="width:18px;height:10px;background:var(--s4)"></span></span><span class="cval" style="width:64px;font-size:12px">512</span></div>
+                        <div class="crow"><span class="cname" style="width:88px;font-size:12px">Uncategorized</span><span class="ctrack"><span class="cbar" style="width:14px;height:10px;background:var(--sx)"></span></span><span class="cval" style="width:64px;font-size:12px">386</span></div>
+                      </div>
+                      <div class="foot">Excludes transfers and adjustments</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="1c">
+            <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Spending first — “where did it go” hierarchy, net worth in the rail</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="1c Spending first (light)">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div class="on">Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div>Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top">
+                    <div class="h1">Dashboard</div>
+                    <div class="topr">
+                      <div class="seg"><span>Jun</span><span>Jul</span><span class="on">Aug 2026</span></div>
+                      <div class="btn">Add transaction</div>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start">
+                    <div style="display:flex;flex-direction:column;gap:14px">
+                      <div class="card">
+                        <div class="chd"><span class="ct">Spending by category</span><span class="cs">R$ 6.451 total · Aug 2026</span></div>
+                        <div class="cats">
+                          <div class="crow"><span class="cname">Rent</span><span class="ctrack"><span class="cbar" style="width:380px;background:var(--s1)"></span></span><span class="cval">R$ 2.800<span class="cpct">43%</span></span></div>
+                          <div class="crow"><span class="cname">Groceries</span><span class="ctrack"><span class="cbar" style="width:223px;background:var(--s2)"></span></span><span class="cval">R$ 1.642<span class="cpct">25%</span></span></div>
+                          <div class="crow"><span class="cname">Dining</span><span class="ctrack"><span class="cbar" style="width:122px;background:var(--s3)"></span></span><span class="cval">R$ 897<span class="cpct">14%</span></span></div>
+                          <div class="crow"><span class="cname">Transport</span><span class="ctrack"><span class="cbar" style="width:69px;background:var(--s4)"></span></span><span class="cval">R$ 512<span class="cpct">8%</span></span></div>
+                          <div class="crow"><span class="cname">Uncategorized</span><span class="ctrack"><span class="cbar" style="width:52px;background:var(--sx)"></span></span><span class="cval">R$ 386<span class="cpct">6%</span></span></div>
+                          <div class="crow"><span class="cname">Subscriptions</span><span class="ctrack"><span class="cbar" style="width:29px;background:var(--s5)"></span></span><span class="cval">R$ 214<span class="cpct">3%</span></span></div>
+                        </div>
+                        <div class="foot">Excludes transfers and balance adjustments · 3 uncategorized transactions</div>
+                      </div>
+                      <div class="card">
+                        <div class="chd"><span class="ct">Income vs expense</span><span class="cs">Last 6 months</span></div>
+                        <div class="legend"><span><span class="dot" style="background:var(--s1)"></span>Income</span><span><span class="dot" style="background:var(--s2)"></span>Expense</span></div>
+                        <div class="ivx" style="height:150px;padding:8px 40px 0">
+                          <div class="pair"><div><div class="bar" style="height:121px;background:var(--s1)"></div></div><div><div class="bar" style="height:103px;background:var(--s2)"></div></div></div>
+                          <div class="pair"><div><div class="bar" style="height:121px;background:var(--s1)"></div></div><div><div class="bar" style="height:93px;background:var(--s2)"></div></div></div>
+                          <div class="pair"><div><div class="bar" style="height:130px;background:var(--s1)"></div></div><div><div class="bar" style="height:109px;background:var(--s2)"></div></div></div>
+                          <div class="pair"><div><div class="bar" style="height:121px;background:var(--s1)"></div></div><div><div class="bar" style="height:113px;background:var(--s2)"></div></div></div>
+                          <div class="pair"><div><div class="bar" style="height:121px;background:var(--s1)"></div></div><div><div class="bar" style="height:99px;background:var(--s2)"></div></div></div>
+                          <div class="pair"><div><div class="blab">11,0k</div><div class="bar" style="height:141px;background:var(--s1)"></div></div><div><div class="blab">8,2k</div><div class="bar" style="height:104px;background:var(--s2)"></div></div></div>
+                        </div>
+                        <div class="xaxis" style="padding:0 40px"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                      </div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:14px">
+                      <div class="card">
+                        <div class="hero">
+                          <span class="heroLabel">Net worth</span>
+                          <span class="heroVal" style="font-size:26px">R$ 48.860,11</span>
+                          <span class="heroDelta">▲ 3,3% <em>vs Jul</em></span>
+                        </div>
+                        <svg width="287" height="72" viewBox="0 0 287 72" style="margin-top:10px">
+                          <path d="M4,58 L43,49 L82,53 L121,39 L160,31 L199,35 L238,23 L283,13 L283,72 L4,72 Z" fill="var(--area)" stroke="none"></path>
+                          <path d="M4,58 L43,49 L82,53 L121,39 L160,31 L199,35 L238,23 L283,13" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+                          <circle cx="283" cy="13" r="3.5" fill="var(--s1)" stroke="var(--card)" stroke-width="2"></circle>
+                        </svg>
+                        <div class="xaxis"><span>Jan</span><span>Aug</span></div>
+                      </div>
+                      <div class="card">
+                        <div class="chd"><span class="ct">Accounts</span></div>
+                        <div class="alist">
+                          <div class="arow"><span><span class="aname">Checking</span><br /><span class="asub">Nubank</span></span><span class="aval">R$ 12.480,55</span></div>
+                          <div class="arow"><span><span class="aname">Savings</span><br /><span class="asub">Itaú</span></span><span class="aval">R$ 38.950,00</span></div>
+                          <div class="arow"><span><span class="aname">Cash</span><br /><span class="asub">Wallet</span></span><span class="aval">R$ 640,00</span></div>
+                          <div class="arow"><span><span class="aname">Credit card</span><br /><span class="asub">Nubank · liability</span></span><span class="aval">−R$ 3.210,44</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="1d">
+            <div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Dark mode — <a class="dv-oid" href="#1a">1a</a> on the dark token set (validated separately)</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf pfd" data-screen-label="1d Grid classic (dark)">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div class="on">Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div>Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top">
+                    <div class="h1">Dashboard</div>
+                    <div class="topr">
+                      <div class="seg"><span>Jun</span><span>Jul</span><span class="on">Aug 2026</span></div>
+                      <div class="btn">Add transaction</div>
+                    </div>
+                  </div>
+                  <div class="tiles">
+                    <div class="card"><div class="tlab">Checking</div><div class="tv">R$ 12.480,55</div><div class="tsub">Nubank</div></div>
+                    <div class="card"><div class="tlab">Savings</div><div class="tv">R$ 38.950,00</div><div class="tsub">Itaú</div></div>
+                    <div class="card"><div class="tlab">Cash</div><div class="tv">R$ 640,00</div><div class="tsub">Wallet</div></div>
+                    <div class="card"><div class="tlab">Credit card<span class="badge">LIABILITY</span></div><div class="tv">−R$ 3.210,44</div><div class="tsub">Nubank · closes Aug 28</div></div>
+                  </div>
+                  <div class="row2">
+                    <div class="card">
+                      <div class="chd"><span class="ct">Net worth</span><span class="cs">Jan – Aug 2026</span></div>
+                      <div class="pos">
+                        <svg width="611" height="180" viewBox="0 0 611 180">
+                          <line x1="36" y1="34.7" x2="603" y2="34.7" stroke="var(--grid)" stroke-width="1"></line>
+                          <line x1="36" y1="88" x2="603" y2="88" stroke="var(--grid)" stroke-width="1"></line>
+                          <line x1="36" y1="141.3" x2="603" y2="141.3" stroke="var(--grid)" stroke-width="1"></line>
+                          <text x="2" y="38" font-size="10" fill="var(--mutfg)">48k</text>
+                          <text x="2" y="91" font-size="10" fill="var(--mutfg)">44k</text>
+                          <text x="2" y="144" font-size="10" fill="var(--mutfg)">40k</text>
+                          <path d="M36,125.3 L115.4,104 L194.9,113.3 L274.3,81.3 L353.7,62.7 L433.1,72 L512.6,44 L592,22.7 L592,180 L36,180 Z" fill="var(--area)" stroke="none"></path>
+                          <path d="M36,125.3 L115.4,104 L194.9,113.3 L274.3,81.3 L353.7,62.7 L433.1,72 L512.6,44 L592,22.7" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+                          <circle cx="592" cy="22.7" r="4" fill="var(--s1)" stroke="var(--card)" stroke-width="2"></circle>
+                        </svg>
+                        <div class="xaxis" style="padding-left:36px"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                      </div>
+                    </div>
+                    <div class="card">
+                      <div class="chd"><span class="ct">Income vs expense</span></div>
+                      <div class="legend"><span><span class="dot" style="background:var(--s1)"></span>Income</span><span><span class="dot" style="background:var(--s2)"></span>Expense</span></div>
+                      <div class="ivx">
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:118px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:106px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:148px;background:var(--s1)"></div></div><div><div class="bar" style="height:125px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:129px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="bar" style="height:138px;background:var(--s1)"></div></div><div><div class="bar" style="height:113px;background:var(--s2)"></div></div></div>
+                        <div class="pair"><div><div class="blab">11,0k</div><div class="bar" style="height:160px;background:var(--s1)"></div></div><div><div class="blab">8,2k</div><div class="bar" style="height:119px;background:var(--s2)"></div></div></div>
+                      </div>
+                      <div class="xaxis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="chd"><span class="ct">Spending by category</span><span class="cs">Aug 2026</span></div>
+                    <div class="cats">
+                      <div class="crow"><span class="cname">Rent</span><span class="ctrack"><span class="cbar" style="width:640px;background:var(--s1)"></span></span><span class="cval">R$ 2.800</span></div>
+                      <div class="crow"><span class="cname">Groceries</span><span class="ctrack"><span class="cbar" style="width:375px;background:var(--s2)"></span></span><span class="cval">R$ 1.642</span></div>
+                      <div class="crow"><span class="cname">Dining</span><span class="ctrack"><span class="cbar" style="width:205px;background:var(--s3)"></span></span><span class="cval">R$ 897</span></div>
+                      <div class="crow"><span class="cname">Transport</span><span class="ctrack"><span class="cbar" style="width:117px;background:var(--s4)"></span></span><span class="cval">R$ 512</span></div>
+                      <div class="crow"><span class="cname">Uncategorized</span><span class="ctrack"><span class="cbar" style="width:88px;background:var(--sx)"></span></span><span class="cval">R$ 386</span></div>
+                      <div class="crow"><span class="cname">Subscriptions</span><span class="ctrack"><span class="cbar" style="width:49px;background:var(--s5)"></span></span><span class="cval">R$ 214</span></div>
+                    </div>
+                    <div class="foot">Excludes transfers and balance adjustments</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <p class="dv-next">Try next: "go with <a class="dv-oid" href="#1a">1a</a> and roll out the other screens" · "hero from <a class="dv-oid" href="#1b">1b</a> on top of <a class="dv-oid" href="#1a">1a</a>'s grid" · "show 1a at mobile width"</p>
+      </section>
+
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{}'
+    >
+      class Component extends DCLogic {
+        renderVals() { return {}; }
+      }
+    </script>
+  </body>
+</html>
