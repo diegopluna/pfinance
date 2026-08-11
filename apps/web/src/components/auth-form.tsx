@@ -51,7 +51,12 @@ export function AuthForm({
           ? await authClient.signUp.email(signUpBody)
           : await authClient.signIn.email({ email: value.email, password: value.password })
       if (error) {
-        setServerError(error.message ?? 'Something went wrong')
+        setServerError(
+          error.message ??
+            (mode === 'sign-in'
+              ? 'Unable to sign in. Check your connection and try again.'
+              : 'Unable to create the account. Check your connection and try again.'),
+        )
         return
       }
       await navigate({ to: '/' })

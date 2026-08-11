@@ -1,3 +1,4 @@
+import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@pfinance/ui/components/button'
 import { Checkbox } from '@pfinance/ui/components/checkbox'
 import {
@@ -116,7 +117,7 @@ export function ComboboxField({
           id={field.name}
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? errorId : undefined}
-          className="flex h-9 w-full items-center justify-between gap-1.5 rounded-3xl border border-transparent bg-input/50 px-3 py-2 text-sm whitespace-nowrap outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
+          className="flex h-9 w-full items-center justify-between gap-1.5 rounded-lg border border-border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30"
         >
           <ComboboxValue>
             {(option: ComboboxOption | null) =>
@@ -177,7 +178,12 @@ export function SubmitButton({ children }: { children: React.ReactNode }) {
   return (
     <form.Subscribe selector={(state) => state.isSubmitting}>
       {(isSubmitting) => (
-        <Button type="submit" disabled={isSubmitting}>
+        // aria-busy + spinner: progress feedback beyond the disabled dim.
+        // The label stays put so the button never changes meaning mid-flight.
+        <Button type="submit" disabled={isSubmitting} aria-busy={isSubmitting || undefined}>
+          {isSubmitting && (
+            <LoaderCircleIcon aria-hidden className="animate-spin motion-reduce:hidden" />
+          )}
           {children}
         </Button>
       )}

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
 import type { InferRequestType, InferResponseType } from 'hono/client'
@@ -11,6 +11,16 @@ import {
   toMinorUnits,
   type CurrencyCode,
 } from '@pfinance/currency'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@pfinance/ui/components/alert-dialog'
 import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -46,6 +56,11 @@ import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/transactions')({
+  head: () => ({ meta: [{ title: 'Transactions · pfinance' }] }),
+  // ?new=true (the dashboard's "New transaction") opens the create dialog on
+  // arrival; the param is consumed and stripped so refresh doesn't reopen it.
+  validateSearch: (search: Record<string, unknown>) =>
+    search.new === true || search.new === 'true' ? { new: true as const } : {},
   component: TransactionsScreen,
 })
 
@@ -113,6 +128,12 @@ function TransactionsScreen() {
     entry: TransactionEntry | null
     nonce: number
   }>({ entry: null, nonce: 0 })
+  // Deleting is confirmed in an AlertDialog (the imports.tsx pattern) whose
+  // action button repeats the consequence — never a bare OK/Cancel. The
+  // target outlives `open` (like the edit dialogs above) so the closing
+  // popup keeps its content while Base UI animates out.
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<TransactionEntry | null>(null)
 
   // Every amount is entered and shown in the Household Currency (ADR 0002).
   // The USD fallback only covers the frame before /api/me resolves.
@@ -252,6 +273,19 @@ function TransactionsScreen() {
     setTarget((current) => ({ entry, nonce: current.nonce + 1 }))
     setDialogOpen(true)
   }
+
+  // Landed via the dashboard's "New transaction" (?new=true): open the
+  // create dialog once, then strip the param so refresh doesn't reopen it.
+  const { new: openNew } = Route.useSearch()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (openNew === true) {
+      openDialog(null)
+      void navigate({ to: '/transactions', search: {}, replace: true })
+    }
+    // openDialog/navigate are recreated per render; the param is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openNew])
 
   const openTransferDialog = (entry: TransactionEntry | null) => {
     saveTransfer.reset()
@@ -447,13 +481,8 @@ function TransactionsScreen() {
                 entry.transferId === null ? openDialog(entry) : openTransferDialog(entry)
               }
               onDelete={(entry) => {
-                if (entry.transferId !== null) {
-                  if (window.confirm(`Delete transfer "${entry.description}"? Both legs go.`)) {
-                    deleteTransfer.mutate(entry.transferId)
-                  }
-                } else if (window.confirm(`Delete "${entry.description}"?`)) {
-                  deleteTransaction.mutate(entry.id)
-                }
+                setDeleteTarget(entry)
+                setDeleteDialogOpen(true)
               }}
             />
           </CardContent>
@@ -464,6 +493,39 @@ function TransactionsScreen() {
           Couldn&apos;t delete that {deleteTransfer.isError ? 'transfer' : 'transaction'}.
         </p>
       )}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.transferId != null ? 'Delete transfer?' : 'Delete transaction?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget !== null &&
+                (deleteTarget.transferId !== null
+                  ? `"${deleteTarget.description}" — both legs leave the ledger.`
+                  : `"${deleteTarget.description}" will be removed from the ledger.`)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deleteTarget !== null) {
+                  if (deleteTarget.transferId !== null) {
+                    deleteTransfer.mutate(deleteTarget.transferId)
+                  } else {
+                    deleteTransaction.mutate(deleteTarget.id)
+                  }
+                }
+                setDeleteDialogOpen(false)
+              }}
+            >
+              {deleteTarget?.transferId != null ? 'Delete transfer' : 'Delete transaction'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -557,11 +619,25 @@ function TransactionsTable({
     {
       accessorKey: 'amount',
       header: () => <span className="block text-right">Amount</span>,
-      cell: ({ row }) => (
-        <span className="block text-right text-sm font-semibold tracking-tight tabular-nums">
-          {formatAmount(row.original.amount, currency)}
-        </span>
-      ),
+      // Amount treatment per kind (Core Screens 2a, DECISIONS.md): expenses
+      // plain, income green with an explicit +, Transfers muted and unsigned
+      // (direction is from → to, never a sign), Adjustments muted keeping
+      // their sign.
+      cell: ({ row }) => {
+        const { amount, kind } = row.original
+        const muted = kind === 'transfer' || kind === 'balance_adjustment'
+        const shown = kind === 'transfer' ? Math.abs(amount) : amount
+        const formatted = formatAmount(shown, currency)
+        return (
+          <span
+            className={`block text-right text-sm font-semibold tracking-tight tabular-nums ${
+              muted ? 'text-muted-foreground' : shown > 0 ? 'text-positive' : ''
+            }`}
+          >
+            {shown > 0 && kind !== 'transfer' ? `+${formatted}` : formatted}
+          </span>
+        )
+      },
     },
     {
       id: 'actions',

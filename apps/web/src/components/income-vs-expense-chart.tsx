@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts'
 import type { InferResponseType } from 'hono/client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import {
@@ -10,7 +10,6 @@ import {
   type ChartConfig,
 } from '@pfinance/ui/components/chart'
 import { api } from '@/lib/api'
-import { compactAmount } from '@/lib/format'
 import { monthLabel } from '@/lib/month'
 
 // Income vs Expense per month (issue #19), drawn as paired vertical bars —
@@ -26,20 +25,18 @@ type IncomeExpensePoint = InferResponseType<
   200
 >['months'][number]
 
-// ChartContainer scopes --color-income / --color-expense per theme. The pair
-// is polarity — money in against money out — so it wears the theme's teal
-// against its orange, the classic color-vision-safe opposition. Light rides
-// the theme tokens; both dark values are dimmer steps of the same hues
-// selected for the dark-surface lightness band. All four validated (CVD
-// separation and ≥ 3:1 contrast) against their card surfaces.
+// The pair is polarity — money in against money out — and the 1b prototype
+// draws it as slot 1 (blue) against slot 2 (orange): the CVD-validated
+// opposition from docs/design/DECISIONS.md. Both tokens are theme-aware in
+// globals.css, so no per-chart dark override exists here.
 const chartConfig = {
   income: {
     label: 'Income',
-    theme: { light: 'var(--chart-2)', dark: 'oklch(0.65 0.15 162.48)' },
+    color: 'var(--chart-1)',
   },
   expense: {
     label: 'Expense',
-    theme: { light: 'var(--chart-1)', dark: 'oklch(0.66 0.17 55)' },
+    color: 'var(--chart-2)',
   },
 } satisfies ChartConfig
 
@@ -54,7 +51,7 @@ export function IncomeVsExpenseChart({
     <div>
       <ChartContainer
         config={chartConfig}
-        className="aspect-auto h-64 w-full [&_.recharts-cartesian-axis-tick_text]:tabular-nums"
+        className="aspect-auto h-44 w-full [&_.recharts-cartesian-axis-tick_text]:tabular-nums"
       >
         {/* accessibilityLayer: arrow keys walk the months with the same
             tooltip the pointer gets. */}
@@ -73,12 +70,8 @@ export function IncomeVsExpenseChart({
             minTickGap={32}
             tickMargin={8}
           />
-          <YAxis
-            tickFormatter={(value: number) => compactAmount(value, currency)}
-            tickLine={false}
-            axisLine={false}
-            width={70}
-          />
+          {/* No value axis in the 1b card — magnitudes read from the paired
+              bars, exact amounts from the tooltip and the sr-only table. */}
           <ChartTooltip
             isAnimationActive={false}
             content={
@@ -115,14 +108,14 @@ export function IncomeVsExpenseChart({
           <Bar
             dataKey="income"
             fill="var(--color-income)"
-            maxBarSize={24}
+            maxBarSize={12}
             radius={[4, 4, 0, 0]}
             isAnimationActive={false}
           />
           <Bar
             dataKey="expense"
             fill="var(--color-expense)"
-            maxBarSize={24}
+            maxBarSize={12}
             radius={[4, 4, 0, 0]}
             isAnimationActive={false}
           />
