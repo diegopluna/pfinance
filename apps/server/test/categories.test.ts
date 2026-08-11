@@ -269,11 +269,12 @@ interface SpendingView {
 const readSpending = (response: HttpClientResponse) =>
   Effect.map(response.json, (body) => body as unknown as SpendingView)
 
-// executeWarm, not executeWhenReady: every call below runs after signUpOwner
-// has converged the edge, and a warm request lets a missing route fail as a
-// 404 instead of retrying into the test timeout.
+// executeWhenReady, not executeWarm: edge convergence isn't sticky — a
+// request after signUpOwner can still land on a PoP serving the workers.dev
+// placeholder 404 (seen in CI). whenReady retries only 404/5xx, so the 401
+// assertion below still observes its status immediately.
 const spendingByCategory = (apiUrl: string, cookie: string, query = '') =>
-  executeWarm(
+  Test.executeWhenReady(
     HttpClientRequest.get(`${apiUrl}/api/spending-by-category${query}`).pipe(withCookie(cookie)),
   )
 
@@ -287,9 +288,9 @@ test.provider(
         currency: 'BRL',
       })
 
-      // Household data: no session, no access. (After signUpOwner so the
-      // worker is warm — see the executeWarm note above.)
-      const anonymous = yield* executeWarm(
+      // Household data: no session, no access. (whenReady returns the 401
+      // immediately — only 404/5xx are treated as cold-start and retried.)
+      const anonymous = yield* Test.executeWhenReady(
         HttpClientRequest.get(`${apiUrl}/api/spending-by-category`),
       )
       expect(anonymous.status).toBe(401)
