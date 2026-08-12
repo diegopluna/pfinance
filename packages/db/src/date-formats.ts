@@ -10,7 +10,7 @@ export const DATE_FORMATS = ['system', 'dmy', 'mdy', 'ymd'] as const
 export type DateFormat = (typeof DATE_FORMATS)[number]
 
 // Non-empty tuple form for drizzle's text({ enum }) and validation.
-export const DATE_FORMAT_VALUES = DATE_FORMATS as unknown as [DateFormat, ...DateFormat[]]
+export const DATE_FORMAT_VALUES = [...DATE_FORMATS] as [DateFormat, ...DateFormat[]]
 
 export function isDateFormat(value: unknown): value is DateFormat {
   return typeof value === 'string' && (DATE_FORMATS as readonly string[]).includes(value)

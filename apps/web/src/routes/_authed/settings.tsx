@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { DATE_FORMATS, type DateFormat } from '@pfinance/db/date-formats'
+import { DATE_FORMATS, isDateFormat, type DateFormat } from '@pfinance/db/date-formats'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { Field, FieldLabel } from '@pfinance/ui/components/field'
 import {
@@ -86,8 +86,8 @@ function SettingsScreen() {
                 items={options}
                 value={me.household.dateFormat}
                 onValueChange={(value: string | null) => {
-                  if (value !== null && value !== me.household.dateFormat) {
-                    saveDateFormat.mutate(value as DateFormat)
+                  if (isDateFormat(value) && value !== me.household.dateFormat) {
+                    saveDateFormat.mutate(value)
                   }
                 }}
               >
@@ -103,7 +103,7 @@ function SettingsScreen() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                How dates read across the app — the ledger, imports, and pickers. Display only:
+                How day-level dates read — in the ledger, imports, and date pickers. Display only:
                 stored dates never change.
               </p>
               {saveDateFormat.isError && (
