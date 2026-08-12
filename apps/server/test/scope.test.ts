@@ -16,7 +16,9 @@ import { createTestDb, seedLedger } from './db-harness.ts'
 // everything Household B owns must be invisible to Household A's Scope, per
 // entity and per mechanism (scope.ts). The HTTP suite structurally cannot
 // run these — ADR 0004's sign-up lock means a scratch instance can never
-// hold a second Household. No HTTP, no deploy — in-process.
+// hold a second Household. No HTTP, no deploy — in-process. The HTTP-side
+// complement is tenancy-http.test.ts (issue #55): foreign-id probes proving
+// each route actually consults the resolved Scope.
 
 interface Tenant {
   scope: Scope
