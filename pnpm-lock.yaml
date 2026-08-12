@@ -214,6 +214,9 @@ catalogs:
     '@effect/platform-node':
       specifier: 4.0.0-beta.102
       version: 4.0.0-beta.102
+    '@libsql/client':
+      specifier: ^0.17.4
+      version: 0.17.4
     '@tanstack/react-form':
       specifier: ^1.33.3
       version: 1.33.3
@@ -332,6 +335,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
         version: 5.20260801.1
+      '@libsql/client':
+        specifier: 'catalog:'
+        version: 0.17.4
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -649,6 +655,9 @@ packages:
   '@aws-sdk/core@3.977.4':
     resolution: {integrity: sha512-CEkcQlMOQJCvul60U7wdAOACjtdgFWDsfJI+6wUOGdhGNV2lGbuJpi/R50QLpFG3Tp+sQxa/RmzC3X7KHbhuTA==}
     engines: {node: '>=20.0.0'}
+    deprecated: |-
+      Deprecated due to Document number parsing bug in JSON, see
+        https://github.com/aws/aws-sdk-js-v3/issues/8246. Newer version available.
 
   '@aws-sdk/credential-provider-cognito-identity@3.972.64':
     resolution: {integrity: sha512-bilBheDT6GKnFkPnovgt1HL5spmnTCntm8w+hO3bmjnlZ8qMhqfQ1RJYPRTNsPlXaCcBXWUtg+zn/NM6WQUXoA==}
