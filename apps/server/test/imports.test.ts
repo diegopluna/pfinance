@@ -584,6 +584,147 @@ test.provider(
   { timeout: 600_000 },
 )
 
+// --- Import dedup edge cases (issue #53) ---
+// Two identical rows in the same CSV are a real double-count path: the
+// preview flags every repeat of an earlier row in the file (the first
+// occurrence stays clean), confirm skips repeats by default, and the per-row
+// override is the escape hatch when identical rows are genuinely two
+// purchases. The dedup also deliberately matches Transactions of every kind:
+// a CSV row equal to a Transfer leg flags — the card payment or savings
+// top-up appears in the bank export too, and importing it would double-count.
+
+test.provider(
+  'Import dedup edge cases: same-file repeats skip by default with per-row override; transfer legs match',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'intra-dedup-owner@example.com', {
+        householdName: 'Intra House',
+        currency: 'USD',
+      })
+      const checking = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Checking',
+          type: 'checking',
+          openingBalance: 100000,
+        }),
+      )
+
+      // A bank export that legitimately repeats a line: two identical bus
+      // fares on the same day. Only the repeat flags — the first occurrence
+      // imports as usual.
+      const doubled = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'doubled.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-06-01,Gym,-50.00',
+            '2026-06-02,Bus fare,-2.50',
+            '2026-06-02,Bus fare,-2.50',
+            '2026-06-03,Rent,-800.00',
+          ].join('\n'),
+        }),
+      )
+      const doubledPreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, doubled.id, MAPPING),
+      )
+      expect(doubledPreview.rows.map((row) => row.duplicate)).toEqual([false, false, true, false])
+
+      // Bodyless confirm: the repeat is skipped — the default never
+      // double-counts a repeated line.
+      const doubledDone = yield* readImport(yield* confirmImport(apiUrl, owner.cookie, doubled.id))
+      expect(doubledDone.createdCount).toBe(3)
+      expect(doubledDone.duplicateCount).toBe(1)
+      expect(doubledDone.malformedCount).toBe(0)
+      const afterDoubled = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(afterDoubled).toHaveLength(3)
+      expect(afterDoubled.filter((entry) => entry.description === 'Bus fare')).toHaveLength(1)
+      // 100000 - 5000 - 250 - 80000.
+      expect(
+        balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
+      ).toBe(14750)
+
+      // Two genuine identical purchases: the Member overrides the repeat's
+      // line (3) and both rows import — the escape hatch the flag leaves open.
+      const genuine = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'genuine-pair.csv',
+          csv: [
+            'Date,Description,Amount',
+            '2026-06-10,Vending machine,-1.50',
+            '2026-06-10,Vending machine,-1.50',
+          ].join('\n'),
+        }),
+      )
+      const genuinePreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, genuine.id, MAPPING),
+      )
+      expect(genuinePreview.rows.map((row) => row.duplicate)).toEqual([false, true])
+      const genuineDone = yield* readImport(
+        yield* confirmImport(apiUrl, owner.cookie, genuine.id, { overrides: [3] }),
+      )
+      expect(genuineDone.createdCount).toBe(2)
+      expect(genuineDone.duplicateCount).toBe(0)
+      const afterGenuine = yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))
+      expect(afterGenuine.filter((entry) => entry.description === 'Vending machine')).toHaveLength(
+        2,
+      )
+
+      // --- Kind-blind matching, pinned deliberately (issue #53): a CSV row
+      // exactly matching a Transfer leg flags as a duplicate. The transfer
+      // entered in the app appears in the bank's export too — skipping it by
+      // default prevents the classic double-count of card payments and
+      // savings top-ups.
+      const savings = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Savings',
+          type: 'savings',
+          openingBalance: 0,
+        }),
+      )
+      const transferred = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/transfers`).pipe(
+          trustedOrigin,
+          withCookie(owner.cookie),
+          HttpClientRequest.bodyJsonUnsafe({
+            fromAccountId: checking.id,
+            toAccountId: savings.id,
+            amount: 15000,
+            date: '2026-06-15',
+            description: 'Savings top-up',
+          }),
+        ),
+      )
+      expect(transferred.status).toBe(200)
+
+      // The bank export shows the outflow leg verbatim; the preview flags it
+      // even though the leg's kind is 'transfer', and the default confirm
+      // creates nothing.
+      const statement = yield* readImport(
+        yield* createImport(apiUrl, owner.cookie, {
+          accountId: checking.id,
+          fileName: 'june-statement.csv',
+          csv: 'Date,Description,Amount\n2026-06-15,Savings top-up,-150.00\n',
+        }),
+      )
+      const statementPreview = yield* readPreview(
+        yield* previewImport(apiUrl, owner.cookie, statement.id, MAPPING),
+      )
+      expect(statementPreview.rows.map((row) => row.duplicate)).toEqual([true])
+      const statementDone = yield* readImport(
+        yield* confirmImport(apiUrl, owner.cookie, statement.id),
+      )
+      expect(statementDone.createdCount).toBe(0)
+      expect(statementDone.duplicateCount).toBe(1)
+      // The ledger holds the transfer's own legs and nothing new: 5 imported
+      // rows + 2 legs.
+      expect(yield* readTransactions(yield* listTransactions(apiUrl, owner.cookie))).toHaveLength(7)
+    }),
+  { timeout: 600_000 },
+)
+
 // --- Import revert (issue #15) ---
 // Deleting an Import deletes every Transaction it created — a bad column
 // mapping is one click to undo. Balances recompute (they are derived, ADR

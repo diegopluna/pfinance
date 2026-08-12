@@ -185,6 +185,22 @@ test('flagDuplicates flags rows whose parsed fields match an existing key; malfo
   expect(rows.map((row) => row.duplicate)).toEqual([true, false, false])
 })
 
+test('flagDuplicates flags a row repeating an earlier row in the same file; the first occurrence stays clean', () => {
+  const records = parseCsv(
+    [
+      'Date,Memo,Value',
+      '2026-01-15,Coffee,-3.50',
+      '2026-01-15,Coffee,-3.50',
+      '2026-01-15,Coffee,-3.50',
+      '2026-01-16,Salary,1000.00',
+    ].join('\n'),
+  )
+  const rows = flagDuplicates(previewRows(records.slice(1), mapping, 'USD'), new Set())
+  // Every repeat after the first flags — both copies of a triple never import
+  // silently — while the first occurrence imports as usual.
+  expect(rows.map((row) => row.duplicate)).toEqual([false, true, true, false])
+})
+
 test('parseImportConfirm accepts absent or integer-line overrides and rejects other shapes', () => {
   expect(parseImportConfirm(undefined)).toEqual({ ok: true, value: { overrides: [] } })
   expect(parseImportConfirm({})).toEqual({ ok: true, value: { overrides: [] } })

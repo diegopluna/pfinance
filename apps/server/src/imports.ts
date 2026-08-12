@@ -208,8 +208,9 @@ export interface PreviewRow {
   parsed: ImportRowFields | null
   error: string | null
   /**
-   * The parsed row exact-matches an existing Transaction (issue #14):
-   * skipped on confirm unless the Member overrides it by line.
+   * The parsed row exact-matches an existing Transaction (issue #14) or an
+   * earlier row in the same file (issue #53): skipped on confirm unless the
+   * Member overrides it by line.
    */
   duplicate: boolean
 }
@@ -280,15 +281,23 @@ export const previewRows = (
 
 /**
  * Flags every row whose parsed fields appear in `existing` (duplicateKey per
- * Transaction already on the Account). Malformed rows never flag — there is
- * nothing parsed to match.
+ * Transaction already on the Account) or repeat an earlier row in the same
+ * file (issue #53) — bank exports legitimately repeat lines, and both copies
+ * importing silently double-counts. The first occurrence stays clean; every
+ * repeat flags, with the per-row override as the escape hatch for genuine
+ * identical purchases. Malformed rows never flag — there is nothing parsed
+ * to match.
  */
-export const flagDuplicates = (rows: PreviewRow[], existing: ReadonlySet<string>): PreviewRow[] =>
-  rows.map((row) =>
-    row.parsed !== null && existing.has(duplicateKey(row.parsed))
-      ? { ...row, duplicate: true }
-      : row,
-  )
+export const flagDuplicates = (rows: PreviewRow[], existing: ReadonlySet<string>): PreviewRow[] => {
+  const seen = new Set<string>()
+  return rows.map((row) => {
+    if (row.parsed === null) return row
+    const key = duplicateKey(row.parsed)
+    const duplicate = existing.has(key) || seen.has(key)
+    seen.add(key)
+    return duplicate ? { ...row, duplicate: true } : row
+  })
+}
 
 // Upload caps: bank exports are small, and the file is stored as one D1 TEXT
 // cell, so both bytes and rows are bounded loudly — an oversize file is
@@ -453,6 +462,11 @@ export const chunkRows = <T>(rows: T[], size: number = IMPORT_INSERT_CHUNK): T[]
  * The duplicateKeys already on the Account, for flagging preview rows
  * (issue #14). Bounded by the parsed rows' date range — ISO dates compare
  * lexicographically — which limits the scan to the export's window.
+ * Deliberately kind-blind (issue #53): Transfer legs and Balance Adjustments
+ * match too. The transfer entered in the app shows up in the bank's export
+ * as an ordinary line — matching it is what stops the classic double-count
+ * of card payments and savings top-ups, and the per-row override covers the
+ * rare row that only coincides with a leg.
  * Tenancy contract: scoped by accountId only — the caller must hold a
  * scope-proven Account (requireAccount or a scoped find).
  */
