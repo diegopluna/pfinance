@@ -21,9 +21,12 @@ import {
 } from '@pfinance/ui/components/card'
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
+import type { DateFormat } from '@pfinance/db/date-formats'
 import { isForbidden } from '@/lib/api-call'
+import { useDateFormat } from '@/hooks/use-date-format'
 import { useInvites, useMemberMutations, useMembers } from '@/hooks/use-members'
 import { useMe } from '@/hooks/use-me'
+import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/members')({
   head: () => ({ meta: [{ title: 'Members · pfinance' }] }),
@@ -38,8 +41,9 @@ const inviteLink = (token: string) => `${window.location.origin}/sign-up?invite=
 const inviteLinkLabel = (token: string) =>
   `${window.location.host}/sign-up?invite=${token.slice(0, 4)}…${token.slice(-4)}`
 
-const joinedLabel = (iso: string) =>
-  `Joined ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+// Honors the Household date format (issue #31) like every other date.
+const joinedLabel = (iso: string, format: DateFormat) =>
+  `Joined ${formatMonthYear(new Date(iso), format)}`
 
 const expiryLabel = (iso: string) => {
   const ms = new Date(iso).getTime() - Date.now()
@@ -51,6 +55,7 @@ const expiryLabel = (iso: string) => {
 }
 
 function MembersScreen() {
+  const dateFormat = useDateFormat()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   // Removal is confirmed in an AlertDialog whose action repeats the
   // consequence; the target outlives `open` so the closing popup keeps its
@@ -139,7 +144,7 @@ function MembersScreen() {
                         {entry.email}
                         {me?.user.id === entry.userId
                           ? ' · you'
-                          : ` · ${joinedLabel(entry.createdAt)}`}
+                          : ` · ${joinedLabel(entry.createdAt, dateFormat)}`}
                       </p>
                     </div>
                   </div>

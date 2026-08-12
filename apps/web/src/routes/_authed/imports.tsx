@@ -63,7 +63,11 @@ interface ActiveImport {
   rowCount: number
 }
 
-const DATE_FORMAT_OPTIONS = [
+// "Date order" on purpose, not "date format": this is how the CSV's dates
+// are PARSED (the mapping's dateFormat field), a different concept from the
+// Household's display date format (issue #31, settings.tsx) — two option
+// tables with overlapping values and different meanings.
+const CSV_DATE_ORDER_OPTIONS = [
   { value: 'ymd', label: 'Year first — 2026-01-31' },
   { value: 'dmy', label: 'Day first — 31/01/2026' },
   { value: 'mdy', label: 'Month first — 01/31/2026' },
@@ -460,11 +464,11 @@ function MappingCard({
           {columnSelect('map-description', 'Description column', 'descriptionColumn')}
           {columnSelect('map-amount', 'Amount column', 'amountColumn')}
           <Field className="w-56 gap-1">
-            <FieldLabel htmlFor="map-date-format" className="text-xs text-muted-foreground">
-              Date format
+            <FieldLabel htmlFor="map-date-order" className="text-xs text-muted-foreground">
+              Date order
             </FieldLabel>
             <Select
-              items={DATE_FORMAT_OPTIONS}
+              items={CSV_DATE_ORDER_OPTIONS}
               value={mapping?.dateFormat ?? 'ymd'}
               onValueChange={(value: string | null) =>
                 mapping !== null &&
@@ -474,11 +478,11 @@ function MappingCard({
                 })
               }
             >
-              <SelectTrigger id="map-date-format" className="w-full">
+              <SelectTrigger id="map-date-order" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DATE_FORMAT_OPTIONS.map((option) => (
+                {CSV_DATE_ORDER_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

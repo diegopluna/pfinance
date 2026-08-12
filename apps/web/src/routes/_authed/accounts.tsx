@@ -22,10 +22,13 @@ import {
   DialogTitle,
 } from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
+import type { DateFormat } from '@pfinance/db/date-formats'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useAccountMutations, useAccounts } from '@/hooks/use-accounts'
+import { useDateFormat } from '@/hooks/use-date-format'
 import { useMe } from '@/hooks/use-me'
+import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/accounts')({
   head: () => ({ meta: [{ title: 'Accounts · pfinance' }] }),
@@ -49,10 +52,9 @@ const amountExample = (currency: CurrencyCode) => {
   return minorUnitExponent === 0 ? '1234' : `1234.${'5678'.slice(0, minorUnitExponent)}`
 }
 
-const archivedLabel = (iso: string | null) =>
-  iso === null
-    ? 'Archived'
-    : `Archived ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+// Honors the Household date format (issue #31) like every other date.
+const archivedLabel = (iso: string | null, format: DateFormat) =>
+  iso === null ? 'Archived' : `Archived ${formatMonthYear(new Date(iso), format)}`
 
 // Both shapes are inferred from the server's route schema so they can't
 // drift: the editable state from the create validator, the listed Account
@@ -62,6 +64,7 @@ type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accoun
 
 function AccountsScreen() {
   const { data: me } = useMe()
+  const dateFormat = useDateFormat()
   const [showArchived, setShowArchived] = useState(false)
   // The dialog's target outlives `open` so the closing popup keeps its
   // content while Base UI animates out and restores focus; the nonce forces
@@ -221,7 +224,7 @@ function AccountsScreen() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{entry.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {archivedLabel(entry.archivedAt)} · history preserved
+                        {archivedLabel(entry.archivedAt, dateFormat)} · history preserved
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">

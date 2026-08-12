@@ -12,20 +12,22 @@ import {
   DialogTitle,
 } from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
+import type { DateFormat } from '@pfinance/db/date-formats'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useCategories, useCategoryMutations } from '@/hooks/use-categories'
+import { useDateFormat } from '@/hooks/use-date-format'
 import { useMe } from '@/hooks/use-me'
+import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/categories')({
   head: () => ({ meta: [{ title: 'Categories · pfinance' }] }),
   component: CategoriesScreen,
 })
 
-const archivedLabel = (iso: string | null) =>
-  iso === null
-    ? 'Archived'
-    : `Archived ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+// Honors the Household date format (issue #31) like every other date.
+const archivedLabel = (iso: string | null, format: DateFormat) =>
+  iso === null ? 'Archived' : `Archived ${formatMonthYear(new Date(iso), format)}`
 
 // Both shapes are inferred from the server's route schema so they can't
 // drift: the editable state from the create validator, the listed Category
@@ -183,13 +185,14 @@ function CategoryRow({
   onSetArchived: (archive: boolean) => void
 }) {
   const isArchived = entry.archivedAt !== null
+  const dateFormat = useDateFormat()
   return (
     <li className="flex items-center justify-between gap-3 py-1.5">
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{entry.name}</span>
         {isArchived && (
           <span className="block text-xs text-muted-foreground">
-            {archivedLabel(entry.archivedAt)} · history preserved
+            {archivedLabel(entry.archivedAt, dateFormat)} · history preserved
           </span>
         )}
       </span>
