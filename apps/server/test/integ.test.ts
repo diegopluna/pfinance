@@ -180,6 +180,47 @@ test.provider(
 )
 
 test.provider(
+  'sign-out revokes the session: the same cookie is rejected afterwards',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const email = 'departing-owner@example.com'
+
+      const signUp = yield* Test.executeWhenReady(signUpRequest(apiUrl, email, 'Departing Owner'))
+      expect(signUp.status).toBe(200)
+
+      // A returning visit: sign-in issues the session under test (story 17 —
+      // the session persists across visits until sign-out ends it).
+      const signIn = yield* Test.executeWhenReady(signInRequest(apiUrl, email))
+      expect(signIn.status).toBe(200)
+      const cookie = cookieHeader(signIn)
+      expect(cookie).not.toBe('')
+
+      const before = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
+      )
+      expect(before.status).toBe(200)
+
+      const signOut = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/auth/sign-out`).pipe(
+          trustedOrigin,
+          withCookie(cookie),
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ),
+      )
+      expect(signOut.status).toBe(200)
+
+      // Replaying the pre-sign-out cookie proves the server revoked the
+      // session row — a browser merely clearing its cookie wouldn't 401 here.
+      const after = yield* executeWarm(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
+      )
+      expect(after.status).toBe(401)
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
   'bootstrap then locked: the first sign-up claims the instance, then the gate closes',
   (scratch) =>
     Effect.gen(function* () {

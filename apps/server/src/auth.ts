@@ -18,6 +18,8 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
     baseURL,
     basePath: '/api/auth',
     emailAndPassword: { enabled: true },
+    // No `session` config on purpose: the default 7-day rolling expiry is the
+    // pinned interpretation of "persists until sign-out" (ADR 0005, issue #54).
     database: drizzleAdapter(db, {
       provider: 'sqlite',
       // The auth credentials table is named auth_account — "account" is
