@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DATE_FORMATS, isDateFormat, type DateFormat } from '@pfinance/db/date-formats'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { Field, FieldLabel } from '@pfinance/ui/components/field'
@@ -10,8 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@pfinance/ui/components/select'
-import { api } from '@/lib/api'
-import { useMe } from '@/hooks/use-me'
+import { useHouseholdMutations, useMe } from '@/hooks/use-me'
 import { formatDayDate } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/settings')({
@@ -41,21 +39,8 @@ const dateFormatOptions = () => {
 // like the ledger it formats: every Member sees the same dates, and every
 // Member may change them.
 function SettingsScreen() {
-  const queryClient = useQueryClient()
   const { data: me, isPending, isError } = useMe()
-
-  const saveDateFormat = useMutation({
-    mutationFn: async (dateFormat: DateFormat) => {
-      const response = await api.api.household.$patch({ json: { dateFormat } })
-      if (!response.ok) {
-        throw new Error('Failed to save the date format')
-      }
-      return response.json()
-    },
-    // The preference lives on /api/me, which every screen already watches —
-    // invalidating it re-renders all dates in the new format.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
-  })
+  const { save: saveDateFormat } = useHouseholdMutations()
 
   const options = dateFormatOptions()
 
@@ -87,7 +72,7 @@ function SettingsScreen() {
                 value={me.household.dateFormat}
                 onValueChange={(value: string | null) => {
                   if (isDateFormat(value) && value !== me.household.dateFormat) {
-                    saveDateFormat.mutate(value)
+                    saveDateFormat.mutate({ dateFormat: value })
                   }
                 }}
               >

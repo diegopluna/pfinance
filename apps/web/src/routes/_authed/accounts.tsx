@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
 import {
@@ -25,7 +24,7 @@ import {
 import { FieldGroup } from '@pfinance/ui/components/field'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
-import { useAccounts } from '@/hooks/use-accounts'
+import { useAccountMutations, useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/accounts')({
@@ -62,7 +61,6 @@ type AccountFields = InferRequestType<typeof api.api.accounts.$post>['json']
 type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accounts'][number]
 
 function AccountsScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [showArchived, setShowArchived] = useState(false)
   // The dialog's target outlives `open` so the closing popup keeps its
@@ -81,37 +79,7 @@ function AccountsScreen() {
     me !== undefined && isSupportedCurrency(me.household.currency) ? me.household.currency : 'USD'
 
   const accountsQuery = useAccounts(showArchived)
-
-  const saveAccount = useMutation({
-    mutationFn: async ({ id, fields }: { id: string | null; fields: AccountFields }) => {
-      const response =
-        id === null
-          ? await api.api.accounts.$post({ json: fields })
-          : await api.api.accounts[':id'].$patch({ param: { id }, json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to save the account')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setDialogOpen(false)
-    },
-  })
-
-  const setArchived = useMutation({
-    mutationFn: async ({ id, archive }: { id: string; archive: boolean }) => {
-      const route = api.api.accounts[':id']
-      const response = archive
-        ? await route.archive.$post({ param: { id } })
-        : await route.unarchive.$post({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to update the account')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-  })
+  const { save: saveAccount, setArchived } = useAccountMutations()
 
   const openDialog = (entry: AccountEntry | null) => {
     saveAccount.reset()
@@ -148,10 +116,11 @@ function AccountsScreen() {
         onSubmit={(fields) =>
           saveAccount
             .mutateAsync({ id: target.entry?.id ?? null, fields })
-            // The mutation records failures for the dialog's error line;
-            // swallow the rejection so the form doesn't also throw.
+            // Close on success; the mutation records failures for the
+            // dialog's error line, so swallow the rejection so the form
+            // doesn't also throw.
             .then(
-              () => undefined,
+              () => setDialogOpen(false),
               () => undefined,
             )
         }

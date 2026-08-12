@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import {
@@ -37,6 +36,8 @@ import {
 import { useDateFormat } from '@/hooks/use-date-format'
 import { formatCalendarDate, formatDayDate } from '@/lib/dates'
 import { api } from '@/lib/api'
+import { useAccounts } from '@/hooks/use-accounts'
+import { useImportMutations, useImportPreview, useImports } from '@/hooks/use-imports'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/imports')({
@@ -89,7 +90,6 @@ const guessMapping = (columns: string[]): MappingFields => ({
 })
 
 function ImportsScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const currency: CurrencyCode =
     me !== undefined && isSupportedCurrency(me.household.currency) ? me.household.currency : 'USD'
@@ -103,29 +103,11 @@ function ImportsScreen() {
 
   // All Accounts, archived included, so history rows on a closed Account
   // still name it; the upload picker below offers only open ones.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts', true],
-    queryFn: async () => {
-      const response = await api.api.accounts.$get({ query: { includeArchived: 'true' } })
-      if (!response.ok) {
-        throw new Error('Failed to load accounts')
-      }
-      return response.json()
-    },
-  })
+  const accountsQuery = useAccounts(true)
   const accounts = accountsQuery.data?.accounts ?? []
   const accountNames = new Map(accounts.map((entry) => [entry.id, entry.name]))
 
-  const importsQuery = useQuery({
-    queryKey: ['imports'],
-    queryFn: async () => {
-      const response = await api.api.imports.$get()
-      if (!response.ok) {
-        throw new Error('Failed to load imports')
-      }
-      return response.json()
-    },
-  })
+  const importsQuery = useImports()
   const imports = importsQuery.data?.imports ?? []
 
   const startMapping = (entry: ActiveImport) => {
@@ -146,110 +128,11 @@ function ImportsScreen() {
     })
   }
 
-  const upload = useMutation({
-    mutationFn: async (fields: { accountId: string; fileName: string; csv: string }) => {
-      const response = await api.api.imports.$post({ json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to upload the file')
-      }
-      return response.json()
-    },
-    onSuccess: async ({ import: batch, columns }) => {
-      await queryClient.invalidateQueries({ queryKey: ['imports'] })
-      startMapping({
-        id: batch.id,
-        fileName: batch.fileName,
-        accountId: batch.accountId,
-        columns,
-        rowCount: batch.rowCount,
-      })
-    },
-  })
-
-  // Resume a pending Import from the history: the single GET returns the
-  // file's columns again, and the stored mapping (if any) beats the guess.
-  const resume = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.imports[':id'].$get({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to load the import')
-      }
-      return response.json()
-    },
-    onSuccess: ({ import: batch, columns }) => {
-      setActive({
-        id: batch.id,
-        fileName: batch.fileName,
-        accountId: batch.accountId,
-        columns,
-        rowCount: batch.rowCount,
-      })
-      setMapping(batch.mapping ?? guessMapping(columns))
-      setOverrides(new Set())
-    },
-  })
+  const { upload, resume, confirm, remove: deleteImport } = useImportMutations()
 
   // The preview runs on every mapping change — it also persists the mapping
   // on the Import server-side, so confirm creates exactly what's on screen.
-  const previewQuery = useQuery({
-    queryKey: ['import-preview', active?.id, mapping],
-    enabled: active !== null && mapping !== null,
-    queryFn: async (): Promise<PreviewResponse> => {
-      if (active === null || mapping === null) {
-        throw new Error('No import selected')
-      }
-      const response = await api.api.imports[':id'].preview.$post({
-        param: { id: active.id },
-        json: mapping,
-      })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to preview the import')
-      }
-      return response.json()
-    },
-  })
-
-  // Confirming creates Transactions and reverting deletes them, so both
-  // refresh every ledger view.
-  const invalidateLedger = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['imports'] })
-    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-    await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-  }
-
-  const confirm = useMutation({
-    mutationFn: async (fields: { id: string; overrides: number[] }) => {
-      const response = await api.api.imports[':id'].confirm.$post({
-        param: { id: fields.id },
-        json: { overrides: fields.overrides },
-      })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to confirm the import')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await invalidateLedger()
-      setActive(null)
-      setMapping(null)
-      setOverrides(new Set())
-    },
-  })
-
-  // The revert (issue #15): deleting an Import deletes every Transaction it
-  // created server-side.
-  const deleteImport = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.imports[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to delete the import')
-      }
-    },
-    onSuccess: invalidateLedger,
-  })
+  const previewQuery = useImportPreview(active?.id, mapping)
 
   const closeWizard = () => {
     confirm.reset()
@@ -273,7 +156,18 @@ function ImportsScreen() {
           accounts={accounts}
           uploading={upload.isPending}
           error={upload.isError ? upload.error.message : null}
-          onUpload={(fields) => upload.mutate(fields)}
+          onUpload={(fields) =>
+            upload.mutate(fields, {
+              onSuccess: ({ import: batch, columns }) =>
+                startMapping({
+                  id: batch.id,
+                  fileName: batch.fileName,
+                  accountId: batch.accountId,
+                  columns,
+                  rowCount: batch.rowCount,
+                }),
+            })
+          }
         />
       ) : (
         <MappingCard
@@ -289,7 +183,18 @@ function ImportsScreen() {
           overrides={overrides}
           onToggleOverride={toggleOverride}
           onMappingChange={setMapping}
-          onConfirm={() => confirm.mutate({ id: active.id, overrides: [...overrides] })}
+          onConfirm={() =>
+            confirm.mutate(
+              { id: active.id, overrides: [...overrides] },
+              {
+                onSuccess: () => {
+                  setActive(null)
+                  setMapping(null)
+                  setOverrides(new Set())
+                },
+              },
+            )
+          }
           onClose={closeWizard}
         />
       )}
@@ -315,7 +220,22 @@ function ImportsScreen() {
               accountNames={accountNames}
               resuming={resume.isPending}
               deleting={deleteImport.isPending}
-              onResume={(id) => resume.mutate(id)}
+              onResume={(id) =>
+                // The stored mapping (if any) beats the guess.
+                resume.mutate(id, {
+                  onSuccess: ({ import: batch, columns }) => {
+                    setActive({
+                      id: batch.id,
+                      fileName: batch.fileName,
+                      accountId: batch.accountId,
+                      columns,
+                      rowCount: batch.rowCount,
+                    })
+                    setMapping(batch.mapping ?? guessMapping(columns))
+                    setOverrides(new Set())
+                  },
+                })
+              }
               onDelete={setPendingDelete}
             />
           </CardContent>

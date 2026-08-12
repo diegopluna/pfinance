@@ -4,5 +4,5 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "paths": {}
   },
-  "include": ["**/*.ts", "../src/lib/dates.ts"]
+  "include": ["**/*.ts", "../src/lib/**/*.ts"]
 }

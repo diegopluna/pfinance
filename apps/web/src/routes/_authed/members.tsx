@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +21,8 @@ import {
 } from '@pfinance/ui/components/card'
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
-import { api } from '@/lib/api'
+import { isForbidden } from '@/lib/api-call'
+import { useInvites, useMemberMutations, useMembers } from '@/hooks/use-members'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/members')({
@@ -51,7 +51,6 @@ const expiryLabel = (iso: string) => {
 }
 
 function MembersScreen() {
-  const queryClient = useQueryClient()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   // Removal is confirmed in an AlertDialog whose action repeats the
   // consequence; the target outlives `open` so the closing popup keeps its
@@ -60,65 +59,9 @@ function MembersScreen() {
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null)
   const { data: me } = useMe()
 
-  const membersQuery = useQuery({
-    queryKey: ['members'],
-    queryFn: async () => {
-      const response = await api.api.members.$get()
-      if (!response.ok) {
-        throw new Error(response.status === 403 ? 'forbidden' : 'Failed to load members')
-      }
-      return response.json()
-    },
-    retry: false,
-  })
-
-  const invitesQuery = useQuery({
-    queryKey: ['invites'],
-    queryFn: async () => {
-      const response = await api.api.invites.$get()
-      if (!response.ok) {
-        throw new Error(response.status === 403 ? 'forbidden' : 'Failed to load invites')
-      }
-      return response.json()
-    },
-    retry: false,
-  })
-
-  const createInvite = useMutation({
-    mutationFn: async () => {
-      const response = await api.api.invites.$post()
-      if (!response.ok) {
-        throw new Error('Failed to create invite')
-      }
-      return response.json()
-    },
-    onSuccess: async ({ invite }) => {
-      await queryClient.invalidateQueries({ queryKey: ['invites'] })
-      // Creating an Invite is for handing its link to someone — copy it
-      // right away so the owner can paste it without hunting for the row.
-      await copyLink(invite.id, invite.token)
-    },
-  })
-
-  const revokeInvite = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.invites[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to revoke invite')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invites'] }),
-  })
-
-  const removeMember = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.members[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to remove member')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['members'] }),
-  })
+  const membersQuery = useMembers()
+  const invitesQuery = useInvites()
+  const { createInvite, revokeInvite, removeMember } = useMemberMutations()
 
   const copyLink = async (id: string, token: string) => {
     await navigator.clipboard.writeText(inviteLink(token))
@@ -128,7 +71,7 @@ function MembersScreen() {
 
   // The management surface is the owner's alone; the server answers 403 for
   // everyone else, and this screen relays that instead of half-rendering.
-  if (membersQuery.error?.message === 'forbidden' || invitesQuery.error?.message === 'forbidden') {
+  if (isForbidden(membersQuery.error) || isForbidden(invitesQuery.error)) {
     return (
       <Card className="w-full max-w-2xl">
         <CardHeader>
@@ -159,7 +102,13 @@ function MembersScreen() {
         <Button
           variant="outline"
           disabled={createInvite.isPending}
-          onClick={() => createInvite.mutate()}
+          onClick={() =>
+            // Creating an Invite is for handing its link to someone — copy it
+            // right away so the owner can paste it without hunting for the row.
+            createInvite.mutate(undefined, {
+              onSuccess: ({ invite }) => copyLink(invite.id, invite.token),
+            })
+          }
         >
           New invite
         </Button>

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -15,6 +14,7 @@ import {
 import { FieldGroup } from '@pfinance/ui/components/field'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
+import { useCategories, useCategoryMutations } from '@/hooks/use-categories'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/categories')({
@@ -34,7 +34,6 @@ type CategoryFields = InferRequestType<typeof api.api.categories.$post>['json']
 type CategoryEntry = InferResponseType<typeof api.api.categories.$get, 200>['categories'][number]
 
 function CategoriesScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [showArchived, setShowArchived] = useState(false)
   // The dialog's target outlives `open` so the closing popup keeps its
@@ -46,49 +45,8 @@ function CategoriesScreen() {
     nonce: 0,
   })
 
-  const categoriesQuery = useQuery({
-    queryKey: ['categories', showArchived],
-    queryFn: async () => {
-      const response = await api.api.categories.$get({
-        query: { includeArchived: showArchived ? 'true' : 'false' },
-      })
-      if (!response.ok) {
-        throw new Error('Failed to load categories')
-      }
-      return response.json()
-    },
-  })
-
-  const saveCategory = useMutation({
-    mutationFn: async ({ id, fields }: { id: string | null; fields: CategoryFields }) => {
-      const response =
-        id === null
-          ? await api.api.categories.$post({ json: fields })
-          : await api.api.categories[':id'].$patch({ param: { id }, json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to save the category')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['categories'] })
-      setDialogOpen(false)
-    },
-  })
-
-  const setArchived = useMutation({
-    mutationFn: async ({ id, archive }: { id: string; archive: boolean }) => {
-      const route = api.api.categories[':id']
-      const response = archive
-        ? await route.archive.$post({ param: { id } })
-        : await route.unarchive.$post({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to update the category')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['categories'] }),
-  })
+  const categoriesQuery = useCategories(showArchived)
+  const { save: saveCategory, setArchived } = useCategoryMutations()
 
   const openDialog = (entry: CategoryEntry | null) => {
     saveCategory.reset()
@@ -124,10 +82,11 @@ function CategoriesScreen() {
         onSubmit={(fields) =>
           saveCategory
             .mutateAsync({ id: target.entry?.id ?? null, fields })
-            // The mutation records failures for the dialog's error line;
-            // swallow the rejection so the form doesn't also throw.
+            // Close on success; the mutation records failures for the
+            // dialog's error line, so swallow the rejection so the form
+            // doesn't also throw.
             .then(
-              () => undefined,
+              () => setDialogOpen(false),
               () => undefined,
             )
         }

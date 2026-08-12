@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { call } from '@/lib/api-call'
+import { keys } from '@/lib/query-keys'
 
 // One month of Spending by Category (issue #18), server-computed like every
 // chart aggregate (issue #1): the web app renders, it never sums. The month
@@ -7,13 +9,8 @@ import { api } from '@/lib/api'
 // stay cached.
 export function useSpending(month: string) {
   return useQuery({
-    queryKey: ['spending-by-category', month],
-    queryFn: async () => {
-      const response = await api.api['spending-by-category'].$get({ query: { month } })
-      if (!response.ok) {
-        throw new Error('Failed to load spending')
-      }
-      return response.json()
-    },
+    queryKey: keys.spending(month),
+    queryFn: () =>
+      call(api.api['spending-by-category'].$get({ query: { month } }), 'Failed to load spending'),
   })
 }
