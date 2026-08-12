@@ -42,23 +42,24 @@ import {
   pendingInviteFilter,
 } from './invites.ts'
 import {
+  confirmImport,
   findImport,
   flaggedPreviewRows,
   householdCurrency,
-  IMPORT_INSERT_CHUNK,
   IMPORT_MAX_ROWS,
   importView,
   listImports,
+  loadImport,
   mappingColumnError,
   parseCsv,
   parseImportConfirm,
   parseImportMapping,
   parseNewImport,
-  type ImportMapping,
 } from './imports.ts'
 import { monthlyIncomeExpense } from './income-expense.ts'
 import { currentUtcMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
+import type { Scope } from './scope.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import { spendingByCategory } from './spending.ts'
 import {
@@ -83,6 +84,12 @@ type Variables = {
 
 const authFor = (c: { env: ServerEnv; req: { url: string } }) =>
   createAuth(c.env, new URL(c.req.url).origin)
+
+// The Scope every Ledger verb takes, from the session middleware's variables.
+const scopeOf = (vars: Variables): Scope => ({
+  householdId: vars.membership.householdId,
+  userId: vars.user.id,
+})
 
 // Managing Members and Invites is the owner's alone (issue #6); runs after
 // the session middleware below, which resolves c.var.membership.
@@ -546,11 +553,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   })
   .get('/api/imports/:id', async (c) => {
     const db = createDb(c.env.DB)
-    const found = await findImport(db, c.var.membership.householdId, c.req.param('id'))
-    if (found === undefined) {
+    const loaded = await loadImport(db, scopeOf(c.var), c.req.param('id'))
+    if (loaded === undefined) {
       return c.json({ error: 'Import not found.' }, 404)
     }
-    return c.json({ import: importView(found), columns: parseCsv(found.csv)[0]?.cells ?? [] })
+    return c.json({ import: importView(loaded.row), columns: loaded.header?.cells ?? [] })
   })
   // The map step: persists the mapping on the pending Import — confirm
   // re-parses the same bytes with the same mapping, so what was last
@@ -559,15 +566,15 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   .post('/api/imports/:id/preview', parsedValidator('json', parseImportMapping), async (c) => {
     const db = createDb(c.env.DB)
     const { householdId } = c.var.membership
-    const found = await findImport(db, householdId, c.req.param('id'))
-    if (found === undefined) {
+    const loaded = await loadImport(db, scopeOf(c.var), c.req.param('id'))
+    if (loaded === undefined) {
       return c.json({ error: 'Import not found.' }, 404)
     }
+    const { row: found, header, records } = loaded
     if (found.confirmedAt !== null) {
       return c.json({ error: 'This import is confirmed; its mapping is frozen.' }, 400)
     }
     const mapping = c.req.valid('json')
-    const [header, ...data] = parseCsv(found.csv)
     const columnError = mappingColumnError(mapping, header?.cells.length ?? 0)
     if (columnError !== undefined) {
       return c.json({ error: columnError }, 400)
@@ -580,7 +587,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       rows: await flaggedPreviewRows(
         db,
         found.accountId,
-        data,
+        records,
         mapping,
         await householdCurrency(db, householdId),
       ),
@@ -595,90 +602,10 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     parsedValidator('json', parseImportConfirm),
     async (c) => {
       const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
-      const found = await findImport(db, householdId, c.req.param('id'))
-      if (found === undefined) {
-        return c.json({ error: 'Import not found.' }, 404)
-      }
-      if (found.confirmedAt !== null) {
-        return c.json({ error: 'This import is already confirmed.' }, 400)
-      }
-      if (found.mapping === null) {
-        return c.json({ error: 'Map the columns and preview before confirming.' }, 400)
-      }
-      const mapping = JSON.parse(found.mapping) as ImportMapping
-      const [, ...data] = parseCsv(found.csv)
-      // Duplicates are re-checked against the ledger now, not trusted from the
-      // preview: whatever landed since can never be double-counted.
-      const rows = await flaggedPreviewRows(
-        db,
-        found.accountId,
-        data,
-        mapping,
-        await householdCurrency(db, householdId),
-      )
-      const valid = rows.flatMap((row) =>
-        row.parsed === null
-          ? []
-          : [{ line: row.line, duplicate: row.duplicate, fields: row.parsed }],
-      )
-      if (valid.length === 0) {
-        return c.json({ error: 'No row parses with this mapping; nothing to import.' }, 400)
-      }
-      const overridden = new Set(c.req.valid('json').overrides)
-      // The Member's choices: flagged rows are skipped unless overridden by
-      // line. Admitting zero rows is a fine outcome — re-uploading an
-      // already-imported file confirms cleanly and creates nothing.
-      const admitted = valid.filter((row) => !row.duplicate || overridden.has(row.line))
-      const confirmedAt = new Date()
-      const transactionRows = admitted.map(({ line, fields }) => ({
-        // Deterministic per (Import, line) — the categories-seeding trick: two
-        // racing confirms build the same ids, so the loser's batch collides on
-        // the primary key and rolls back whole. The ledger can never receive
-        // the same batch twice.
-        id: `${found.id}:${line}`,
-        accountId: found.accountId,
-        ...fields,
-        // All Uncategorized — the honest default for fresh imports
-        // (CONTEXT.md) — and each row remembers its Import.
-        kind: 'standard' as const,
-        categoryId: null,
-        transferId: null,
-        importId: found.id,
-        createdBy: c.var.user.id,
-        createdAt: confirmedAt,
-      }))
-      const counts = {
-        createdCount: admitted.length,
-        malformedCount: rows.length - valid.length,
-        duplicateCount: valid.length - admitted.length,
-      }
-      const inserts = []
-      for (let at = 0; at < transactionRows.length; at += IMPORT_INSERT_CHUNK) {
-        inserts.push(
-          db.insert(transaction).values(transactionRows.slice(at, at + IMPORT_INSERT_CHUNK)),
-        )
-      }
-      // One atomic D1 batch: the Transactions and the confirmation land
-      // together or not at all.
-      try {
-        await db.batch([
-          db
-            .update(csvImport)
-            .set({ ...counts, confirmedAt })
-            .where(and(eq(csvImport.id, found.id), isNull(csvImport.confirmedAt))),
-          ...inserts,
-        ])
-      } catch (error) {
-        // The expected failure is the deterministic-id collision above: a
-        // concurrent confirm won the race. Re-check rather than guess.
-        const now = await findImport(db, householdId, found.id)
-        if (now?.confirmedAt != null) {
-          return c.json({ error: 'This import is already confirmed.' }, 400)
-        }
-        throw error
-      }
-      return c.json({ import: importView({ ...found, ...counts, confirmedAt }) })
+      const result = await confirmImport(db, scopeOf(c.var), c.req.param('id'), c.req.valid('json'))
+      return result.ok
+        ? c.json({ import: result.value })
+        : c.json({ error: result.error }, result.status)
     },
   )
   // The revert (CONTEXT.md): a bad column mapping is one click to undo,

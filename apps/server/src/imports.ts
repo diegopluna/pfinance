@@ -5,8 +5,9 @@ import {
   type CurrencyCode,
 } from '@pfinance/currency'
 import { account, csvImport, household, transaction, type Db } from '@pfinance/db'
-import { and, asc, desc, eq, gte, lte } from 'drizzle-orm'
-import type { Parsed } from './parsed.ts'
+import { and, asc, desc, eq, gte, isNull, lte } from 'drizzle-orm'
+import type { Parsed, VerbResult } from './parsed.ts'
+import type { Scope } from './scope.ts'
 import { isCalendarDate } from './transactions.ts'
 
 // Parsing for the /api/imports surface (issue #13): CSV text → records,
@@ -435,6 +436,20 @@ export const listImports = async (db: Db, householdId: string) => {
 export const IMPORT_INSERT_CHUNK = 8
 
 /**
+ * Rows → ordered groups of at most `size`, none empty. Pure so the cap
+ * arithmetic is testable — the local test database accepts statement sizes
+ * real D1 would reject (db-harness.ts), so this split is verified here, not
+ * by the harness.
+ */
+export const chunkRows = <T>(rows: T[], size: number = IMPORT_INSERT_CHUNK): T[][] => {
+  const chunks: T[][] = []
+  for (let at = 0; at < rows.length; at += size) {
+    chunks.push(rows.slice(at, at + size))
+  }
+  return chunks
+}
+
+/**
  * The duplicateKeys already on the Account, for flagging preview rows
  * (issue #14). Bounded by the parsed rows' date range — ISO dates compare
  * lexicographically — which limits the scan to the export's window.
@@ -495,4 +510,108 @@ export const householdCurrency = async (db: Db, householdId: string): Promise<Cu
     .where(eq(household.id, householdId))
     .limit(1)
   return isSupportedCurrency(row?.currency) ? row.currency : 'USD'
+}
+
+export type ImportView = ReturnType<typeof importView>
+
+/**
+ * An Import with its stored bytes parsed — the one place the CSV is re-read.
+ * The read routes and confirm all load through this, so "which records does
+ * this Import hold" can never be answered two ways. Undefined when the id
+ * isn't the Household's (tenancy rides on the Account, findImport).
+ */
+export const loadImport = async (db: Db, scope: Scope, id: string) => {
+  const row = await findImport(db, scope.householdId, id)
+  if (row === undefined) return undefined
+  const [header, ...records] = parseCsv(row.csv)
+  return { row, header, records }
+}
+
+/**
+ * The confirm write path (issues #13/#14/#15): re-parse the stored bytes
+ * with the stored mapping, re-check duplicates against the ledger, admit
+ * flagged rows only where overridden, and land the Transactions and the
+ * confirmation in one atomic batch. Transaction ids are deterministic per
+ * (Import, line) — the categories-seeding trick: two racing confirms build
+ * the same ids, so the loser's batch collides on the primary key and rolls
+ * back whole. The ledger can never receive the same batch twice.
+ */
+export const confirmImport = async (
+  db: Db,
+  scope: Scope,
+  importId: string,
+  { overrides }: ImportConfirmFields,
+): Promise<VerbResult<ImportView>> => {
+  const loaded = await loadImport(db, scope, importId)
+  if (loaded === undefined) {
+    return { ok: false, status: 404, error: 'Import not found.' }
+  }
+  const { row: found, records } = loaded
+  if (found.confirmedAt !== null) {
+    return { ok: false, status: 400, error: 'This import is already confirmed.' }
+  }
+  if (found.mapping === null) {
+    return { ok: false, status: 400, error: 'Map the columns and preview before confirming.' }
+  }
+  const mapping = JSON.parse(found.mapping) as ImportMapping
+  // Duplicates are re-checked against the ledger now, not trusted from the
+  // preview: whatever landed since can never be double-counted.
+  const rows = await flaggedPreviewRows(
+    db,
+    found.accountId,
+    records,
+    mapping,
+    await householdCurrency(db, scope.householdId),
+  )
+  const valid = rows.flatMap((row) =>
+    row.parsed === null ? [] : [{ line: row.line, duplicate: row.duplicate, fields: row.parsed }],
+  )
+  if (valid.length === 0) {
+    return { ok: false, status: 400, error: 'No row parses with this mapping; nothing to import.' }
+  }
+  const overridden = new Set(overrides)
+  // The Member's choices: flagged rows are skipped unless overridden by
+  // line. Admitting zero rows is a fine outcome — re-uploading an
+  // already-imported file confirms cleanly and creates nothing.
+  const admitted = valid.filter((row) => !row.duplicate || overridden.has(row.line))
+  const confirmedAt = new Date()
+  const transactionRows = admitted.map(({ line, fields }) => ({
+    id: `${found.id}:${line}`,
+    accountId: found.accountId,
+    ...fields,
+    // All Uncategorized — the honest default for fresh imports (CONTEXT.md)
+    // — and each row remembers its Import.
+    kind: 'standard' as const,
+    categoryId: null,
+    transferId: null,
+    importId: found.id,
+    createdBy: scope.userId,
+    createdAt: confirmedAt,
+  }))
+  const counts = {
+    createdCount: admitted.length,
+    malformedCount: rows.length - valid.length,
+    duplicateCount: valid.length - admitted.length,
+  }
+  const inserts = chunkRows(transactionRows).map((chunk) => db.insert(transaction).values(chunk))
+  // One atomic batch: the Transactions and the confirmation land together or
+  // not at all.
+  try {
+    await db.batch([
+      db
+        .update(csvImport)
+        .set({ ...counts, confirmedAt })
+        .where(and(eq(csvImport.id, found.id), isNull(csvImport.confirmedAt))),
+      ...inserts,
+    ])
+  } catch (error) {
+    // The expected failure is the deterministic-id collision above: a
+    // concurrent confirm won the race. Re-check rather than guess.
+    const now = await findImport(db, scope.householdId, found.id)
+    if (now?.confirmedAt != null) {
+      return { ok: false, status: 400, error: 'This import is already confirmed.' }
+    }
+    throw error
+  }
+  return { ok: true, value: importView({ ...found, ...counts, confirmedAt }) }
 }
