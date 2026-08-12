@@ -365,8 +365,9 @@ function UploadCard({
 // Steps 2–3 — map and preview: three column selects plus the date shape,
 // with the parsed result of every row underneath. Malformed rows are shown
 // with their line and reason — they are skipped on confirm, never silently
-// dropped. Rows matching an existing Transaction are flagged as duplicates
-// and skipped by default; a per-row checkbox imports one anyway (issue #14).
+// dropped. Rows matching an existing Transaction (issue #14) or repeating an
+// earlier row in the same file (issue #53) are flagged as duplicates and
+// skipped by default; a per-row checkbox imports one anyway.
 function MappingCard({
   active,
   mapping,
