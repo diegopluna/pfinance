@@ -11,10 +11,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Branch pushes deploy under the branch name (master → 'master'). There is
+  # deliberately no 'prod' arm: the hardened production instance is deployed
+  # manually via `--stage prod` (quickstart step 7) and CI never touches it
+  # (issue #63).
   STAGE: >-
     ${{ github.event_name == 'pull_request'
       && format('pr-{0}', github.event.number)
-      || (github.ref == 'refs/heads/main' && 'prod' || github.ref_name) }}
+      || github.ref_name }}
   # Per-ref stage for the integration test suite, isolated from the preview/
   # prod stage so concurrent PRs never share test resources. The suite deploys
   # it in beforeAll and destroys it in afterAll (CI only — locally the stage
