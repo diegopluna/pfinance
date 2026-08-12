@@ -29,8 +29,20 @@ affect hosting.
 | GitHub owner/repo      | Parsed from the clone's `origin` remote (github.com hosts only)                          | `GITHUB_REPOSITORY=owner/repo` (GitHub Actions sets this automatically)                                                |
 | PR preview comment     | Skipped (with a logged warning if `PULL_REQUEST` is set but no repository is detectable) | Set `PULL_REQUEST=<pr-number>` and provide a GitHub token (`GITHUB_TOKEN` / `GITHUB_ACCESS_TOKEN`, or `alchemy login`) |
 | Alchemy auth profile   | `default`                                                                                | `ALCHEMY_PROFILE=<name>`, or `--profile <name>` on any `alchemy` command (the flag wins)                               |
-| Trusted browser origin | Unset — the API trusts `*.workers.dev` broadly (fine for dev/previews)                   | `WEB_ORIGIN=https://your-web-host` on production deploys                                                               |
+| Trusted browser origin | Unset — the API trusts `*.workers.dev` broadly (fine for dev/previews)                   | `WEB_ORIGIN=https://your-web-host` on production deploys (defaults to `https://$WEB_DOMAIN` when that is set)          |
+| Production URLs        | Unset — each worker serves on its generated `*.workers.dev` URL                          | `WEB_DOMAIN` / `API_DOMAIN` / `DOCS_DOMAIN`, each a hostname attached to its worker as a Cloudflare custom domain      |
 | Deploy stage           | None — always passed explicitly                                                          | `--stage <name>` (`prod`, `pr-N` previews, `test-*` for the integration suite)                                         |
+
+The three `*_DOMAIN` variables set a worker's custom domain in
+`alchemy.run.ts` — Alchemy manages the DNS record and edge certificate, and
+infers the Cloudflare zone from the hostname, so the domain's zone must
+already exist in the deploying account. When set, `https://<domain>` becomes
+that worker's primary URL, so `VITE_API_URL` and the deploy's printed URLs
+follow automatically. When unset, the prop is omitted, which per Alchemy
+semantics leaves custom domains **unmanaged** rather than detaching them — a
+later deploy without the variables keeps the domains attached, and CI
+preview/test stages (which never set them) are unaffected. Pass the variables
+on manual `--stage prod` deploys only.
 
 Repository detection lives in `stacks/repository.ts`: `GITHUB_REPOSITORY`
 wins, then the `origin` remote URL (scp-like `git@`, `ssh://`, or `https://`
