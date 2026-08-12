@@ -35,11 +35,45 @@ export const database = Cloudflare.D1.Database(
 // the hostname (it must already exist in the account). The worker's primary
 // url output becomes https://<domain>, so VITE_API_URL and the printed
 // deploy URLs follow along. Unset (CI previews, tests, forks without a
-// domain) the prop is omitted, which leaves custom domains unmanaged and
-// the workers on their *.workers.dev URLs.
-const webDomain = process.env.WEB_DOMAIN || undefined
-const apiDomain = process.env.API_DOMAIN || undefined
-const docsDomain = process.env.DOCS_DOMAIN || undefined
+// domain) the prop resolves to undefined, which leaves custom domains
+// unmanaged and the workers on their *.workers.dev URLs.
+//
+// Production-only, enforced: a hostname can be attached to only one worker
+// account-wide, so any other stage deploying with one of these vars set
+// (say, exported in the deploying shell) would detach the domain from the
+// production instance. Every stack composing these workers yields this guard
+// before its first resource, turning that into a loud failure — before
+// anything is created — instead of a silent takeover. The production stage
+// is 'prod' (the quickstart's manual deploy) unless PROD_STAGE designates
+// another; the CI workflow sets it to the branch name on push deploys, so a
+// CI-hosted production (this repo: stage 'master') can carry the domains
+// while pr-N previews and test stages never can.
+//
+// The guard is a standalone step (not folded into the domain props) because
+// the worker provider reads `domain` structurally — an Effect-valued prop is
+// not resolved, it is mistaken for a WorkerDomainConfig.
+const domainVars = ['WEB_DOMAIN', 'API_DOMAIN', 'DOCS_DOMAIN'] as const
+const prodStage = process.env.PROD_STAGE || 'prod'
+export const assertDomainsProdOnly = Effect.gen(function* () {
+  const stage = yield* Alchemy.Stage
+  if (stage === prodStage) return
+  for (const envVar of domainVars) {
+    if (process.env[envVar]) {
+      return yield* Effect.die(
+        new Error(
+          `${envVar}=${process.env[envVar]} is set, but custom domains attach only on ` +
+            `the production stage '${prodStage}' — this deploy targets stage '${stage}', ` +
+            `which would steal the domain from the production instance. Unset ${envVar} ` +
+            `for non-production deploys, or set PROD_STAGE if your production stage has ` +
+            `another name.`,
+        ),
+      )
+    }
+  }
+})
+const [webDomain, apiDomain, docsDomain] = domainVars.map(
+  (envVar) => process.env[envVar] || undefined,
+)
 
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
@@ -83,6 +117,7 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
+    yield* assertDomainsProdOnly
     const api = yield* server
     const web = yield* Cloudflare.Website.Vite('Web', {
       assets: { notFoundHandling: 'single-page-application' },

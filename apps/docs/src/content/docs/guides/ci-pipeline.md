@@ -34,6 +34,11 @@ The quickstart deploys `--stage prod`. The pipeline never touches that stage
 from a `master` push, and it never sets `WEB_ORIGIN`, so your claimed
 instance stays under your control: keep updating it with the deploy command
 from [quickstart step 7](/guides/quickstart/#7-harden-for-production).
+
+The alternative is to treat the CI-deployed `master` stage itself as your
+production instance — claim that one and skip the manual deploys entirely.
+The [custom domains section](#custom-domains-for-a-ci-hosted-production)
+below covers putting it on your own domain.
 :::
 
 :::caution
@@ -66,6 +71,21 @@ Create the token as in the
 [quickstart](/guides/quickstart/#4-cloudflare-credentials) and add both
 values under _Settings → Secrets and variables → Actions_ in your GitHub
 repository.
+
+## Custom domains for a CI-hosted production
+
+If the CI-deployed `master` stage is your production instance, put it on
+your own domain with repository Actions **variables** (not secrets): under
+_Settings → Secrets and variables → Actions → Variables_, define any of
+`WEB_DOMAIN`, `API_DOMAIN`, and `DOCS_DOMAIN` — the same hostnames described
+in [quickstart step 8](/guides/quickstart/#8-production-urls-optional), and
+the zone must already exist in your Cloudflare account.
+
+The workflow forwards them **only on pushes to `master`**, together with
+`PROD_STAGE=master` to satisfy the stack's production-stage guard. Pull
+request previews never receive them, so a `pr-N` stage can never claim your
+production hostnames. The next push to `master` attaches the domains, and
+`WEB_ORIGIN` pins itself to `https://$WEB_DOMAIN` on the same deploy.
 
 ## Turning it off
 

@@ -12,9 +12,11 @@ concurrency:
 
 env:
   # Branch pushes deploy under the branch name (master → 'master'). There is
-  # deliberately no 'prod' arm: the hardened production instance is deployed
-  # manually via `--stage prod` (quickstart step 7) and CI never touches it
-  # (issue #63).
+  # deliberately no 'prod' arm (issue #63): a fork's hardened production
+  # instance is deployed manually via `--stage prod` (quickstart step 7) and
+  # CI never touches it. This repo instead hosts production as the CI-deployed
+  # master stage, designated via PROD_STAGE in the deploy step so it can carry
+  # the custom production domains (issue #66).
   STAGE: >-
     ${{ github.event_name == 'pull_request'
       && format('pr-{0}', github.event.number)
@@ -70,6 +72,16 @@ jobs:
           PULL_REQUEST: ${{ github.event.number }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Custom production domains (docs/fork-deploy.md): optional
+          # repository Actions *variables*, forwarded only on branch pushes —
+          # a pr-N preview must never claim the production hostnames. On a
+          # push the branch stage (master) is the production instance, so
+          # PROD_STAGE designates it as such for the stack's guard; on PRs
+          # everything resolves to '' and the stack sees the vars as unset.
+          PROD_STAGE: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          WEB_DOMAIN: ${{ github.event_name == 'push' && vars.WEB_DOMAIN || '' }}
+          API_DOMAIN: ${{ github.event_name == 'push' && vars.API_DOMAIN || '' }}
+          DOCS_DOMAIN: ${{ github.event_name == 'push' && vars.DOCS_DOMAIN || '' }}
   cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest

@@ -166,6 +166,14 @@ web app would be rebuilt against the API's `workers.dev` URL and the
 `WEB_ORIGIN` default would revert — so exporting the variables in the shell
 you deploy from is the safest habit.
 
+The variables only work on the production stage (`--stage prod` here): a
+custom domain attaches to exactly one worker, so any other stage deploying
+with them set would pull the domain off your production instance. The deploy
+refuses with a clear error instead — if you hit it, unset the `*_DOMAIN`
+variables for that deploy. (Hosting your production from CI instead of a
+manual `prod` stage? Set them as repository Actions variables — see
+[custom domains in the CI pipeline](/guides/ci-pipeline/#custom-domains-for-a-ci-hosted-production).)
+
 ## Next steps
 
 - Every deploy-time knob and its default:

@@ -31,6 +31,7 @@ affect hosting.
 | Alchemy auth profile   | `default`                                                                                | `ALCHEMY_PROFILE=<name>`, or `--profile <name>` on any `alchemy` command (the flag wins)                               |
 | Trusted browser origin | Unset — the API trusts `*.workers.dev` broadly (fine for dev/previews)                   | `WEB_ORIGIN=https://your-web-host` on production deploys (defaults to `https://$WEB_DOMAIN` when that is set)          |
 | Production URLs        | Unset — each worker serves on its generated `*.workers.dev` URL                          | `WEB_DOMAIN` / `API_DOMAIN` / `DOCS_DOMAIN`, each a hostname attached to its worker as a Cloudflare custom domain      |
+| Production stage       | `prod` — the stage the `*_DOMAIN` variables are allowed on                               | `PROD_STAGE=<stage>` (CI sets it to the branch name on push deploys, for CI-hosted production via Actions variables)   |
 | Deploy stage           | None — always passed explicitly                                                          | `--stage <name>` (`prod`, `pr-N` previews, `test-*` for the integration suite)                                         |
 
 The three `*_DOMAIN` variables set a worker's custom domain in
@@ -38,11 +39,27 @@ The three `*_DOMAIN` variables set a worker's custom domain in
 infers the Cloudflare zone from the hostname, so the domain's zone must
 already exist in the deploying account. When set, `https://<domain>` becomes
 that worker's primary URL, so `VITE_API_URL` and the deploy's printed URLs
-follow automatically. When unset, the prop is omitted, which per Alchemy
-semantics leaves custom domains **unmanaged** rather than detaching them — a
-later deploy without the variables keeps the domains attached, and CI
-preview/test stages (which never set them) are unaffected. Pass the variables
-on manual `--stage prod` deploys only.
+follow automatically. When unset, the prop resolves to undefined, which per
+Alchemy semantics leaves custom domains **unmanaged** rather than detaching
+them — a later deploy without the variables keeps the domains attached, and
+CI preview/test stages (which never set them) are unaffected.
+
+The variables are **production-only, enforced**: a hostname attaches to
+exactly one worker account-wide, so a dev/preview/test deploy that saw one of
+these vars (say, exported in the deploying shell) would detach the domain
+from the production instance. Both stacks therefore start by checking the
+deploy's stage — before any resource is created — and fail loudly when a
+`*_DOMAIN` variable is set on any stage other than the designated production
+stage, instead of silently taking the domain over.
+
+The production stage is `prod` (the quickstart's manual deploy) unless
+`PROD_STAGE` designates another. That knob exists for CI-hosted production:
+`deploy.yml` sets `PROD_STAGE` to the branch name on push deploys and
+forwards the three `*_DOMAIN` values from repository Actions **variables**
+(push events only — a `pr-N` preview never sees them), which is how this
+repo's own instance, the CI-deployed `master` stage, carries its domains. A
+fork that follows the quickstart never sets `PROD_STAGE` and never defines
+the Actions variables, and nothing changes for it.
 
 Repository detection lives in `stacks/repository.ts`: `GITHUB_REPOSITORY`
 wins, then the `origin` remote URL (scp-like `git@`, `ssh://`, or `https://`
