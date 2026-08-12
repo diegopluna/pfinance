@@ -10,11 +10,14 @@ import { pendingInviteFilter } from './invites.ts'
 // (ADR 0004). Extracted from the user.create.after hook in auth.ts so the
 // concurrency edges are testable at the db-harness seam (issue #52).
 
+// The slice of Better Auth's user model the flow reads.
+type NewUser = { id: string; name: string }
+
 // The Household's Currency is chosen at sign-up and immutable afterwards
 // (ADR 0002), so a missing or unsupported code fails the sign-up rather than
 // defaulting to one the user never picked. Shared by both user-create hooks:
 // the before hook rejects while no User exists yet, attachMember re-checks
-// to narrow the untyped body.
+// to narrow the untyped currency.
 export const requireSupportedCurrency = (requested: unknown): CurrencyCode => {
   if (!isSupportedCurrency(requested)) {
     throw new APIError('BAD_REQUEST', {
@@ -24,47 +27,64 @@ export const requireSupportedCurrency = (requested: unknown): CurrencyCode => {
   return requested
 }
 
-// The sign-up body's inviteToken rides through Better Auth untyped, like
-// householdName below — hence the runtime narrowing.
-export const inviteTokenFrom = (body: unknown): string | undefined => {
-  const requested = (body as { inviteToken?: unknown } | undefined)?.inviteToken
-  return typeof requested === 'string' && requested !== '' ? requested : undefined
+// The sign-up body's extra fields ride through Better Auth untyped; this one
+// narrowing is shared by both user-create hooks so they can't read the body
+// two different ways. currency stays unknown here — requireSupportedCurrency
+// is its narrowing, at the point each hook enforces it.
+export const signupFieldsFrom = (body: unknown) => {
+  const fields = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  const inviteToken = fields.inviteToken
+  const householdName = fields.householdName
+  return {
+    inviteToken: typeof inviteToken === 'string' && inviteToken !== '' ? inviteToken : undefined,
+    householdName:
+      typeof householdName === 'string' && householdName.trim() !== ''
+        ? householdName.trim().slice(0, 120)
+        : undefined,
+    currency: fields.currency,
+  }
 }
 
 // Sign-up gives the new User their Membership in one flow: redeeming an
 // Invite joins its Household, otherwise the bootstrap claim creates one with
-// them as owner. db.batch is a single atomic D1 transaction. The User insert
-// itself already happened (Better Auth's own statement), so any failure here
-// compensates by deleting that row (issue #52): a Member-less User would be
-// 401'd forever, and worse, would hold the zero-Users bootstrap gate closed
-// on a never-claimed instance. The delete reopens the slot — an invite-race
-// loser or a rejected bootstrap can simply sign up again.
-export const attachMember = async (
-  db: Db,
-  newUser: { id: string; name: string },
-  body: unknown,
-): Promise<void> => {
+// them as owner. The User insert itself already happened (Better Auth's own
+// statement), so any failure here compensates by deleting that row (issue
+// #52): a Member-less User would be 401'd forever, and worse, would hold the
+// zero-Users bootstrap gate closed on a never-claimed instance. The delete
+// reopens the slot — an invite-race loser or a rejected bootstrap can simply
+// sign up again.
+export const attachMember = async (db: Db, newUser: NewUser, body: unknown): Promise<void> => {
   try {
-    await attach(db, newUser, body)
+    await redeemInviteOrClaimBootstrap(db, newUser, body)
   } catch (error) {
-    // Sessions and auth_account rows cascade; neither exists yet anyway —
-    // Better Auth creates them after this hook.
-    await db.delete(user).where(eq(user.id, newUser.id))
+    try {
+      // Sessions and auth_account rows cascade; neither exists yet anyway —
+      // Better Auth creates them after this hook.
+      await db.delete(user).where(eq(user.id, newUser.id))
+    } catch {
+      // The orphan outlives us — the old lockout, now reachable only if the
+      // database fails twice in a row. Surfacing the original error matters
+      // more than replacing it with the delete's.
+    }
     throw error
   }
 }
 
-const attach = async (
+const redeemInviteOrClaimBootstrap = async (
   db: Db,
-  newUser: { id: string; name: string },
+  newUser: NewUser,
   body: unknown,
 ): Promise<void> => {
-  const inviteToken = inviteTokenFrom(body)
+  const fields = signupFieldsFrom(body)
+  const { inviteToken, householdName } = fields
   if (inviteToken !== undefined) {
     const now = new Date()
     // Consume atomically: the conditional UPDATE only lands on a
     // still-pending Invite, so two racing redemptions can't both claim it
-    // (single-use).
+    // (single-use). Known limit: the Member insert below is a second
+    // statement, so a failure between the two burns the token (usedAt stays,
+    // usedBy nulls with the compensated User) — the owner re-issues an
+    // Invite; no instance-level state is harmed.
     const [claimed] = await db
       .update(invite)
       .set({ usedAt: now, usedBy: newUser.id })
@@ -85,18 +105,11 @@ const attach = async (
     })
     return
   }
-  // The user names their Household at sign-up (an extra field on the
-  // sign-up body, which Better Auth passes through untyped — hence the
-  // runtime guard); default keeps sign-up resilient.
-  const requested = (body as { householdName?: unknown } | undefined)?.householdName
-  const householdName =
-    typeof requested === 'string' && requested.trim() !== ''
-      ? requested.trim().slice(0, 120)
-      : `${newUser.name}'s Household`
-  const currency = requireSupportedCurrency((body as { currency?: unknown } | undefined)?.currency)
+  const currency = requireSupportedCurrency(fields.currency)
   const now = new Date()
   const householdId = crypto.randomUUID()
   try {
+    // db.batch is a single atomic D1 transaction.
     await db.batch([
       db.insert(household).values({
         id: householdId,
@@ -104,10 +117,12 @@ const attach = async (
         // NOT NULL name to NULL when any Household already exists, failing
         // this statement — and with it the whole batch — so two sign-ups
         // racing through the zero-Users gate can never both claim the
-        // instance. Same-batch evaluation order makes it safe: this is the
-        // batch's first statement, so the subquery only ever sees rows a
-        // competing (committed) claim wrote.
-        name: sql`case when exists (select 1 from ${household}) then null else ${householdName} end`,
+        // instance. The guard counts Households where the gate counts Users:
+        // with the compensating delete above, a User without a Household is
+        // always transient, so "a Household exists" is the durable form of
+        // "the instance is claimed" — and unlike the gate's read, it can't
+        // miss a competitor whose User insert hasn't landed yet.
+        name: sql`case when exists (select 1 from ${household}) then null else ${householdName ?? `${newUser.name}'s Household`} end`,
         currency,
         createdAt: now,
       }),

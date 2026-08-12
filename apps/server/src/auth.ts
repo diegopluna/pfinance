@@ -6,7 +6,7 @@ import type { ServerEnv } from './env.ts'
 import { findInvite, inviteRejectionMessage } from './invites.ts'
 import { trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
-import { attachMember, inviteTokenFrom, requireSupportedCurrency } from './signup.ts'
+import { attachMember, requireSupportedCurrency, signupFieldsFrom } from './signup.ts'
 
 // Email+password only, no verification, no reset (docs/adr/0005).
 // baseURL comes from the incoming request: the worker doesn't know its own
@@ -40,7 +40,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
           // gate. A thrown APIError aborts the creation and becomes the
           // endpoint's error response.
           before: async (_newUser, ctx) => {
-            const inviteToken = inviteTokenFrom(ctx?.body)
+            const { inviteToken, currency } = signupFieldsFrom(ctx?.body)
             if (inviteToken !== undefined) {
               // Invite redemption bypasses the gate (ADR 0004 §2) — issuing
               // the Invite was the consent. No currency either: the recipient
@@ -60,7 +60,7 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
                 message: 'Sign-ups are disabled on this instance.',
               })
             }
-            requireSupportedCurrency(ctx?.body?.currency)
+            requireSupportedCurrency(currency)
           },
           // Sign-up gives the new User their Membership in the same flow —
           // Invite redemption or the bootstrap claim. The body lives in
