@@ -8,7 +8,7 @@ Start with **`DECISIONS.md`** — the decisions distilled out of the prototypes.
 
 ## Status
 
-**Last synced 2026-08-08.** Four of the project's five files are mirrored:
+**Last full sync 2026-08-08.** `Flows.dc.html` was re-synced 2026-08-12 after its stale `SIGNUPS_ENABLED` copy was fixed at the source (issue #56); the other files were not re-fetched then. Four of the project's five files are mirrored:
 
 | File                   | What it holds                                                                                            |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |

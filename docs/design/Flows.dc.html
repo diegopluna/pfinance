@@ -97,7 +97,7 @@
         <div class="dv-thd">
           <a class="dv-tid" href="#t3">3</a><span class="dv-tname">Flows — auth &amp; CSV import, in the 1b direction</span>
         </div>
-        <p class="dv-note">Auth covers the three ADR-0004 states: normal sign-in, the zero-users bootstrap (claims the instance, picks the Currency once), and the locked state when SIGNUPS_ENABLED is false. Import is the three-step revertible flow: upload → map columns → review with exact-match dedup flags. Rows land Uncategorized; deleting an Import deletes its transactions.</p>
+        <p class="dv-note">Auth covers the three ADR-0004 states: normal sign-in, the zero-users bootstrap (claims the instance, picks the Currency once), and the locked state once the instance is claimed — sign-ups stay closed and invites are the only way in (the SIGNUPS_ENABLED switch was dropped). Import is the three-step revertible flow: upload → map columns → review with exact-match dedup flags. Rows land Uncategorized; deleting an Import deletes its transactions.</p>
         <div class="dv-opts">
 
           <div class="dv-opt" id="3a">
@@ -147,7 +147,7 @@
                   <div class="alogo"><span class="logomark"></span>pfinance</div>
                   <div class="ah">Sign-ups are disabled</div>
                   <div class="as">This instance is invite-only.</div>
-                  <div class="note">Ask the household owner for an invite link — invites work even while sign-ups are off. If you host this instance, set <span style="font-family:ui-monospace,Menlo,monospace">SIGNUPS_ENABLED=true</span> to open registration.</div>
+                  <div class="note">Ask the household owner for an invite link — invites work even while sign-ups are off.</div>
                   <div class="btnw" style="margin-top:16px">Go to sign in</div>
                 </div>
               </div>

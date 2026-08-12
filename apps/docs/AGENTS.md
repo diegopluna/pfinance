@@ -1,22 +1,18 @@
-## Development
+# pfinance docs site
 
-When starting the dev server, use background mode:
+Deployer-facing documentation for people who fork and self-host pfinance: the
+quickstart (including the claim-your-instance warning), the environment-variable
+reference, and the optional CI pipeline. The audience is a forker with a fresh
+Cloudflare account — not an app user and not a contributor to this repo.
 
-```
-astro dev --background
-```
+`README.md` in this directory covers the page layout, the commands, and the
+rule that these pages track `docs/fork-deploy.md` — read it first. On top of
+that:
 
-Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
-
-## Documentation
-
-Full documentation: https://docs.astro.build
-
-Consult these guides before working on related tasks:
-
-- [Adding pages, dynamic routes, or middleware](https://docs.astro.build/en/guides/routing/)
-- [Working with Astro components](https://docs.astro.build/en/basics/astro-components/)
-- [Using React, Vue, Svelte, or other framework components](https://docs.astro.build/en/guides/framework-components/)
-- [Adding or managing content](https://docs.astro.build/en/guides/content-collections/)
-- [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
-- [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
+- **Run everything through `vp`, never `astro` or `npm` directly.** The repo's
+  toolchain is Vite+ (see the root `CLAUDE.md`), and this package is an
+  importer of the root lockfile, not its own workspace.
+- **Make the `docs/fork-deploy.md` edit and the page edit one commit**, so the
+  two never publish out of step.
+- **`SIGNUPS_ENABLED` stays gone** — the switch was dropped (ADR 0004), and
+  the env reference documents its absence on purpose; don't "fix" that.

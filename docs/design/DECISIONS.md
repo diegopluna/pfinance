@@ -49,7 +49,7 @@ Two things to carry over carefully:
 
 ## Flows
 
-**Auth** (`Flows.dc.html`) covers the three ADR-0004 states: normal sign-in; the zero-users bootstrap where the first sign-up claims the instance, names the household and picks the currency; and the locked state when `SIGNUPS_ENABLED` is false, which points the visitor at an invite link.
+**Auth** (`Flows.dc.html`) covers the three ADR-0004 states: normal sign-in; the zero-users bootstrap where the first sign-up claims the instance, names the household and picks the currency; and the locked state once the instance is claimed, which points the visitor at an invite link. Sign-ups stay closed permanently — the `SIGNUPS_ENABLED` switch was dropped when ADR 0004 was revised (2026-08-05).
 
 **CSV import** is three steps — upload (with per-account target and a list of past imports), map columns, then review. Review flags exact-match duplicates as skipped with a per-row "import anyway" override, skips unparseable rows with a visible error, and summarises before confirming. Imported rows land Uncategorized and remember their import, so reverting deletes exactly those transactions.
 

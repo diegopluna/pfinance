@@ -78,9 +78,7 @@ function SignUpScreen() {
   if (data.kind === 'self-serve' && data.allowed) {
     return <AuthForm mode="sign-up" />
   }
-  // Locked-instance copy follows Claude Design 3c ("Sign-ups are disabled"),
-  // minus its stale SIGNUPS_ENABLED mention — that switch was dropped when
-  // ADR 0004 was revised; invites are the only way in now.
+  // Locked-instance copy follows Claude Design 3c ("Sign-ups are disabled").
   const closedCopy =
     data.kind === 'dead-invite' ? deadInviteCopy[data.reason] : 'This instance is invite-only.'
   return (
