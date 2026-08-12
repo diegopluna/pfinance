@@ -57,7 +57,7 @@ import {
   type ImportMapping,
 } from './imports.ts'
 import { monthlyIncomeExpense } from './income-expense.ts'
-import { currentUtcMonth, isCalendarMonth, monthlyNetWorthSeries } from './net-worth.ts'
+import { currentUtcMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import { spendingByCategory } from './spending.ts'
@@ -72,6 +72,7 @@ import {
   transactionView,
 } from './transactions.ts'
 import { findTransfer, parseNewTransfer, parseTransferPatch, transferView } from './transfers.ts'
+import { calendarMonthValidator, parsedValidator } from './validators.ts'
 
 type SessionUser = { id: string; email: string; name: string }
 
@@ -200,31 +201,24 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // how the shared ledger reads, and the ledger is every Member's
   // (CONTEXT.md), so no ownerGuard. Presentation only — no stored date is
   // ever rewritten by this.
-  .patch(
-    '/api/household',
-    validator('json', (value, c) => {
-      const parsed = parseHouseholdPatch(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
-      const [updated] = await db
-        .update(household)
-        .set(c.req.valid('json'))
-        .where(eq(household.id, householdId))
-        .returning({
-          id: household.id,
-          name: household.name,
-          currency: household.currency,
-          dateFormat: household.dateFormat,
-        })
-      if (!updated) {
-        return c.json({ error: 'Household not found' }, 500)
-      }
-      return c.json({ household: updated })
-    },
-  )
+  .patch('/api/household', parsedValidator('json', parseHouseholdPatch), async (c) => {
+    const db = createDb(c.env.DB)
+    const { householdId } = c.var.membership
+    const [updated] = await db
+      .update(household)
+      .set(c.req.valid('json'))
+      .where(eq(household.id, householdId))
+      .returning({
+        id: household.id,
+        name: household.name,
+        currency: household.currency,
+        dateFormat: household.dateFormat,
+      })
+    if (!updated) {
+      return c.json({ error: 'Household not found' }, 500)
+    }
+    return c.json({ household: updated })
+  })
   // --- Accounts (issue #7) — member-level: every Member sees and edits the
   // Household's shared ledger (CONTEXT.md), so no ownerGuard here. Balance is
   // always derived via accountView (ADR 0001), never read from a column.
@@ -257,50 +251,36 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       return c.json({ accounts: rows.map(({ row, ledgerTotal }) => accountView(row, ledgerTotal)) })
     },
   )
-  .post(
-    '/api/accounts',
-    validator('json', (value, c) => {
-      const parsed = parseNewAccount(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const row = {
-        id: crypto.randomUUID(),
-        householdId: c.var.membership.householdId,
-        ...c.req.valid('json'),
-        archivedAt: null,
-        createdAt: new Date(),
-      }
-      await db.insert(account).values(row)
-      // A brand-new Account has no Transactions: the ledger sum is zero.
-      return c.json({ account: accountView(row, 0) })
-    },
-  )
-  .patch(
-    '/api/accounts/:id',
-    validator('json', (value, c) => {
-      const parsed = parseAccountPatch(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const [updated] = await db
-        .update(account)
-        .set(c.req.valid('json'))
-        .where(
-          and(
-            eq(account.id, c.req.param('id')),
-            eq(account.householdId, c.var.membership.householdId),
-          ),
-        )
-        .returning()
-      if (updated === undefined) {
-        return c.json({ error: 'Account not found.' }, 404)
-      }
-      return c.json({ account: accountView(updated, await ledgerSum(db, updated.id)) })
-    },
-  )
+  .post('/api/accounts', parsedValidator('json', parseNewAccount), async (c) => {
+    const db = createDb(c.env.DB)
+    const row = {
+      id: crypto.randomUUID(),
+      householdId: c.var.membership.householdId,
+      ...c.req.valid('json'),
+      archivedAt: null,
+      createdAt: new Date(),
+    }
+    await db.insert(account).values(row)
+    // A brand-new Account has no Transactions: the ledger sum is zero.
+    return c.json({ account: accountView(row, 0) })
+  })
+  .patch('/api/accounts/:id', parsedValidator('json', parseAccountPatch), async (c) => {
+    const db = createDb(c.env.DB)
+    const [updated] = await db
+      .update(account)
+      .set(c.req.valid('json'))
+      .where(
+        and(
+          eq(account.id, c.req.param('id')),
+          eq(account.householdId, c.var.membership.householdId),
+        ),
+      )
+      .returning()
+    if (updated === undefined) {
+      return c.json({ error: 'Account not found.' }, 404)
+    }
+    return c.json({ account: accountView(updated, await ledgerSum(db, updated.id)) })
+  })
   // Archiving hides an Account that closed in real life; unarchiving is the
   // undo. Both keep every row — history is never deleted — and both are
   // idempotent via setAccountArchived (a repeat archive keeps the original
@@ -327,10 +307,9 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // Household, reads join through it (transactions.ts).
   .get(
     '/api/transactions',
-    validator('query', (value, c) => {
-      const parsed = parseTransactionFilters(value as Record<string, string | undefined>)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
+    parsedValidator('query', (value) =>
+      parseTransactionFilters(value as Record<string, string | undefined>),
+    ),
     async (c) => {
       const db = createDb(c.env.DB)
       const transactions = await listTransactions(
@@ -341,82 +320,68 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       return c.json({ transactions })
     },
   )
-  .post(
-    '/api/transactions',
-    validator('json', (value, c) => {
-      const parsed = parseNewTransaction(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const fields = c.req.valid('json')
-      if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
-        return c.json({ error: 'Unknown account.' }, 400)
-      }
-      if (fields.categoryId !== null) {
-        const rejection = await categoryAssignmentError(
-          db,
-          c.var.membership.householdId,
-          fields.categoryId,
-        )
-        if (rejection !== undefined) return c.json({ error: rejection }, 400)
-      }
-      const row = {
-        id: crypto.randomUUID(),
-        ...fields,
-        // Never a Transfer leg: those are created only through /api/transfers.
-        transferId: null,
-        // Manual entry — Import-born rows are created only through
-        // /api/imports/:id/confirm.
-        importId: null,
-        createdBy: c.var.user.id,
-        createdAt: new Date(),
-      }
-      await db.insert(transaction).values(row)
-      return c.json({ transaction: transactionView(row, c.var.user.name) })
-    },
-  )
-  .patch(
-    '/api/transactions/:id',
-    validator('json', (value, c) => {
-      const parsed = parseTransactionPatch(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
-      if (existing === undefined) {
-        return c.json({ error: 'Transaction not found.' }, 404)
-      }
-      // A Transfer leg is not independently editable (issue #12): the pair
-      // can never drift, so every change goes through /api/transfers.
-      if (existing.transferId !== null) {
-        return c.json({ error: 'Transfer legs are edited through their transfer.' }, 400)
-      }
-      const patch = c.req.valid('json')
-      if (
-        patch.accountId !== undefined &&
-        !(await accountInHousehold(db, c.var.membership.householdId, patch.accountId))
-      ) {
-        return c.json({ error: 'Unknown account.' }, 400)
-      }
-      // Guard only a newly named Category (null clears, undefined keeps, and
-      // re-asserting the row's current one is not an assignment): a row
-      // already carrying an archived Category stays editable — including
-      // through clients that resubmit the whole field set, like the web form.
-      if (patch.categoryId != null && patch.categoryId !== existing.categoryId) {
-        const rejection = await categoryAssignmentError(
-          db,
-          c.var.membership.householdId,
-          patch.categoryId,
-        )
-        if (rejection !== undefined) return c.json({ error: rejection }, 400)
-      }
-      await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
-      // enteredBy stays the creator: editing a row doesn't re-attribute it.
-      return c.json({ transaction: { ...existing, ...patch } })
-    },
-  )
+  .post('/api/transactions', parsedValidator('json', parseNewTransaction), async (c) => {
+    const db = createDb(c.env.DB)
+    const fields = c.req.valid('json')
+    if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
+      return c.json({ error: 'Unknown account.' }, 400)
+    }
+    if (fields.categoryId !== null) {
+      const rejection = await categoryAssignmentError(
+        db,
+        c.var.membership.householdId,
+        fields.categoryId,
+      )
+      if (rejection !== undefined) return c.json({ error: rejection }, 400)
+    }
+    const row = {
+      id: crypto.randomUUID(),
+      ...fields,
+      // Never a Transfer leg: those are created only through /api/transfers.
+      transferId: null,
+      // Manual entry — Import-born rows are created only through
+      // /api/imports/:id/confirm.
+      importId: null,
+      createdBy: c.var.user.id,
+      createdAt: new Date(),
+    }
+    await db.insert(transaction).values(row)
+    return c.json({ transaction: transactionView(row, c.var.user.name) })
+  })
+  .patch('/api/transactions/:id', parsedValidator('json', parseTransactionPatch), async (c) => {
+    const db = createDb(c.env.DB)
+    const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
+    if (existing === undefined) {
+      return c.json({ error: 'Transaction not found.' }, 404)
+    }
+    // A Transfer leg is not independently editable (issue #12): the pair
+    // can never drift, so every change goes through /api/transfers.
+    if (existing.transferId !== null) {
+      return c.json({ error: 'Transfer legs are edited through their transfer.' }, 400)
+    }
+    const patch = c.req.valid('json')
+    if (
+      patch.accountId !== undefined &&
+      !(await accountInHousehold(db, c.var.membership.householdId, patch.accountId))
+    ) {
+      return c.json({ error: 'Unknown account.' }, 400)
+    }
+    // Guard only a newly named Category (null clears, undefined keeps, and
+    // re-asserting the row's current one is not an assignment): a row
+    // already carrying an archived Category stays editable — including
+    // through clients that resubmit the whole field set, like the web form.
+    if (patch.categoryId != null && patch.categoryId !== existing.categoryId) {
+      const rejection = await categoryAssignmentError(
+        db,
+        c.var.membership.householdId,
+        patch.categoryId,
+      )
+      if (rejection !== undefined) return c.json({ error: rejection }, 400)
+    }
+    await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
+    // enteredBy stays the creator: editing a row doesn't re-attribute it.
+    return c.json({ transaction: { ...existing, ...patch } })
+  })
   .delete('/api/transactions/:id', async (c) => {
     const db = createDb(c.env.DB)
     const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
@@ -437,102 +402,88 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // cascades from the transfer row itself. Legs are read through
   // /api/transactions like any Transaction and excluded from the
   // Expense/Income views by kind (transactions.ts).
-  .post(
-    '/api/transfers',
-    validator('json', (value, c) => {
-      const parsed = parseNewTransfer(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const fields = c.req.valid('json')
-      for (const accountId of [fields.fromAccountId, fields.toAccountId]) {
-        if (!(await accountInHousehold(db, c.var.membership.householdId, accountId))) {
-          return c.json({ error: 'Unknown account.' }, 400)
-        }
+  .post('/api/transfers', parsedValidator('json', parseNewTransfer), async (c) => {
+    const db = createDb(c.env.DB)
+    const fields = c.req.valid('json')
+    for (const accountId of [fields.fromAccountId, fields.toAccountId]) {
+      if (!(await accountInHousehold(db, c.var.membership.householdId, accountId))) {
+        return c.json({ error: 'Unknown account.' }, 400)
       }
-      const id = crypto.randomUUID()
-      const shared = {
-        date: fields.date,
-        description: fields.description,
-        kind: 'transfer' as const,
-        categoryId: null,
-        transferId: id,
-        importId: null,
-        createdBy: c.var.user.id,
-        createdAt: new Date(),
+    }
+    const id = crypto.randomUUID()
+    const shared = {
+      date: fields.date,
+      description: fields.description,
+      kind: 'transfer' as const,
+      categoryId: null,
+      transferId: id,
+      importId: null,
+      createdBy: c.var.user.id,
+      createdAt: new Date(),
+    }
+    const outflow = {
+      id: crypto.randomUUID(),
+      accountId: fields.fromAccountId,
+      amount: -fields.amount,
+      ...shared,
+    }
+    const inflow = {
+      id: crypto.randomUUID(),
+      accountId: fields.toAccountId,
+      amount: fields.amount,
+      ...shared,
+    }
+    // One atomic D1 transaction: the entity and both legs land together or
+    // not at all.
+    await db.batch([
+      db.insert(transfer).values({ id, createdAt: shared.createdAt }),
+      db.insert(transaction).values([outflow, inflow]),
+    ])
+    return c.json({ transfer: transferView(id, outflow, inflow) })
+  })
+  .patch('/api/transfers/:id', parsedValidator('json', parseTransferPatch), async (c) => {
+    const db = createDb(c.env.DB)
+    const { householdId } = c.var.membership
+    const found = await findTransfer(db, householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Transfer not found.' }, 404)
+    }
+    const patch = c.req.valid('json')
+    // The two-different-accounts rule holds on the merged result: a patch
+    // naming only one side can still collapse the pair onto one Account.
+    const fromAccountId = patch.fromAccountId ?? found.outflow.accountId
+    const toAccountId = patch.toAccountId ?? found.inflow.accountId
+    if (fromAccountId === toAccountId) {
+      return c.json({ error: 'A transfer needs two different accounts.' }, 400)
+    }
+    for (const accountId of [patch.fromAccountId, patch.toAccountId]) {
+      if (accountId !== undefined && !(await accountInHousehold(db, householdId, accountId))) {
+        return c.json({ error: 'Unknown account.' }, 400)
       }
-      const outflow = {
-        id: crypto.randomUUID(),
-        accountId: fields.fromAccountId,
-        amount: -fields.amount,
-        ...shared,
-      }
-      const inflow = {
-        id: crypto.randomUUID(),
-        accountId: fields.toAccountId,
-        amount: fields.amount,
-        ...shared,
-      }
-      // One atomic D1 transaction: the entity and both legs land together or
-      // not at all.
-      await db.batch([
-        db.insert(transfer).values({ id, createdAt: shared.createdAt }),
-        db.insert(transaction).values([outflow, inflow]),
-      ])
-      return c.json({ transfer: transferView(id, outflow, inflow) })
-    },
-  )
-  .patch(
-    '/api/transfers/:id',
-    validator('json', (value, c) => {
-      const parsed = parseTransferPatch(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
-      const found = await findTransfer(db, householdId, c.req.param('id'))
-      if (found === undefined) {
-        return c.json({ error: 'Transfer not found.' }, 404)
-      }
-      const patch = c.req.valid('json')
-      // The two-different-accounts rule holds on the merged result: a patch
-      // naming only one side can still collapse the pair onto one Account.
-      const fromAccountId = patch.fromAccountId ?? found.outflow.accountId
-      const toAccountId = patch.toAccountId ?? found.inflow.accountId
-      if (fromAccountId === toAccountId) {
-        return c.json({ error: 'A transfer needs two different accounts.' }, 400)
-      }
-      for (const accountId of [patch.fromAccountId, patch.toAccountId]) {
-        if (accountId !== undefined && !(await accountInHousehold(db, householdId, accountId))) {
-          return c.json({ error: 'Unknown account.' }, 400)
-        }
-      }
-      const amount = patch.amount ?? found.inflow.amount
-      const date = patch.date ?? found.inflow.date
-      const description = patch.description ?? found.inflow.description
-      // Both legs are rewritten in one atomic batch, mirrored by
-      // construction: same date and description, opposite signs.
-      await db.batch([
-        db
-          .update(transaction)
-          .set({ accountId: fromAccountId, amount: -amount, date, description })
-          .where(eq(transaction.id, found.outflow.id)),
-        db
-          .update(transaction)
-          .set({ accountId: toAccountId, amount, date, description })
-          .where(eq(transaction.id, found.inflow.id)),
-      ])
-      return c.json({
-        transfer: transferView(
-          c.req.param('id'),
-          { accountId: fromAccountId },
-          { accountId: toAccountId, amount, date, description, createdAt: found.inflow.createdAt },
-        ),
-      })
-    },
-  )
+    }
+    const amount = patch.amount ?? found.inflow.amount
+    const date = patch.date ?? found.inflow.date
+    const description = patch.description ?? found.inflow.description
+    // Both legs are rewritten in one atomic batch, mirrored by
+    // construction: same date and description, opposite signs.
+    await db.batch([
+      db
+        .update(transaction)
+        .set({ accountId: fromAccountId, amount: -amount, date, description })
+        .where(eq(transaction.id, found.outflow.id)),
+      db
+        .update(transaction)
+        .set({ accountId: toAccountId, amount, date, description })
+        .where(eq(transaction.id, found.inflow.id)),
+    ])
+    return c.json({
+      transfer: transferView(
+        c.req.param('id'),
+        { accountId: fromAccountId },
+        { accountId: toAccountId, amount, date, description, createdAt: found.inflow.createdAt },
+      ),
+    })
+  })
   .delete('/api/transfers/:id', async (c) => {
     const db = createDb(c.env.DB)
     const found = await findTransfer(db, c.var.membership.householdId, c.req.param('id'))
@@ -559,47 +510,40 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     const db = createDb(c.env.DB)
     return c.json({ imports: await listImports(db, c.var.membership.householdId) })
   })
-  .post(
-    '/api/imports',
-    validator('json', (value, c) => {
-      const parsed = parseNewImport(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const fields = c.req.valid('json')
-      if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
-        return c.json({ error: 'Unknown account.' }, 400)
-      }
-      const [header, ...data] = parseCsv(fields.csv)
-      if (header === undefined || data.length === 0) {
-        return c.json({ error: 'The CSV needs a header row and at least one data row.' }, 400)
-      }
-      if (data.length > IMPORT_MAX_ROWS) {
-        return c.json(
-          { error: `The file has ${data.length} rows; the limit is ${IMPORT_MAX_ROWS}.` },
-          400,
-        )
-      }
-      const row = {
-        id: crypto.randomUUID(),
-        accountId: fields.accountId,
-        fileName: fields.fileName,
-        csv: fields.csv,
-        mapping: null,
-        rowCount: data.length,
-        createdCount: null,
-        malformedCount: null,
-        duplicateCount: null,
-        createdBy: c.var.user.id,
-        createdAt: new Date(),
-        confirmedAt: null,
-      }
-      await db.insert(csvImport).values(row)
-      // The header rides along so the map step can offer the columns.
-      return c.json({ import: importView(row), columns: header.cells })
-    },
-  )
+  .post('/api/imports', parsedValidator('json', parseNewImport), async (c) => {
+    const db = createDb(c.env.DB)
+    const fields = c.req.valid('json')
+    if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
+      return c.json({ error: 'Unknown account.' }, 400)
+    }
+    const [header, ...data] = parseCsv(fields.csv)
+    if (header === undefined || data.length === 0) {
+      return c.json({ error: 'The CSV needs a header row and at least one data row.' }, 400)
+    }
+    if (data.length > IMPORT_MAX_ROWS) {
+      return c.json(
+        { error: `The file has ${data.length} rows; the limit is ${IMPORT_MAX_ROWS}.` },
+        400,
+      )
+    }
+    const row = {
+      id: crypto.randomUUID(),
+      accountId: fields.accountId,
+      fileName: fields.fileName,
+      csv: fields.csv,
+      mapping: null,
+      rowCount: data.length,
+      createdCount: null,
+      malformedCount: null,
+      duplicateCount: null,
+      createdBy: c.var.user.id,
+      createdAt: new Date(),
+      confirmedAt: null,
+    }
+    await db.insert(csvImport).values(row)
+    // The header rides along so the map step can offer the columns.
+    return c.json({ import: importView(row), columns: header.cells })
+  })
   .get('/api/imports/:id', async (c) => {
     const db = createDb(c.env.DB)
     const found = await findImport(db, c.var.membership.householdId, c.req.param('id'))
@@ -612,53 +556,43 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // re-parses the same bytes with the same mapping, so what was last
   // previewed is exactly what confirm creates — and returns every data
   // row's fate, duplicate flags included.
-  .post(
-    '/api/imports/:id/preview',
-    validator('json', (value, c) => {
-      const parsed = parseImportMapping(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
-      const found = await findImport(db, householdId, c.req.param('id'))
-      if (found === undefined) {
-        return c.json({ error: 'Import not found.' }, 404)
-      }
-      if (found.confirmedAt !== null) {
-        return c.json({ error: 'This import is confirmed; its mapping is frozen.' }, 400)
-      }
-      const mapping = c.req.valid('json')
-      const [header, ...data] = parseCsv(found.csv)
-      const columnError = mappingColumnError(mapping, header?.cells.length ?? 0)
-      if (columnError !== undefined) {
-        return c.json({ error: columnError }, 400)
-      }
-      const stored = JSON.stringify(mapping)
-      await db.update(csvImport).set({ mapping: stored }).where(eq(csvImport.id, found.id))
-      return c.json({
-        import: importView({ ...found, mapping: stored }),
-        columns: header?.cells ?? [],
-        rows: await flaggedPreviewRows(
-          db,
-          found.accountId,
-          data,
-          mapping,
-          await householdCurrency(db, householdId),
-        ),
-      })
-    },
-  )
+  .post('/api/imports/:id/preview', parsedValidator('json', parseImportMapping), async (c) => {
+    const db = createDb(c.env.DB)
+    const { householdId } = c.var.membership
+    const found = await findImport(db, householdId, c.req.param('id'))
+    if (found === undefined) {
+      return c.json({ error: 'Import not found.' }, 404)
+    }
+    if (found.confirmedAt !== null) {
+      return c.json({ error: 'This import is confirmed; its mapping is frozen.' }, 400)
+    }
+    const mapping = c.req.valid('json')
+    const [header, ...data] = parseCsv(found.csv)
+    const columnError = mappingColumnError(mapping, header?.cells.length ?? 0)
+    if (columnError !== undefined) {
+      return c.json({ error: columnError }, 400)
+    }
+    const stored = JSON.stringify(mapping)
+    await db.update(csvImport).set({ mapping: stored }).where(eq(csvImport.id, found.id))
+    return c.json({
+      import: importView({ ...found, mapping: stored }),
+      columns: header?.cells ?? [],
+      rows: await flaggedPreviewRows(
+        db,
+        found.accountId,
+        data,
+        mapping,
+        await householdCurrency(db, householdId),
+      ),
+    })
+  })
   .post(
     '/api/imports/:id/confirm',
     // The body is optional: absent means "skip every flagged duplicate";
     // { overrides: [line, …] } imports those flagged rows anyway. A bodyless
     // POST carries no JSON content-type, so the validator passes undefined
     // through and parseImportConfirm defaults it.
-    validator('json', (value, c) => {
-      const parsed = parseImportConfirm(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
+    parsedValidator('json', parseImportConfirm),
     async (c) => {
       const db = createDb(c.env.DB)
       const { householdId } = c.var.membership
@@ -790,55 +724,41 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       return c.json({ categories: rows.map(categoryView) })
     },
   )
-  .post(
-    '/api/categories',
-    validator('json', (value, c) => {
-      const parsed = parseCategoryFields(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
-      // Backfill before the insert lands: otherwise a pre-seed Household
-      // whose first categories call is a create would gain a row and pass
-      // the zero-rows check forever, never receiving the defaults.
-      await ensureSeededCategories(db, householdId)
-      const row = {
-        id: crypto.randomUUID(),
-        householdId,
-        ...c.req.valid('json'),
-        archivedAt: null,
-        createdAt: new Date(),
-      }
-      await db.insert(category).values(row)
-      return c.json({ category: categoryView(row) })
-    },
-  )
+  .post('/api/categories', parsedValidator('json', parseCategoryFields), async (c) => {
+    const db = createDb(c.env.DB)
+    const { householdId } = c.var.membership
+    // Backfill before the insert lands: otherwise a pre-seed Household
+    // whose first categories call is a create would gain a row and pass
+    // the zero-rows check forever, never receiving the defaults.
+    await ensureSeededCategories(db, householdId)
+    const row = {
+      id: crypto.randomUUID(),
+      householdId,
+      ...c.req.valid('json'),
+      archivedAt: null,
+      createdAt: new Date(),
+    }
+    await db.insert(category).values(row)
+    return c.json({ category: categoryView(row) })
+  })
   // Rename — name is a Category's entire editable state.
-  .patch(
-    '/api/categories/:id',
-    validator('json', (value, c) => {
-      const parsed = parseCategoryFields(value)
-      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
-    }),
-    async (c) => {
-      const db = createDb(c.env.DB)
-      const [updated] = await db
-        .update(category)
-        .set(c.req.valid('json'))
-        .where(
-          and(
-            eq(category.id, c.req.param('id')),
-            eq(category.householdId, c.var.membership.householdId),
-          ),
-        )
-        .returning()
-      if (updated === undefined) {
-        return c.json({ error: 'Category not found.' }, 404)
-      }
-      return c.json({ category: categoryView(updated) })
-    },
-  )
+  .patch('/api/categories/:id', parsedValidator('json', parseCategoryFields), async (c) => {
+    const db = createDb(c.env.DB)
+    const [updated] = await db
+      .update(category)
+      .set(c.req.valid('json'))
+      .where(
+        and(
+          eq(category.id, c.req.param('id')),
+          eq(category.householdId, c.var.membership.householdId),
+        ),
+      )
+      .returning()
+    if (updated === undefined) {
+      return c.json({ error: 'Category not found.' }, 404)
+    }
+    return c.json({ category: categoryView(updated) })
+  })
   // Archive / unarchive mirror Accounts: rows are never deleted, and a
   // repeat archive keeps the original archivedAt (setCategoryArchived).
   .post('/api/categories/:id/archive', async (c) => {
@@ -873,13 +793,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // the series without depending on today's date; the web app omits it and
     // gets the current month. Malformed values are rejected, never silently
     // defaulted (the transactions filter-parsing stance).
-    validator('query', (value, c) => {
-      if (value.through === undefined || value.through === '') return { through: undefined }
-      if (!isCalendarMonth(value.through)) {
-        return c.json({ error: 'The through filter must be a calendar month like 2026-01.' }, 400)
-      }
-      return { through: value.through }
-    }),
+    calendarMonthValidator('through'),
     async (c) => {
       const db = createDb(c.env.DB)
       const through = c.req.valid('query').through ?? currentUtcMonth()
@@ -892,13 +806,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // ?month=YYYY-MM picks the slice of the ledger; the web app's month
     // selector always sends it, and omitting it reads the current month.
     // Malformed values are rejected, never silently defaulted.
-    validator('query', (value, c) => {
-      if (value.month === undefined || value.month === '') return { month: undefined }
-      if (!isCalendarMonth(value.month)) {
-        return c.json({ error: 'The month filter must be a calendar month like 2026-01.' }, 400)
-      }
-      return { month: value.month }
-    }),
+    calendarMonthValidator('month'),
     async (c) => {
       const db = createDb(c.env.DB)
       // The resolved month echoes back so the client can label the default
@@ -914,13 +822,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // the totals without depending on today's date; the web app omits it and
     // gets the current month. Malformed values are rejected, never silently
     // defaulted.
-    validator('query', (value, c) => {
-      if (value.through === undefined || value.through === '') return { through: undefined }
-      if (!isCalendarMonth(value.through)) {
-        return c.json({ error: 'The through filter must be a calendar month like 2026-01.' }, 400)
-      }
-      return { through: value.through }
-    }),
+    calendarMonthValidator('through'),
     async (c) => {
       const db = createDb(c.env.DB)
       // The resolved edge echoes back so the client can label the default

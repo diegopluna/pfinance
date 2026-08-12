@@ -17,7 +17,7 @@ A single-use, expiring link issued by a Household's owner that lets its recipien
 _Avoid_: Share link, referral
 
 **Member**:
-A User's membership in a Household. All members see and edit the household's shared ledger; the owner can invite and remove members.
+A User's membership in a Household. All members see and edit the household's shared Ledger; the owner can invite and remove members.
 _Avoid_: Collaborator, participant
 
 **Account**:
@@ -44,8 +44,12 @@ _Avoid_: Current amount
 The sum of Balances across a Household's Accounts. Liability accounts contribute negatively.
 _Avoid_: Total balance
 
+**Ledger**:
+A Household's complete record of Transactions across its Accounts — the single source from which every Balance and the Net Worth are derived. Written to by manual entry, Transfers, Balance Adjustments, and Imports.
+_Avoid_: Journal, history, transaction log
+
 **Transaction**:
-A movement of money on exactly one Account, recorded manually or via CSV Import; carries a calendar date (never a timestamp) and a signed amount. The atom of the ledger.
+A movement of money on exactly one Account, recorded manually or via CSV Import; carries a calendar date (never a timestamp) and a signed amount. The atom of the Ledger.
 _Avoid_: Entry, record, expense (as the general term)
 
 **Expense**:
