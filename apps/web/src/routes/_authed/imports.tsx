@@ -34,7 +34,9 @@ import {
   TableRow,
 } from '@pfinance/ui/components/table'
 import { useDateFormat } from '@/hooks/use-date-format'
+import { guessMapping } from '@/lib/csv-mapping'
 import { formatCalendarDate, formatDayDate } from '@/lib/dates'
+import { summarizePreview } from '@/lib/import-preview'
 import { api } from '@/lib/api'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useImportMutations, useImportPreview, useImports } from '@/hooks/use-imports'
@@ -74,20 +76,6 @@ const AMOUNT_SIGN_OPTIONS = [
   { value: 'as-is', label: 'As the file says — negative is money out' },
   { value: 'flip', label: 'Flipped — credit-card statements' },
 ] satisfies { value: NonNullable<MappingFields['amountSign']>; label: string }[]
-
-// Guess the mapping from the header names so most files start correct; the
-// Member confirms or fixes it on the map step either way.
-const guessColumn = (columns: string[], pattern: RegExp, fallback: number) => {
-  const at = columns.findIndex((name) => pattern.test(name))
-  return at === -1 ? Math.min(fallback, columns.length - 1) : at
-}
-
-const guessMapping = (columns: string[]): MappingFields => ({
-  dateColumn: guessColumn(columns, /date|data|dia|fecha/i, 0),
-  descriptionColumn: guessColumn(columns, /desc|hist|memo|payee|narra|detail|concepto/i, 1),
-  amountColumn: guessColumn(columns, /amount|valor|value|montant|betrag|importe/i, 2),
-  dateFormat: 'ymd',
-})
 
 function ImportsScreen() {
   const { data: me } = useMe()
@@ -414,12 +402,7 @@ function MappingCard({
     label: name.trim() === '' ? `Column ${index + 1}` : name,
   }))
   const rows = preview?.rows ?? []
-  const readyCount = rows.filter((row) => row.parsed !== null).length
-  const malformedCount = rows.length - readyCount
-  const skippedDuplicates = rows.filter(
-    (row) => row.parsed !== null && row.duplicate && !overrides.has(row.line),
-  ).length
-  const importCount = readyCount - skippedDuplicates
+  const summary = summarizePreview(rows, overrides)
 
   const columnSelect = (
     id: string,
@@ -543,19 +526,19 @@ function MappingCard({
         ) : (
           <>
             <p className="text-sm">
-              {importCount} of {rows.length} rows will import
-              {malformedCount > 0 && (
+              {summary.importCount} of {summary.total} rows will import
+              {summary.malformed > 0 && (
                 <span className="text-destructive">
                   {' '}
-                  · {malformedCount} malformed {malformedCount === 1 ? 'row' : 'rows'} will be
+                  · {summary.malformed} malformed {summary.malformed === 1 ? 'row' : 'rows'} will be
                   skipped
                 </span>
               )}
-              {skippedDuplicates > 0 && (
+              {summary.skippedDuplicates > 0 && (
                 <span className="text-muted-foreground">
                   {' '}
-                  · {skippedDuplicates} {skippedDuplicates === 1 ? 'duplicate' : 'duplicates'} will
-                  be skipped
+                  · {summary.skippedDuplicates}{' '}
+                  {summary.skippedDuplicates === 1 ? 'duplicate' : 'duplicates'} will be skipped
                 </span>
               )}
             </p>
@@ -640,14 +623,16 @@ function MappingCard({
             Cancel
           </Button>
           <Button
-            disabled={previewPending || previewError !== null || readyCount === 0 || confirming}
+            disabled={previewPending || previewError !== null || !summary.canConfirm || confirming}
             onClick={onConfirm}
           >
             {confirming
               ? 'Importing…'
-              : importCount === 0
+              : summary.importCount === 0
                 ? 'Finish without importing'
-                : `Import ${importCount} ${importCount === 1 ? 'transaction' : 'transactions'}`}
+                : `Import ${summary.importCount} ${
+                    summary.importCount === 1 ? 'transaction' : 'transactions'
+                  }`}
           </Button>
         </div>
       </CardContent>
