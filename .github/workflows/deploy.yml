@@ -80,11 +80,20 @@ jobs:
           cache: true
       - run: vp install
       - name: Safety Check
+        # Defense-in-depth for a condition that currently cannot occur: this
+        # job only runs on pull_request events, where STAGE always resolves to
+        # pr-N (see the env block). Kept so a future edit to the triggers or
+        # the STAGE expression fails here instead of destroying a long-lived
+        # stage — hence it asserts the pr-N shape rather than testing for a
+        # 'prod' name no stage in this repo actually has.
         run: |
-          if [ "${{ env.STAGE }}" = "prod" ]; then
-            echo "ERROR: Cannot destroy prod environment in a cleanup job"
-            exit 1
-          fi
+          case "${{ env.STAGE }}" in
+            pr-[0-9]*) ;;
+            *)
+              echo "ERROR: cleanup may only destroy pr-N preview stages, got '${{ env.STAGE }}'"
+              exit 1
+              ;;
+          esac
       - name: Destroy Preview
         run: vpx alchemy destroy --stage ${{ env.STAGE }} --yes
         env:
