@@ -50,7 +50,9 @@ import {
   TableHeader,
   TableRow,
 } from '@pfinance/ui/components/table'
-import { CalendarDatePicker, formatCalendarDate } from '@/components/date-picker'
+import { CalendarDatePicker } from '@/components/date-picker'
+import { useDateFormat } from '@/hooks/use-date-format'
+import { formatCalendarDate } from '@/lib/dates'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useMe } from '@/hooks/use-me'
@@ -551,13 +553,14 @@ function TransactionsTable({
   onEdit: (entry: TransactionEntry) => void
   onDelete: (entry: TransactionEntry) => void
 }) {
+  const dateFormat = useDateFormat()
   const columns: ColumnDef<TransactionEntry>[] = [
     {
       accessorKey: 'date',
       header: 'Date',
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground tabular-nums">
-          {formatCalendarDate(row.original.date)}
+          {formatCalendarDate(row.original.date, dateFormat)}
         </span>
       ),
     },

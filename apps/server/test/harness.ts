@@ -55,7 +55,7 @@ export const freshApiUrl = Effect.map(freshServer, (worker) => ({ apiUrl: worker
 
 export interface Me {
   user: { id: string; email: string; name: string }
-  household: { id: string; name: string; currency: string }
+  household: { id: string; name: string; currency: string; dateFormat: string }
   role: string
 }
 

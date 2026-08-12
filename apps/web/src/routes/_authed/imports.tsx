@@ -34,7 +34,8 @@ import {
   TableHeader,
   TableRow,
 } from '@pfinance/ui/components/table'
-import { formatCalendarDate } from '@/components/date-picker'
+import { useDateFormat } from '@/hooks/use-date-format'
+import { formatCalendarDate, formatDayDate } from '@/lib/dates'
 import { api } from '@/lib/api'
 import { useMe } from '@/hooks/use-me'
 
@@ -485,6 +486,9 @@ function MappingCard({
   onConfirm: () => void
   onClose: () => void
 }) {
+  // Distinct from the mapping's dateFormat (how the CSV's dates are parsed):
+  // this is the Household's display preference (issue #31).
+  const householdDateFormat = useDateFormat()
   const columnOptions = active.columns.map((name, index) => ({
     value: String(index),
     label: name.trim() === '' ? `Column ${index + 1}` : name,
@@ -669,7 +673,7 @@ function MappingCard({
                             <TableCell
                               className={`text-xs text-muted-foreground tabular-nums${dimmed}`}
                             >
-                              {formatCalendarDate(row.parsed.date)}
+                              {formatCalendarDate(row.parsed.date, householdDateFormat)}
                             </TableCell>
                             <TableCell className={dimmed.trim()}>
                               <span className="block max-w-96 truncate text-sm">
@@ -746,6 +750,7 @@ function ImportHistoryTable({
   onResume: (id: string) => void
   onDelete: (entry: ImportEntry) => void
 }) {
+  const householdDateFormat = useDateFormat()
   return (
     <Table>
       <TableHeader>
@@ -764,11 +769,7 @@ function ImportHistoryTable({
         {imports.map((entry) => (
           <TableRow key={entry.id}>
             <TableCell className="text-xs text-muted-foreground tabular-nums">
-              {new Date(entry.createdAt).toLocaleDateString(undefined, {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })}
+              {formatDayDate(new Date(entry.createdAt), householdDateFormat)}
             </TableCell>
             <TableCell>
               <span className="block max-w-56 truncate text-sm font-medium">{entry.fileName}</span>

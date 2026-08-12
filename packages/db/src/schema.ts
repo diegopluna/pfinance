@@ -1,5 +1,6 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import { ACCOUNT_TYPE_VALUES } from './account-types.ts'
+import { DATE_FORMAT_VALUES } from './date-formats.ts'
 import { TRANSACTION_KIND_VALUES } from './transaction-kinds.ts'
 
 // Ledger convention: every money amount column in this schema is an INTEGER
@@ -74,6 +75,11 @@ export const household = sqliteTable('household', {
   // exists only so the column can be added to pre-currency rows — the app
   // always writes it explicitly.
   currency: text('currency').notNull().default('USD'),
+  // How calendar dates display across the app (issue #31; date-formats.ts).
+  // Household-level like currency — one shared ledger, one presentation —
+  // and presentation-only: stored dates are never reformatted. The default
+  // is the real value for pre-existing rows: 'system' is today's behavior.
+  dateFormat: text('date_format', { enum: DATE_FORMAT_VALUES }).notNull().default('system'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
