@@ -87,13 +87,10 @@ jobs:
         # stage — hence it asserts the pr-N shape rather than testing for a
         # 'prod' name no stage in this repo actually has.
         run: |
-          case "${{ env.STAGE }}" in
-            pr-[0-9]*) ;;
-            *)
-              echo "ERROR: cleanup may only destroy pr-N preview stages, got '${{ env.STAGE }}'"
-              exit 1
-              ;;
-          esac
+          if ! [[ "${{ env.STAGE }}" =~ ^pr-[0-9]+$ ]]; then
+            echo "ERROR: cleanup may only destroy pr-N preview stages, got '${{ env.STAGE }}'"
+            exit 1
+          fi
       - name: Destroy Preview
         run: vpx alchemy destroy --stage ${{ env.STAGE }} --yes
         env:
