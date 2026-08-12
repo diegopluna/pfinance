@@ -39,6 +39,7 @@ import { api } from '@/lib/api'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/imports')({
+  head: () => ({ meta: [{ title: 'Imports · pfinance' }] }),
   component: ImportsScreen,
 })
 

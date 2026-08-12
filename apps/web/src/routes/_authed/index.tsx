@@ -4,7 +4,6 @@ import type { InferResponseType } from 'hono/client'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
-import { Badge } from '@pfinance/ui/components/badge'
 import { Button, buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
@@ -19,6 +18,7 @@ import { useSpending } from '@/hooks/use-spending'
 import { addMonths, currentUtcMonth, monthLabel } from '@/lib/month'
 
 export const Route = createFileRoute('/_authed/')({
+  head: () => ({ meta: [{ title: 'Dashboard · pfinance' }] }),
   component: Dashboard,
 })
 
@@ -26,11 +26,12 @@ const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) =
 
 type AccountEntry = InferResponseType<typeof api.api.accounts.$get, 200>['accounts'][number]
 
-// The dashboard (issue #16): the signed-in landing view. Its first section is
-// the per-Account Balances; the net worth and spending charts extend the page
-// as sibling sections. Everything shown is read through the same
-// /api/accounts surface the Accounts screen manages — Balances arrive
-// server-derived (ADR 0001), active Accounts only.
+// The dashboard (issue #16) in the Claude Design 1b arrangement (docs/design/
+// DECISIONS.md): the net-worth hero leads — value, delta vs the previous
+// month, area chart — then a three-column row of accounts, income vs
+// expense, and spending by category. Everything shown is read through the
+// same /api surfaces the feature screens manage; balances and series arrive
+// server-derived (ADR 0001).
 function Dashboard() {
   const meQuery = useMe()
   const me = meQuery.data
@@ -45,104 +46,42 @@ function Dashboard() {
       ? me.household.currency
       : undefined
 
-  const accounts = accountsQuery.data?.accounts ?? []
-
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-        {me !== undefined && (
-          <p className="max-w-prose text-sm text-muted-foreground">
-            {me.household.name} · amounts in {currency}
-          </p>
-        )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          {me !== undefined && (
+            <p className="max-w-prose text-sm text-muted-foreground">
+              {me.household.name} · amounts in {currency}
+            </p>
+          )}
+        </div>
+        {/* The 1b top-row action; ?new=true opens the transaction dialog on
+            arrival, so the label keeps its promise. */}
+        <Link
+          to="/transactions"
+          search={{ new: true }}
+          className={buttonVariants({ className: 'shrink-0' })}
+        >
+          New transaction
+        </Link>
       </div>
 
-      <section aria-labelledby="balances-heading" className="flex flex-col gap-3">
-        <h2 id="balances-heading" className="text-sm font-semibold tracking-tight">
-          Balances
-        </h2>
-        {accountsQuery.isError || meQuery.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            Couldn&apos;t load accounts.
-          </p>
-        ) : accountsQuery.isPending || currency === undefined ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading…
-          </p>
-        ) : accounts.length === 0 ? (
-          <div className="flex flex-col items-start gap-1">
-            <p className="max-w-prose text-sm text-muted-foreground">
-              Nothing to show yet. Add accounts to start the ledger — transactions, net worth, and
-              spending charts build on them.
-            </p>
-            <Link
-              to="/accounts"
-              className={buttonVariants({ variant: 'outline', className: 'mt-2' })}
-            >
-              Go to accounts
-            </Link>
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((entry) => (
-              <BalanceCard key={entry.id} entry={entry} currency={currency} />
-            ))}
-          </div>
-        )}
-      </section>
+      <NetWorthHero query={netWorthQuery} currency={currency} />
 
-      <NetWorthSection query={netWorthQuery} currency={currency} />
-
-      <IncomeExpenseSection currency={currency} />
-
-      <SpendingSection currency={currency} />
+      <div className="grid items-start gap-3.5 lg:grid-cols-3">
+        <AccountsCard query={accountsQuery} meError={meQuery.isError} currency={currency} />
+        <IncomeExpenseCard currency={currency} />
+        <SpendingCard currency={currency} />
+      </div>
     </div>
   )
 }
 
-// Income vs Expense by month (issue #19), server-summed over a recent window
-// — the "am I saving anything" view. No month stepper: the window always ends
-// at the current month, so the section reads as a standing answer rather than
-// a browsable slice.
-function IncomeExpenseSection({ currency }: { currency: CurrencyCode | undefined }) {
-  const query = useIncomeExpense()
-  const months = query.data?.months ?? []
-  return (
-    <section aria-labelledby="income-expense-heading" className="flex flex-col gap-3">
-      <h2 id="income-expense-heading" className="text-sm font-semibold tracking-tight">
-        Income vs expense
-      </h2>
-      {query.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          Couldn&apos;t load income vs expense.
-        </p>
-      ) : query.isPending || currency === undefined ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading…
-        </p>
-      ) : months.length === 0 ? (
-        // No Income or Expense yet: the Balances section above already
-        // carries the call to action, so this stays a quiet one-liner.
-        <p className="max-w-prose text-sm text-muted-foreground">
-          The chart starts with the ledger — it appears once there are income or expense
-          transactions.
-        </p>
-      ) : (
-        <Card size="sm">
-          <CardContent>
-            <IncomeVsExpenseChart months={months} currency={currency} />
-          </CardContent>
-        </Card>
-      )}
-    </section>
-  )
-}
-
-// The monthly Net Worth line (issue #17), server-derived like the Balances
-// above. The current value — the series' last point — rides the header as
-// text: the endpoint label the chart itself stays too quiet to carry.
-function NetWorthSection({
+// The 1b hero: the current value and its month-over-month delta as text the
+// chart alone would keep too quiet, over the slot-1 area.
+function NetWorthHero({
   query,
   currency,
 }: {
@@ -151,39 +90,189 @@ function NetWorthSection({
 }) {
   const series = query.data?.series ?? []
   const current = series.at(-1)
+  const previous = series.at(-2)
+  const delta =
+    current !== undefined && previous !== undefined
+      ? current.netWorth - previous.netWorth
+      : undefined
+  const pct =
+    delta !== undefined && previous !== undefined && previous.netWorth !== 0
+      ? Math.abs(delta / previous.netWorth)
+      : undefined
   return (
-    <section aria-labelledby="net-worth-heading" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 id="net-worth-heading" className="text-sm font-semibold tracking-tight">
-          Net worth
-        </h2>
-        {current !== undefined && currency !== undefined && (
-          <p className="text-sm font-semibold tracking-tight tabular-nums">
-            {formatAmount(current.netWorth, currency)}
-          </p>
-        )}
-      </div>
-      {query.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          Couldn&apos;t load net worth.
-        </p>
-      ) : query.isPending || currency === undefined ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading…
-        </p>
-      ) : series.length === 0 ? (
-        // No Accounts yet: the Balances section above already carries the
-        // call to action, so this stays a quiet one-liner.
-        <p className="max-w-prose text-sm text-muted-foreground">
-          The chart starts with the ledger — it appears once there are accounts.
-        </p>
-      ) : (
-        <Card size="sm">
-          <CardContent>
-            <NetWorthChart series={series} currency={currency} />
-          </CardContent>
-        </Card>
-      )}
+    <section aria-labelledby="net-worth-heading">
+      <Card>
+        <CardContent className="flex flex-col">
+          <h2 id="net-worth-heading" className="text-[12.5px] font-medium text-muted-foreground">
+            Net worth
+          </h2>
+          {query.isError ? (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              Couldn&apos;t load net worth.
+            </p>
+          ) : query.isPending || currency === undefined ? (
+            <p role="status" className="mt-1 text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : series.length === 0 ? (
+            <div className="mt-1 flex flex-col items-start gap-1">
+              {/* No Accounts yet — the whole product starts here, so the
+                  hero carries the call to action. */}
+              <p className="max-w-prose text-sm text-muted-foreground">
+                Nothing to show yet. Add accounts to start the ledger — net worth, income, and
+                spending build on them.
+              </p>
+              <Link
+                to="/accounts"
+                className={buttonVariants({ variant: 'outline', className: 'mt-2' })}
+              >
+                Go to accounts
+              </Link>
+            </div>
+          ) : (
+            <>
+              <p className="text-[34px] font-bold tracking-[-0.02em] tabular-nums">
+                {current !== undefined && formatAmount(current.netWorth, currency)}
+              </p>
+              {delta !== undefined && previous !== undefined && (
+                <p
+                  className={`text-[12.5px] font-semibold tabular-nums ${
+                    delta < 0 ? 'text-destructive' : 'text-positive'
+                  }`}
+                >
+                  <span aria-hidden>{delta < 0 ? '▼' : '▲'} </span>
+                  <span className="sr-only">{delta < 0 ? 'Down' : 'Up'} </span>
+                  {formatAmount(Math.abs(delta), currency)}
+                  {pct !== undefined && (
+                    <>
+                      {' '}
+                      (
+                      {new Intl.NumberFormat(undefined, {
+                        style: 'percent',
+                        maximumFractionDigits: 1,
+                      }).format(pct)}
+                      )
+                    </>
+                  )}{' '}
+                  <span className="font-medium text-muted-foreground">
+                    vs {monthLabel(previous.month, 'month')}
+                  </span>
+                </p>
+              )}
+              <div className="mt-3.5">
+                <NetWorthChart series={series} currency={currency} />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
+
+// One row per active Account, prototype-style: name over its type, derived
+// Balance right-aligned. Liabilities read as debt via the "· liability"
+// sub-line and their negative balance.
+function AccountsCard({
+  query,
+  meError,
+  currency,
+}: {
+  query: ReturnType<typeof useAccounts>
+  meError: boolean
+  currency: CurrencyCode | undefined
+}) {
+  const accounts = query.data?.accounts ?? []
+  return (
+    <section aria-labelledby="accounts-heading">
+      <Card size="sm">
+        <CardContent className="flex flex-col">
+          <h2 id="accounts-heading" className="text-[13px] font-semibold tracking-tight">
+            Accounts
+          </h2>
+          {query.isError || meError ? (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              Couldn&apos;t load accounts.
+            </p>
+          ) : query.isPending || currency === undefined ? (
+            <p role="status" className="mt-2 text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : accounts.length === 0 ? (
+            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+              No accounts yet — the hero above has the first step.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border">
+              {accounts.map((entry) => (
+                <AccountRow key={entry.id} entry={entry} currency={currency} />
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
+
+function AccountRow({ entry, currency }: { entry: AccountEntry; currency: CurrencyCode }) {
+  return (
+    <li className="flex items-center justify-between gap-2 py-2 first:pt-1 last:pb-0">
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-[13px] font-medium">{entry.name}</span>
+        <span className="truncate text-[11px] text-muted-foreground">
+          {typeLabels.get(entry.type) ?? entry.type}
+          {entry.kind === 'liability' && ' · liability'}
+        </span>
+      </span>
+      <span className="text-[13.5px] font-semibold tabular-nums">
+        {formatAmount(entry.balance, currency)}
+      </span>
+    </li>
+  )
+}
+
+// Income vs Expense by month (issue #19), server-summed over a recent window
+// — the "am I saving anything" view. No month stepper: the window always ends
+// at the current month, so the card reads as a standing answer rather than a
+// browsable slice.
+function IncomeExpenseCard({ currency }: { currency: CurrencyCode | undefined }) {
+  const query = useIncomeExpense()
+  const months = query.data?.months ?? []
+  return (
+    <section aria-labelledby="income-expense-heading">
+      <Card size="sm">
+        <CardContent className="flex flex-col">
+          <h2 id="income-expense-heading" className="text-[13px] font-semibold tracking-tight">
+            Income vs expense
+          </h2>
+          {query.isError ? (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              Couldn&apos;t load income vs expense.
+            </p>
+          ) : query.isPending || currency === undefined ? (
+            <p role="status" className="mt-2 text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : months.length === 0 ? (
+            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+              The chart starts with the ledger — it appears once there are income or expense
+              transactions.
+            </p>
+          ) : (
+            <>
+              <div className="mt-2">
+                <IncomeVsExpenseChart months={months} currency={currency} />
+              </div>
+              {/* By definition (DECISIONS.md): every derived-spending card
+                  carries this footnote visibly. */}
+              <p className="mt-2.5 text-[11px] text-muted-foreground">
+                Excludes transfers and adjustments
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </section>
   )
 }
@@ -192,81 +281,66 @@ function NetWorthSection({
 // aggregate. The month selector is a stepper: unbounded in both directions,
 // because the ledger is — a future-dated expense is as real as an old one,
 // and a quiet month shows its empty state rather than being unreachable.
-function SpendingSection({ currency }: { currency: CurrencyCode | undefined }) {
+function SpendingCard({ currency }: { currency: CurrencyCode | undefined }) {
   const [month, setMonth] = useState(currentUtcMonth)
   const query = useSpending(month)
   const slices = query.data?.slices ?? []
   return (
-    <section aria-labelledby="spending-heading" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="spending-heading" className="text-sm font-semibold tracking-tight">
-          Spending by category
-        </h2>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Previous month"
-            onClick={() => setMonth((current) => addMonths(current, -1))}
-          >
-            <ChevronLeftIcon aria-hidden />
-          </Button>
-          {/* aria-live: the month change a stepper click causes is otherwise
-              silent to a screen reader. */}
-          <span aria-live="polite" className="min-w-32 text-center text-sm tabular-nums">
-            {monthLabel(month, 'full')}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Next month"
-            onClick={() => setMonth((current) => addMonths(current, 1))}
-          >
-            <ChevronRightIcon aria-hidden />
-          </Button>
-        </div>
-      </div>
-      {query.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          Couldn&apos;t load spending.
-        </p>
-      ) : query.isPending || currency === undefined ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading…
-        </p>
-      ) : slices.length === 0 ? (
-        <p className="max-w-prose text-sm text-muted-foreground">
-          No spending recorded in {monthLabel(month, 'full')}.
-        </p>
-      ) : (
-        <Card size="sm">
-          <CardContent>
-            <SpendingByCategoryChart slices={slices} currency={currency} />
-          </CardContent>
-        </Card>
-      )}
+    <section aria-labelledby="spending-heading">
+      <Card size="sm">
+        <CardContent className="flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="spending-heading" className="text-[13px] font-semibold tracking-tight">
+              Spending
+            </h2>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => setMonth((current) => addMonths(current, -1))}
+              >
+                <ChevronLeftIcon aria-hidden />
+              </Button>
+              {/* aria-live: the month change a stepper click causes is
+                  otherwise silent to a screen reader. */}
+              <span aria-live="polite" className="min-w-24 text-center text-xs tabular-nums">
+                {monthLabel(month, 'tick')}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next month"
+                onClick={() => setMonth((current) => addMonths(current, 1))}
+              >
+                <ChevronRightIcon aria-hidden />
+              </Button>
+            </div>
+          </div>
+          {query.isError ? (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              Couldn&apos;t load spending.
+            </p>
+          ) : query.isPending || currency === undefined ? (
+            <p role="status" className="mt-2 text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : slices.length === 0 ? (
+            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+              No spending recorded in {monthLabel(month, 'full')}.
+            </p>
+          ) : (
+            <>
+              <div className="mt-2">
+                <SpendingByCategoryChart slices={slices} currency={currency} />
+              </div>
+              <p className="mt-2.5 text-[11px] text-muted-foreground">
+                Excludes transfers and adjustments
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </section>
-  )
-}
-
-// One active Account's derived Balance. Liabilities read as debt at a glance
-// via the LIABILITY badge — the Accounts screen's design language for the
-// same distinction.
-function BalanceCard({ entry, currency }: { entry: AccountEntry; currency: CurrencyCode }) {
-  return (
-    <Card size="sm">
-      <CardContent className="flex flex-col">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{entry.name}</span>
-          <Badge>
-            {entry.kind === 'liability' ? 'Liability' : (typeLabels.get(entry.type) ?? entry.type)}
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">{typeLabels.get(entry.type) ?? entry.type}</p>
-        <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
-          {formatAmount(entry.balance, currency)}
-        </p>
-      </CardContent>
-    </Card>
   )
 }

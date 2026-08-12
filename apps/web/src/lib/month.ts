@@ -14,11 +14,12 @@ export const addMonths = (month: string, delta: number): string => {
 
 // `YYYY-MM` → a human month. The Date is built in UTC and formatted in UTC,
 // so the label can never land in a neighboring month.
-export const monthLabel = (month: string, style: 'tick' | 'full') => {
+export const monthLabel = (month: string, style: 'tick' | 'full' | 'month') => {
   const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
   return new Intl.DateTimeFormat(undefined, {
-    month: style === 'tick' ? 'short' : 'long',
-    year: 'numeric',
+    month: style === 'full' ? 'long' : 'short',
+    // 'month' is the bare short month ("Jul") — the hero delta's "vs Jul".
+    ...(style === 'month' ? {} : { year: 'numeric' }),
     timeZone: 'UTC',
   }).format(date)
 }

@@ -28,6 +28,7 @@ type SignUpLoaderData =
   | { kind: 'dead-invite'; reason: keyof typeof deadInviteCopy }
 
 export const Route = createFileRoute('/sign-up')({
+  head: () => ({ meta: [{ title: 'Sign up · pfinance' }] }),
   validateSearch: (search: Record<string, unknown>): { invite?: string } =>
     typeof search.invite === 'string' && search.invite !== '' ? { invite: search.invite } : {},
   loaderDeps: ({ search }) => ({ invite: search.invite }),

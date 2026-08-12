@@ -11,7 +11,7 @@ import {
   transfer,
   user,
 } from '@pfinance/db'
-import { and, asc, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
@@ -176,8 +176,18 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     if (!householdRow) {
       return c.json({ error: 'Household not found' }, 500)
     }
+    // The shell's identity line ("BRL · 2 members") wants the count, and
+    // every Member may see it — unlike the owner-only /api/members list.
+    const [memberCountRow] = await db
+      .select({ memberCount: count() })
+      .from(member)
+      .where(eq(member.householdId, householdId))
     const { id, email, name } = c.var.user
-    return c.json({ user: { id, email, name }, household: householdRow, role })
+    return c.json({
+      user: { id, email, name },
+      household: { ...householdRow, memberCount: memberCountRow?.memberCount ?? 1 },
+      role,
+    })
   })
   // --- Accounts (issue #7) — member-level: every Member sees and edits the
   // Household's shared ledger (CONTEXT.md), so no ownerGuard here. Balance is

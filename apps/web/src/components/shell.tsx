@@ -35,6 +35,13 @@ export function Shell() {
 
   return (
     <SidebarProvider>
+      {/* First focusable on every screen: keyboard users skip the nav. */}
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-lg bg-background px-3 py-2 text-sm font-medium focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:ring-3 focus-visible:ring-ring/30"
+      >
+        Skip to content
+      </a>
       <Sidebar>
         <SidebarHeader>
           <div className="flex items-center gap-2.5 px-2 py-1 text-[15px] font-semibold tracking-tight">
@@ -107,8 +114,13 @@ export function Shell() {
             />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[12.5px] font-semibold">{me?.household.name}</span>
+              {/* The Claude Design identity line: "BRL · 2 members". */}
               <span className="truncate text-[11px] text-muted-foreground">
-                {me ? `${me.household.currency} · ${me.role}` : session?.user.email}
+                {me
+                  ? `${me.household.currency} · ${me.household.memberCount} ${
+                      me.household.memberCount === 1 ? 'member' : 'members'
+                    }`
+                  : session?.user.email}
               </span>
             </span>
           </div>
@@ -126,7 +138,7 @@ export function Shell() {
         <header className="flex h-12 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1" />
         </header>
-        <div className="flex-1 px-6 pb-6">
+        <div id="main-content" className="flex-1 px-6 pb-6">
           <Outlet />
         </div>
       </SidebarInset>

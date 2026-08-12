@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@pfinance/ui/components/alert-dialog'
 import { Badge } from '@pfinance/ui/components/badge'
 import { Button } from '@pfinance/ui/components/button'
 import {
@@ -16,6 +26,7 @@ import { api } from '@/lib/api'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/members')({
+  head: () => ({ meta: [{ title: 'Members · pfinance' }] }),
   component: MembersScreen,
 })
 
@@ -42,6 +53,11 @@ const expiryLabel = (iso: string) => {
 function MembersScreen() {
   const queryClient = useQueryClient()
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Removal is confirmed in an AlertDialog whose action repeats the
+  // consequence; the target outlives `open` so the closing popup keeps its
+  // content while it animates out.
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null)
   const { data: me } = useMe()
 
   const membersQuery = useQuery({
@@ -185,9 +201,8 @@ function MembersScreen() {
                       className="shrink-0 text-muted-foreground"
                       disabled={removeMember.isPending}
                       onClick={() => {
-                        if (confirm(`Remove ${entry.name} from the household?`)) {
-                          removeMember.mutate(entry.id)
-                        }
+                        setRemoveTarget({ id: entry.id, name: entry.name })
+                        setRemoveDialogOpen(true)
                       }}
                     >
                       Remove
@@ -269,6 +284,31 @@ function MembersScreen() {
           no email sending; share the link yourself.
         </p>
       </CardContent>
+      <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeTarget !== null &&
+                `${removeTarget.name} loses access to the household and its ledger.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (removeTarget !== null) {
+                  removeMember.mutate(removeTarget.id)
+                }
+                setRemoveDialogOpen(false)
+              }}
+            >
+              Remove member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

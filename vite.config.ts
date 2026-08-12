@@ -7,15 +7,24 @@ export default defineConfig({
   fmt: {
     semi: false,
     singleQuote: true,
-    // Generated output (drizzle migrations, TanStack route tree) — leave
-    // byte-for-byte as generated.
-    ignorePatterns: ['packages/db/migrations/**', 'apps/web/src/routeTree.gen.ts'],
+    // Generated output (drizzle migrations, TanStack route tree) and the
+    // Claude Design mirror — leave byte-for-byte as generated/synced, so a
+    // re-sync diffs cleanly against the remote.
+    ignorePatterns: [
+      'packages/db/migrations/**',
+      'apps/web/src/routeTree.gen.ts',
+      'docs/design/**',
+    ],
   },
   lint: {
     jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
     rules: { 'vite-plus/prefer-vite-plus-imports': 'error' },
     options: { typeAware: true, typeCheck: true },
-    ignorePatterns: ['packages/db/migrations/**', 'apps/web/src/routeTree.gen.ts'],
+    ignorePatterns: [
+      'packages/db/migrations/**',
+      'apps/web/src/routeTree.gen.ts',
+      'docs/design/**',
+    ],
   },
   run: {
     cache: true,

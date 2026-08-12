@@ -8,7 +8,9 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
+  /* 0.5rem lands the derived scale exactly on the Claude Design prototype
+     geometry: md 6px (logomark), lg 8px (controls), xl 12px (cards). */
+  --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -23,15 +25,29 @@
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* --crit in docs/design/DECISIONS.md (#d03b3b), exact conversion. */
+  --destructive: oklch(0.575 0.186 25.234);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Chart slots from docs/design/DECISIONS.md (--s1..--s5): the CVD-validated
+     palette that replaces the failed shadcn defaults. Exact sRGB→OKLCH
+     conversions of #2a78d6 #eb6834 #1baf7a #eda100 #e87ba4 — don't retune
+     by eye; the validation happened on these rendered colors. */
+  --chart-1: oklch(0.575 0.163 255.532);
+  --chart-2: oklch(0.671 0.175 40.642);
+  --chart-3: oklch(0.669 0.141 162.111);
+  --chart-4: oklch(0.764 0.161 75.116);
+  --chart-5: oklch(0.716 0.141 357.389);
+  /* Additional slots, deliberately outside the five (DECISIONS.md):
+     Uncategorized always renders neutral (--sx #a1a1a1); income categories
+     wear the violet (--s7 #4a3aa7) so income never collides with spending. */
+  --chart-uncategorized: oklch(0.709 0 0);
+  --chart-income: oklch(0.433 0.167 283.624);
+  /* Positive / gain (--good #006300) — deltas, not a chart series. */
+  --positive: oklch(0.433 0.147 142.495);
+  /* Net-worth area fill (--area): slot 1 at 8%. */
+  --chart-area: oklch(0.575 0.163 255.532 / 8%);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -61,11 +77,18 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  /* Dark chart slots from the prototype's .pfd block (#3987e5 #d95926
+     #199e70 #c98500 #d55181 / #737373), exact conversions. --chart-income
+     has no dark value in the mirror (a recorded gap) and inherits light. */
+  --chart-1: oklch(0.622 0.161 255.053);
+  --chart-2: oklch(0.622 0.173 40.112);
+  --chart-3: oklch(0.621 0.128 163.115);
+  --chart-4: oklch(0.67 0.143 73.227);
+  --chart-5: oklch(0.622 0.171 0.838);
+  --chart-uncategorized: oklch(0.556 0 0);
+  /* --good dark #0ca30c; --area dark: dark slot 1 at 12%. */
+  --positive: oklch(0.621 0.207 142.564);
+  --chart-area: oklch(0.622 0.161 255.053 / 12%);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -104,6 +127,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-uncategorized: var(--chart-uncategorized);
+  --color-chart-income: var(--chart-income);
+  --color-positive: var(--positive);
+  --color-chart-area: var(--chart-area);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -119,6 +146,6 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
 }

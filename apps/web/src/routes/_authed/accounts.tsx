@@ -29,6 +29,7 @@ import { useAccounts } from '@/hooks/use-accounts'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/accounts')({
+  head: () => ({ meta: [{ title: 'Accounts · pfinance' }] }),
   component: AccountsScreen,
 })
 

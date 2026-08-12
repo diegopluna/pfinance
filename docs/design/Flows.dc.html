@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet data-dc-atomics>
+        <meta name="design_doc_mode" content="canvas" />
+        <style>
+          body { margin: 0; background: #f0eee9; font-family: system-ui, sans-serif; }
+          a { color: #1a1a1a; }
+          a:hover { color: #000000; }
+          .dv-turn { padding: 40px 44px 32px; scroll-margin-top: 16px; }
+          .dv-thd { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+          .dv-tid { font: 600 10px ui-monospace, Menlo, monospace; padding: 3px 7px; background: #1a1a1a; color: #ffffff; border-radius: 4px; text-decoration: none; }
+          .dv-tname { font: 600 13px/1.2 system-ui, sans-serif; color: #1a1a1a; }
+          .dv-note { font: 400 11.5px/1.5 system-ui, sans-serif; color: rgba(0,0,0,0.55); margin: 0 0 20px; max-width: 880px; }
+          .dv-opts { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+          .dv-opt { flex: none; display: flex; flex-direction: column; gap: 9px; scroll-margin-top: 16px; }
+          .dv-oid { font: 600 10.5px ui-monospace, Menlo, monospace; padding: 3px 7px; background: rgba(0,0,0,0.08); color: #1a1a1a; border-radius: 5px; text-decoration: none; }
+          .dv-olabel { display: flex; align-items: baseline; gap: 8px; font: 400 11px/1.3 system-ui, sans-serif; color: rgba(0,0,0,0.55); }
+          .dv-card { max-width: 100%; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; }
+          .dv-opt:target .dv-oid { background: #2a78d6; color: #ffffff; }
+          .dv-next { margin: 22px 0 0; font: 12px/1.5 system-ui, sans-serif; color: rgba(0,0,0,0.5); }
+
+          .pf { --bg: #ffffff; --fg: #0a0a0a; --card: #ffffff; --muted: #f5f5f5; --mutfg: #737373; --border: #e5e5e5; --sidebar: #fafafa; --primary: #171717; --primary-fg: #fafafa; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --sx: #a1a1a1; --good: #006300; --crit: #d03b3b; --shadow: 0 1px 2px rgba(0,0,0,0.08); }
+          .frame { display: flex; width: 1280px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; text-align: left; }
+          .side { width: 232px; flex: none; background: var(--sidebar); border-right: 1px solid var(--border); padding: 20px 12px 16px; display: flex; flex-direction: column; box-sizing: border-box; }
+          .logo { display: flex; align-items: center; gap: 9px; padding: 0 10px 18px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+          .logomark { width: 20px; height: 20px; border-radius: 6px; background: var(--fg); }
+          .nav { display: flex; flex-direction: column; gap: 2px; }
+          .nav div { padding: 7px 10px; border-radius: 8px; color: var(--mutfg); font-size: 13.5px; font-weight: 500; }
+          .nav .on { background: var(--muted); color: var(--fg); font-weight: 600; }
+          .sfoot { margin-top: auto; border-top: 1px solid var(--border); padding: 12px 10px 0; display: flex; align-items: center; gap: 9px; }
+          .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--muted); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 650; color: var(--mutfg); }
+          .hh { display: flex; flex-direction: column; }
+          .hhn { font-size: 12.5px; font-weight: 600; }
+          .hhc { font-size: 11px; color: var(--mutfg); }
+          .main { flex: 1; min-width: 0; padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; }
+          .top { display: flex; align-items: center; justify-content: space-between; }
+          .h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.015em; }
+          .btn { background: var(--primary); color: var(--primary-fg); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; }
+          .btnw { background: var(--primary); color: var(--primary-fg); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; font-weight: 600; text-align: center; }
+          .btn2 { background: var(--card); border: 1px solid var(--border); color: var(--fg); border-radius: 8px; padding: 7px 13px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow); }
+          .btn3 { color: var(--mutfg); font-size: 12.5px; font-weight: 600; }
+          .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-sizing: border-box; }
+          .cardp { padding: 18px 20px; }
+          .in { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 9px 12px; font-size: 13px; box-shadow: var(--shadow); }
+          .ph { color: var(--mutfg); }
+          .car { color: var(--mutfg); font-size: 10px; }
+          .fld { margin-bottom: 13px; }
+          .lbl { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+          .row { display: flex; gap: 12px; }
+          .row .fld { flex: 1; }
+          .hint { font-size: 11px; color: var(--mutfg); margin-top: 6px; }
+          .badge { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; border: 1px solid var(--border); border-radius: 99px; padding: 1px 7px; color: var(--mutfg); white-space: nowrap; }
+          .desc { font-weight: 550; }
+          .sub { font-size: 11px; color: var(--mutfg); }
+          .mut { color: var(--mutfg); }
+
+          .authbg { width: 900px; height: 640px; background: var(--sidebar); display: flex; align-items: center; justify-content: center; font: 14px/1.45 system-ui, sans-serif; color: var(--fg); }
+          .auth { width: 380px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 28px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,0.06); }
+          .alogo { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 650; margin-bottom: 18px; }
+          .ah { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+          .as { font-size: 12.5px; color: var(--mutfg); margin: 3px 0 18px; }
+          .afoot { font-size: 12px; color: var(--mutfg); text-align: center; margin-top: 16px; }
+          .note { background: var(--muted); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--mutfg); line-height: 1.5; }
+
+          .steps { display: flex; align-items: center; gap: 12px; font-size: 12.5px; }
+          .stp { display: flex; align-items: center; gap: 7px; color: var(--mutfg); font-weight: 550; }
+          .stp .n { width: 20px; height: 20px; border-radius: 50%; background: var(--muted); border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 650; }
+          .stp.on { color: var(--fg); }
+          .stp.on .n { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+          .sarr { color: var(--mutfg); font-size: 11px; }
+          .drop { border: 1.5px dashed var(--border); border-radius: 12px; padding: 44px 20px; text-align: center; background: var(--sidebar); }
+          .droph { font-size: 14px; font-weight: 600; }
+          .drops { font-size: 12px; color: var(--mutfg); margin-top: 4px; }
+
+          .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+          .tbl th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--mutfg); text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+          .tbl td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+          .tbl tr:last-child td { border-bottom: 0; }
+          .r { text-align: right; }
+          .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+          .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 550; padding: 2px 9px; border: 1px solid var(--border); border-radius: 99px; white-space: nowrap; }
+          .dim td { opacity: 0.5; }
+          .err { color: var(--crit); font-weight: 600; }
+          .sumr { display: flex; align-items: center; justify-content: space-between; background: var(--muted); border-radius: 8px; padding: 10px 14px; font-size: 12.5px; }
+          .lnk { font-weight: 600; text-decoration: underline; }
+        </style>
+      </helmet>
+
+      <section class="dv-turn" id="t3">
+        <div class="dv-thd">
+          <a class="dv-tid" href="#t3">3</a><span class="dv-tname">Flows — auth &amp; CSV import, in the 1b direction</span>
+        </div>
+        <p class="dv-note">Auth covers the three ADR-0004 states: normal sign-in, the zero-users bootstrap (claims the instance, picks the Currency once), and the locked state when SIGNUPS_ENABLED is false. Import is the three-step revertible flow: upload → map columns → review with exact-match dedup flags. Rows land Uncategorized; deleting an Import deletes its transactions.</p>
+        <div class="dv-opts">
+
+          <div class="dv-opt" id="3a">
+            <div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Sign in</div>
+            <div class="dv-card" style="width:900px">
+              <div class="pf authbg" data-screen-label="3a Sign in">
+                <div class="auth">
+                  <div class="alogo"><span class="logomark"></span>pfinance</div>
+                  <div class="ah">Welcome back</div>
+                  <div class="as">Sign in to Casa Peter's ledger.</div>
+                  <div class="fld"><span class="lbl">Email</span><div class="in"><span>diegopeter9@gmail.com</span></div></div>
+                  <div class="fld"><span class="lbl">Password</span><div class="in"><span>••••••••••</span></div></div>
+                  <div class="btnw">Sign in</div>
+                  <div class="afoot">Have an invite link? Open it to join a household.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="3b">
+            <div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>Bootstrap sign-up — first user claims the instance</div>
+            <div class="dv-card" style="width:900px">
+              <div class="pf authbg" style="height:760px" data-screen-label="3b Bootstrap sign-up">
+                <div class="auth">
+                  <div class="alogo"><span class="logomark"></span>pfinance</div>
+                  <div class="ah">Set up your household</div>
+                  <div class="as">You're the first user — this sign-up claims the instance and makes you the owner.</div>
+                  <div class="fld"><span class="lbl">Your name</span><div class="in"><span>Diego Peter</span></div></div>
+                  <div class="fld"><span class="lbl">Email</span><div class="in"><span>diegopeter9@gmail.com</span></div></div>
+                  <div class="fld"><span class="lbl">Password</span><div class="in"><span>••••••••••</span></div></div>
+                  <div class="row">
+                    <div class="fld"><span class="lbl">Household name</span><div class="in"><span>Casa Peter</span></div></div>
+                    <div class="fld"><span class="lbl">Currency</span><div class="in"><span>BRL</span><span class="car">▾</span></div></div>
+                  </div>
+                  <div class="hint" style="margin-top:0;margin-bottom:14px">Currency is set once per household — every account and transaction uses it.</div>
+                  <div class="btnw">Create household</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="3c">
+            <div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>Sign-ups disabled — locked instance</div>
+            <div class="dv-card" style="width:900px">
+              <div class="pf authbg" style="height:520px" data-screen-label="3c Signups disabled">
+                <div class="auth">
+                  <div class="alogo"><span class="logomark"></span>pfinance</div>
+                  <div class="ah">Sign-ups are disabled</div>
+                  <div class="as">This instance is invite-only.</div>
+                  <div class="note">Ask the household owner for an invite link — invites work even while sign-ups are off. If you host this instance, set <span style="font-family:ui-monospace,Menlo,monospace">SIGNUPS_ENABLED=true</span> to open registration.</div>
+                  <div class="btnw" style="margin-top:16px">Go to sign in</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="3d">
+            <div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Import · step 1 — upload + past imports</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="3d Import upload">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div>Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div class="on">Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top"><div class="h1">Import CSV</div></div>
+                  <div class="steps"><span class="stp on"><span class="n">1</span>Upload</span><span class="sarr">›</span><span class="stp"><span class="n">2</span>Map columns</span><span class="sarr">›</span><span class="stp"><span class="n">3</span>Review</span></div>
+                  <div class="card cardp" style="max-width:760px">
+                    <div class="fld" style="max-width:320px"><span class="lbl">Import into</span><div class="in"><span>Checking</span><span class="car">▾</span></div></div>
+                    <div class="drop">
+                      <div class="droph">Drop your bank CSV here</div>
+                      <div class="drops">or <span class="lnk">browse files</span> · one account per file</div>
+                    </div>
+                  </div>
+                  <div class="card cardp" style="max-width:760px">
+                    <div class="desc" style="margin-bottom:4px">Past imports</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><span><span class="desc">nubank-jul.csv</span><br /><span class="sub">Checking · Jul 14 · 87 rows imported</span></span><span class="btn3">Revert import</span></div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;opacity:0.6"><span><span class="desc">itau-jun.csv</span><br /><span class="sub">Savings · Jun 02 · 12 rows · reverted Jun 03</span></span><span class="badge">REVERTED</span></div>
+                    <div class="hint">Reverting an import deletes every transaction it created — nothing else.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="3e">
+            <div class="dv-olabel"><a class="dv-oid" href="#3e">3e</a>Import · step 2 — map columns</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="3e Import map columns">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div>Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div class="on">Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top"><div class="h1">Import CSV</div><div class="sub">nubank-aug.csv · 42 rows · into Checking</div></div>
+                  <div class="steps"><span class="stp"><span class="n">✓</span>Upload</span><span class="sarr">›</span><span class="stp on"><span class="n">2</span>Map columns</span><span class="sarr">›</span><span class="stp"><span class="n">3</span>Review</span></div>
+                  <div class="card" style="max-width:900px">
+                    <table class="tbl">
+                      <thead>
+                        <tr>
+                          <th><div class="in" style="box-shadow:none"><span>Date</span><span class="car">▾</span></div></th>
+                          <th><div class="in" style="box-shadow:none"><span>Description</span><span class="car">▾</span></div></th>
+                          <th><div class="in" style="box-shadow:none"><span class="ph">Ignore</span><span class="car">▾</span></div></th>
+                          <th><div class="in" style="box-shadow:none"><span>Amount</span><span class="car">▾</span></div></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td class="mut">2026-08-12</td><td>SUPERMERCADO ZAFFARI POA</td><td class="mut">card_final_4412</td><td class="amt">-214.90</td></tr>
+                        <tr><td class="mut">2026-08-11</td><td>TED ACME LTDA</td><td class="mut">card_final_4412</td><td class="amt">9500.00</td></tr>
+                        <tr><td class="mut">2026-08-09</td><td>UBER *TRIP</td><td class="mut">card_final_4412</td><td class="amt">-24.50</td></tr>
+                        <tr><td class="mut">2026-08-07</td><td>NETFLIX.COM</td><td class="mut">card_final_4412</td><td class="amt">-55.90</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="hint">Signed amounts: negative is money out. Showing the first 4 of 42 rows.</div>
+                  <div style="display:flex;gap:10px"><div class="btn2">Back</div><div class="btn">Continue to review</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv-opt" id="3f">
+            <div class="dv-olabel"><a class="dv-oid" href="#3f">3f</a>Import · step 3 — review, dedup flags, confirm</div>
+            <div class="dv-card" style="width:1280px">
+              <div class="frame pf" data-screen-label="3f Import review">
+                <div class="side">
+                  <div class="logo"><span class="logomark"></span>pfinance</div>
+                  <div class="nav">
+                    <div>Dashboard</div>
+                    <div>Transactions</div>
+                    <div>Accounts</div>
+                    <div class="on">Imports</div>
+                    <div>Settings</div>
+                  </div>
+                  <div class="sfoot"><span class="avatar">DP</span><span class="hh"><span class="hhn">Casa Peter</span><span class="hhc">BRL · 2 members</span></span></div>
+                </div>
+                <div class="main">
+                  <div class="top"><div class="h1">Import CSV</div><div class="sub">nubank-aug.csv · into Checking</div></div>
+                  <div class="steps"><span class="stp"><span class="n">✓</span>Upload</span><span class="sarr">›</span><span class="stp"><span class="n">✓</span>Map columns</span><span class="sarr">›</span><span class="stp on"><span class="n">3</span>Review</span></div>
+                  <div class="sumr" style="max-width:900px"><span><b>42 rows</b> · 3 flagged as duplicates (skipped) · 1 row couldn't be parsed</span><span class="desc">39 will be imported</span></div>
+                  <div class="card" style="max-width:900px">
+                    <table class="tbl">
+                      <thead>
+                        <tr><th style="width:100px">Date</th><th>Description</th><th class="r" style="width:120px">Amount</th><th style="width:220px">Status</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td class="mut">Aug 12</td><td>SUPERMERCADO ZAFFARI POA</td><td class="amt">−R$ 214,90</td><td><span class="chip">New</span></td></tr>
+                        <tr class="dim"><td class="mut">Aug 11</td><td>TED ACME LTDA</td><td class="amt">+R$ 9.500,00</td><td><span class="chip">Duplicate · skipped</span> <span class="btn3" style="text-decoration:underline">import anyway</span></td></tr>
+                        <tr><td class="mut">Aug 09</td><td>UBER *TRIP</td><td class="amt">−R$ 24,50</td><td><span class="chip">New</span></td></tr>
+                        <tr><td class="mut">Aug 08</td><td>PADARIA DO BAIRRO</td><td class="amt">−R$ 18,00</td><td><span class="chip" style="border-color:var(--fg)">Will import · override</span></td></tr>
+                        <tr><td class="mut">Aug 07</td><td>NETFLIX.COM</td><td class="amt">−R$ 55,90</td><td><span class="chip">New</span></td></tr>
+                        <tr><td class="mut">Row 17</td><td class="err">Couldn't parse date "31/13/2026"</td><td class="amt mut">—</td><td><span class="chip"><span class="err">Skipped · error</span></span></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="hint">Imported rows land Uncategorized and remember this import — delete the import to undo all 39 at once.</div>
+                  <div style="display:flex;gap:10px"><div class="btn2">Back</div><div class="btn">Import 39 transactions</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <p class="dv-next">Try next: "show the invite-redeem screen" · "dark mode for the import flow" · "sync everything to the repo"</p>
+      </section>
+
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{}'
+    >
+      class Component extends DCLogic {
+        renderVals() { return {}; }
+      }
+    </script>
+  </body>
+</html>

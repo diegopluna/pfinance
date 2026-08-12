@@ -18,6 +18,7 @@ import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/categories')({
+  head: () => ({ meta: [{ title: 'Categories · pfinance' }] }),
   component: CategoriesScreen,
 })
 
