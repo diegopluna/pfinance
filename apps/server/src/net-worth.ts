@@ -1,5 +1,6 @@
 import { account, transaction, type Db } from '@pfinance/db'
-import { asc, eq, sql } from 'drizzle-orm'
+import { asc, sql } from 'drizzle-orm'
+import { ledgerAccountJoin, owned, type Scope } from './scope.ts'
 
 // The monthly Net Worth series (issue #17): the sum of all Account Balances
 // at each month's end, derived entirely from the ledger (ADR 0001) and
@@ -51,7 +52,7 @@ const MAX_SERIES_MONTHS = 1200
 // through them instead of skipping.
 export const monthlyNetWorthSeries = async (
   db: Db,
-  householdId: string,
+  scope: Scope,
   through: string,
 ): Promise<NetWorthPoint[]> => {
   // Every Account counts, archived included: archiving hides an Account from
@@ -60,7 +61,7 @@ export const monthlyNetWorthSeries = async (
   const accounts = await db
     .select({ openingBalance: account.openingBalance })
     .from(account)
-    .where(eq(account.householdId, householdId))
+    .where(owned.account(scope))
   if (accounts.length === 0) return []
 
   const monthExpr = sql<string>`substr(${transaction.date}, 1, 7)`
@@ -70,8 +71,8 @@ export const monthlyNetWorthSeries = async (
       delta: sql<number>`sum(${transaction.amount})`.mapWith(Number),
     })
     .from(transaction)
-    .innerJoin(account, eq(account.id, transaction.accountId))
-    .where(eq(account.householdId, householdId))
+    .innerJoin(account, ledgerAccountJoin)
+    .where(owned.ledger(scope))
     .groupBy(monthExpr)
     .orderBy(asc(monthExpr))
 

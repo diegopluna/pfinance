@@ -7,7 +7,7 @@ import {
 import { account, csvImport, household, transaction, type Db } from '@pfinance/db'
 import { and, asc, desc, eq, gte, isNull, lte } from 'drizzle-orm'
 import type { Parsed, VerbResult } from './parsed.ts'
-import type { Scope } from './scope.ts'
+import { importAccountJoin, owned, type Scope } from './scope.ts'
 import { isCalendarDate } from './transactions.ts'
 
 // Parsing for the /api/imports surface (issue #13): CSV text → records,
@@ -410,23 +410,23 @@ export const importView = (row: typeof csvImport.$inferSelect) => ({
 })
 
 // Tenancy rides on the Account, like Transactions: reads join through it.
-export const findImport = async (db: Db, householdId: string, id: string) => {
+export const findImport = async (db: Db, scope: Scope, id: string) => {
   const [found] = await db
     .select({ row: csvImport })
     .from(csvImport)
-    .innerJoin(account, eq(account.id, csvImport.accountId))
-    .where(and(eq(csvImport.id, id), eq(account.householdId, householdId)))
+    .innerJoin(account, importAccountJoin)
+    .where(and(eq(csvImport.id, id), owned.ledger(scope)))
     .limit(1)
   return found?.row
 }
 
 // Import history, newest upload first; id breaks same-second ties.
-export const listImports = async (db: Db, householdId: string) => {
+export const listImports = async (db: Db, scope: Scope) => {
   const rows = await db
     .select({ row: csvImport })
     .from(csvImport)
-    .innerJoin(account, eq(account.id, csvImport.accountId))
-    .where(eq(account.householdId, householdId))
+    .innerJoin(account, importAccountJoin)
+    .where(owned.ledger(scope))
     .orderBy(desc(csvImport.createdAt), asc(csvImport.id))
   return rows.map(({ row }) => importView(row))
 }
@@ -453,6 +453,8 @@ export const chunkRows = <T>(rows: T[], size: number = IMPORT_INSERT_CHUNK): T[]
  * The duplicateKeys already on the Account, for flagging preview rows
  * (issue #14). Bounded by the parsed rows' date range — ISO dates compare
  * lexicographically — which limits the scan to the export's window.
+ * Tenancy contract: scoped by accountId only — the caller must hold a
+ * scope-proven Account (requireAccount or a scoped find).
  */
 const existingDuplicateKeys = async (
   db: Db,
@@ -503,11 +505,11 @@ export const flaggedPreviewRows = async (
 
 // Amount cells parse in the Household's Currency (ADR 0002). The code is
 // validated at sign-up, so the USD arm only narrows the type.
-export const householdCurrency = async (db: Db, householdId: string): Promise<CurrencyCode> => {
+export const householdCurrency = async (db: Db, scope: Scope): Promise<CurrencyCode> => {
   const [row] = await db
     .select({ currency: household.currency })
     .from(household)
-    .where(eq(household.id, householdId))
+    .where(owned.household(scope))
     .limit(1)
   return isSupportedCurrency(row?.currency) ? row.currency : 'USD'
 }
@@ -521,7 +523,7 @@ export type ImportView = ReturnType<typeof importView>
  * isn't the Household's (tenancy rides on the Account, findImport).
  */
 export const loadImport = async (db: Db, scope: Scope, id: string) => {
-  const row = await findImport(db, scope.householdId, id)
+  const row = await findImport(db, scope, id)
   if (row === undefined) return undefined
   const [header, ...records] = parseCsv(row.csv)
   return { row, header, records }
@@ -561,7 +563,7 @@ export const confirmImport = async (
     found.accountId,
     records,
     mapping,
-    await householdCurrency(db, scope.householdId),
+    await householdCurrency(db, scope),
   )
   const valid = rows.flatMap((row) =>
     row.parsed === null ? [] : [{ line: row.line, duplicate: row.duplicate, fields: row.parsed }],
@@ -607,7 +609,7 @@ export const confirmImport = async (
   } catch (error) {
     // The expected failure is the deterministic-id collision above: a
     // concurrent confirm won the race. Re-check rather than guess.
-    const now = await findImport(db, scope.householdId, found.id)
+    const now = await findImport(db, scope, found.id)
     if (now?.confirmedAt != null) {
       return { ok: false, status: 400, error: 'This import is already confirmed.' }
     }

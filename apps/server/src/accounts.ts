@@ -8,6 +8,7 @@ import {
 } from '@pfinance/db'
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Parsed } from './parsed.ts'
+import { owned, type Scope } from './scope.ts'
 
 // Parsing and shaping for the /api/accounts surface (issue #7). The editable
 // state of an Account is exactly { name, type, openingBalance }; Balance is
@@ -76,28 +77,25 @@ export const parseAccountPatch = (body: unknown): Parsed<Partial<AccountFields>>
 // original archivedAt is when the account closed, and a second click must
 // not move it. Returns the row (updated or already in the requested state),
 // or undefined when no such Account exists.
-export const setAccountArchived = async (
-  db: Db,
-  householdId: string,
-  id: string,
-  archived: boolean,
-) => {
-  const scope = and(eq(account.id, id), eq(account.householdId, householdId))
+export const setAccountArchived = async (db: Db, scope: Scope, id: string, archived: boolean) => {
+  const target = and(eq(account.id, id), owned.account(scope))
   const [updated] = await db
     .update(account)
     .set({ archivedAt: archived ? new Date() : null })
-    .where(and(scope, archived ? isNull(account.archivedAt) : isNotNull(account.archivedAt)))
+    .where(and(target, archived ? isNull(account.archivedAt) : isNotNull(account.archivedAt)))
     .returning()
   if (updated !== undefined) return updated
   // Nothing flipped: idempotent no-op if the Account is already in the
   // requested state, undefined (→ 404) if it doesn't exist.
-  const [existing] = await db.select().from(account).where(scope).limit(1)
+  const [existing] = await db.select().from(account).where(target).limit(1)
   return existing
 }
 
 // The sum of an Account's Transactions, computed in SQL — the reason amounts
 // are INTEGERs (ADR 0006). Exposed both as an expression (for the grouped
 // list query) and as a single-account fetch (for mutation responses).
+// Tenancy contract: scoped by accountId only — the caller must hold a
+// scope-proven Account (requireAccount or a scoped find).
 export const ledgerSumExpr = sql<number>`coalesce(sum(${transaction.amount}), 0)`.mapWith(Number)
 
 export const ledgerSum = async (db: Db, accountId: string): Promise<number> => {

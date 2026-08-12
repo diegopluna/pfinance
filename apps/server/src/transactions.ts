@@ -1,6 +1,5 @@
 import {
   account,
-  category,
   isTransactionKind,
   transaction,
   user,
@@ -10,7 +9,7 @@ import {
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { Parsed, VerbResult } from './parsed.ts'
-import type { Scope } from './scope.ts'
+import { ledgerAccountJoin, owned, requireAccount, requireCategory, type Scope } from './scope.ts'
 
 // Parsing and shaping for the /api/transactions surface (issue #8). A
 // Transaction's editable state is exactly { accountId, date, amount,
@@ -217,35 +216,6 @@ export const parseTransactionFilters = (
   return { ok: true, value: filters }
 }
 
-// Tenancy: a Transaction's Household is its Account's, so writes name the
-// Account and reads join through it.
-export const accountInHousehold = async (db: Db, householdId: string, accountId: string) => {
-  const [row] = await db
-    .select({ id: account.id })
-    .from(account)
-    .where(and(eq(account.id, accountId), eq(account.householdId, householdId)))
-    .limit(1)
-  return row !== undefined
-}
-
-// Assignment guard (issue #11): a Category is assignable when it belongs to
-// the caller's Household — the FK can't see tenancy, since a Category's
-// Household is its own while a Transaction's is its Account's — and is not
-// archived (issue #10: archiving retires a label from assignment; rows that
-// already carry it keep it, because this runs only when a write names a
-// Category). Returns the rejection message, or undefined when assignable; a
-// foreign Category reads as unknown, not forbidden.
-export const categoryAssignmentError = async (db: Db, householdId: string, categoryId: string) => {
-  const [row] = await db
-    .select({ archivedAt: category.archivedAt })
-    .from(category)
-    .where(and(eq(category.id, categoryId), eq(category.householdId, householdId)))
-    .limit(1)
-  if (row === undefined) return 'Unknown category.'
-  if (row.archivedAt !== null) return 'That category is archived; unarchive it to assign it.'
-  return undefined
-}
-
 // The API shape of a Transaction: the row plus who entered it, by name —
 // defined once as a row mapper (for the POST handler, which knows the
 // enterer directly) and mirrored by the SQL selection below (for reads,
@@ -306,16 +276,16 @@ const descriptionMatches = (q: string): SQL => {
   return sql`${transaction.description} LIKE ${`%${escaped}%`} ESCAPE '\\'`
 }
 
-export const listTransactions = (db: Db, householdId: string, filters: TransactionFilters) =>
+export const listTransactions = (db: Db, scope: Scope, filters: TransactionFilters) =>
   db
     .select(transactionSelection)
     .from(transaction)
-    .innerJoin(account, eq(account.id, transaction.accountId))
+    .innerJoin(account, ledgerAccountJoin)
     .leftJoin(user, eq(user.id, transaction.createdBy))
     .leftJoin(siblingLeg, siblingLegJoin)
     .where(
       and(
-        eq(account.householdId, householdId),
+        owned.ledger(scope),
         ...(filters.accountId === undefined ? [] : [eq(transaction.accountId, filters.accountId)]),
         // null filters the Uncategorized state — rows with no Category.
         ...(filters.categoryId === undefined
@@ -336,14 +306,14 @@ export const listTransactions = (db: Db, householdId: string, filters: Transacti
     .orderBy(desc(transaction.date), desc(transaction.createdAt), asc(transaction.id))
 
 // Fetch one Transaction scoped to the caller's Household, or undefined.
-export const findTransaction = async (db: Db, householdId: string, id: string) => {
+export const findTransaction = async (db: Db, scope: Scope, id: string) => {
   const [row] = await db
     .select(transactionSelection)
     .from(transaction)
-    .innerJoin(account, eq(account.id, transaction.accountId))
+    .innerJoin(account, ledgerAccountJoin)
     .leftJoin(user, eq(user.id, transaction.createdBy))
     .leftJoin(siblingLeg, siblingLegJoin)
-    .where(and(eq(transaction.id, id), eq(account.householdId, householdId)))
+    .where(and(eq(transaction.id, id), owned.ledger(scope)))
     .limit(1)
   return row
 }
@@ -362,11 +332,11 @@ export const createTransaction = async (
   scope: Scope,
   fields: TransactionFields,
 ): Promise<VerbResult<TransactionView>> => {
-  if (!(await accountInHousehold(db, scope.householdId, fields.accountId))) {
+  if (!(await requireAccount(db, scope, fields.accountId))) {
     return { ok: false, status: 400, error: 'Unknown account.' }
   }
   if (fields.categoryId !== null) {
-    const rejection = await categoryAssignmentError(db, scope.householdId, fields.categoryId)
+    const rejection = await requireCategory(db, scope, fields.categoryId)
     if (rejection !== undefined) return { ok: false, status: 400, error: rejection }
   }
   const row = {
@@ -378,7 +348,7 @@ export const createTransaction = async (
     createdAt: new Date(),
   }
   await db.insert(transaction).values(row)
-  const created = await findTransaction(db, scope.householdId, row.id)
+  const created = await findTransaction(db, scope, row.id)
   if (created === undefined) {
     return { ok: false, status: 404, error: 'Transaction not found.' }
   }
@@ -396,17 +366,14 @@ export const updateTransaction = async (
   id: string,
   patch: Partial<TransactionFields>,
 ): Promise<VerbResult<TransactionView>> => {
-  const existing = await findTransaction(db, scope.householdId, id)
+  const existing = await findTransaction(db, scope, id)
   if (existing === undefined) {
     return { ok: false, status: 404, error: 'Transaction not found.' }
   }
   if (existing.transferId !== null) {
     return { ok: false, status: 400, error: 'Transfer legs are edited through their transfer.' }
   }
-  if (
-    patch.accountId !== undefined &&
-    !(await accountInHousehold(db, scope.householdId, patch.accountId))
-  ) {
+  if (patch.accountId !== undefined && !(await requireAccount(db, scope, patch.accountId))) {
     return { ok: false, status: 400, error: 'Unknown account.' }
   }
   // Guard only a newly named Category (null clears, undefined keeps, and
@@ -414,13 +381,13 @@ export const updateTransaction = async (
   // already carrying an archived Category stays editable — including
   // through clients that resubmit the whole field set, like the web form.
   if (patch.categoryId != null && patch.categoryId !== existing.categoryId) {
-    const rejection = await categoryAssignmentError(db, scope.householdId, patch.categoryId)
+    const rejection = await requireCategory(db, scope, patch.categoryId)
     if (rejection !== undefined) return { ok: false, status: 400, error: rejection }
   }
   await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
   // Read back through the canonical selection — enteredBy stays the
   // creator: editing a row doesn't re-attribute it.
-  const updated = await findTransaction(db, scope.householdId, existing.id)
+  const updated = await findTransaction(db, scope, existing.id)
   if (updated === undefined) {
     return { ok: false, status: 404, error: 'Transaction not found.' }
   }
@@ -436,7 +403,7 @@ export const deleteTransaction = async (
   scope: Scope,
   id: string,
 ): Promise<VerbResult<null>> => {
-  const existing = await findTransaction(db, scope.householdId, id)
+  const existing = await findTransaction(db, scope, id)
   if (existing === undefined) {
     return { ok: false, status: 404, error: 'Transaction not found.' }
   }

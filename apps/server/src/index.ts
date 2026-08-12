@@ -9,6 +9,7 @@ import {
   meta,
   transaction,
   user,
+  type Db,
 } from '@pfinance/db'
 import { and, asc, count, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -58,11 +59,10 @@ import {
 import { monthlyIncomeExpense } from './income-expense.ts'
 import { currentUtcMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
-import type { Scope } from './scope.ts'
+import { owned, requireAccount, type Scope } from './scope.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import { spendingByCategory } from './spending.ts'
 import {
-  accountInHousehold,
   createTransaction,
   deleteTransaction,
   listTransactions,
@@ -85,16 +85,15 @@ type SessionUser = { id: string; email: string; name: string }
 type Variables = {
   user: SessionUser
   membership: { householdId: string; role: 'owner' | 'member' }
+  // Resolved once per request by the session middleware: the DB handle and
+  // the Scope every data access takes (scope.ts). Handlers under /api/*
+  // never build their own.
+  db: Db
+  scope: Scope
 }
 
 const authFor = (c: { env: ServerEnv; req: { url: string } }) =>
   createAuth(c.env, new URL(c.req.url).origin)
-
-// The Scope every Ledger verb takes, from the session middleware's variables.
-const scopeOf = (vars: Variables): Scope => ({
-  householdId: vars.membership.householdId,
-  userId: vars.user.id,
-})
 
 // Managing Members and Invites is the owner's alone (issue #6); runs after
 // the session middleware below, which resolves c.var.membership.
@@ -176,11 +175,13 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     }
     c.set('user', sessionData.user)
     c.set('membership', membership)
+    c.set('db', db)
+    c.set('scope', { householdId: membership.householdId, userId: sessionData.user.id })
     await next()
   })
   .get('/api/me', async (c) => {
-    const db = createDb(c.env.DB)
-    const { householdId, role } = c.var.membership
+    const { db, scope } = c.var
+    const { role } = c.var.membership
     const [householdRow] = await db
       // currency rides along so clients can format every amount (ADR 0002),
       // dateFormat so they can format every calendar date (issue #31).
@@ -191,7 +192,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         dateFormat: household.dateFormat,
       })
       .from(household)
-      .where(eq(household.id, householdId))
+      .where(owned.household(scope))
       .limit(1)
     if (!householdRow) {
       return c.json({ error: 'Household not found' }, 500)
@@ -201,7 +202,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     const [memberCountRow] = await db
       .select({ memberCount: count() })
       .from(member)
-      .where(eq(member.householdId, householdId))
+      .where(owned.member(scope))
     const { id, email, name } = c.var.user
     return c.json({
       user: { id, email, name },
@@ -214,12 +215,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // (CONTEXT.md), so no ownerGuard. Presentation only — no stored date is
   // ever rewritten by this.
   .patch('/api/household', parsedValidator('json', parseHouseholdPatch), async (c) => {
-    const db = createDb(c.env.DB)
-    const { householdId } = c.var.membership
+    const { db, scope } = c.var
     const [updated] = await db
       .update(household)
       .set(c.req.valid('json'))
-      .where(eq(household.id, householdId))
+      .where(owned.household(scope))
       .returning({
         id: household.id,
         name: household.name,
@@ -243,7 +243,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // "show closed accounts" toggle, which keeps their history reachable.
     validator('query', (value) => ({ includeArchived: value.includeArchived === 'true' })),
     async (c) => {
-      const db = createDb(c.env.DB)
+      const { db, scope } = c.var
       const { includeArchived } = c.req.valid('query')
       const rows = await db
         // One grouped query derives every Balance: the ledger sum joins in
@@ -251,12 +251,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         .select({ row: account, ledgerTotal: ledgerSumExpr })
         .from(account)
         .leftJoin(transaction, eq(transaction.accountId, account.id))
-        .where(
-          and(
-            eq(account.householdId, c.var.membership.householdId),
-            ...(includeArchived ? [] : [isNull(account.archivedAt)]),
-          ),
-        )
+        .where(and(owned.account(scope), ...(includeArchived ? [] : [isNull(account.archivedAt)])))
         .groupBy(account.id)
         // Name breaks the tie within a second so the order is stable.
         .orderBy(asc(account.createdAt), asc(account.name), asc(account.id))
@@ -264,10 +259,10 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     },
   )
   .post('/api/accounts', parsedValidator('json', parseNewAccount), async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const row = {
       id: crypto.randomUUID(),
-      householdId: c.var.membership.householdId,
+      householdId: scope.householdId,
       ...c.req.valid('json'),
       archivedAt: null,
       createdAt: new Date(),
@@ -277,16 +272,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     return c.json({ account: accountView(row, 0) })
   })
   .patch('/api/accounts/:id', parsedValidator('json', parseAccountPatch), async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const [updated] = await db
       .update(account)
       .set(c.req.valid('json'))
-      .where(
-        and(
-          eq(account.id, c.req.param('id')),
-          eq(account.householdId, c.var.membership.householdId),
-        ),
-      )
+      .where(and(eq(account.id, c.req.param('id')), owned.account(scope)))
       .returning()
     if (updated === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
@@ -298,16 +288,16 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // idempotent via setAccountArchived (a repeat archive keeps the original
   // archivedAt).
   .post('/api/accounts/:id/archive', async (c) => {
-    const db = createDb(c.env.DB)
-    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), true)
+    const { db, scope } = c.var
+    const row = await setAccountArchived(db, scope, c.req.param('id'), true)
     if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
     return c.json({ account: accountView(row, await ledgerSum(db, row.id)) })
   })
   .post('/api/accounts/:id/unarchive', async (c) => {
-    const db = createDb(c.env.DB)
-    const row = await setAccountArchived(db, c.var.membership.householdId, c.req.param('id'), false)
+    const { db, scope } = c.var
+    const row = await setAccountArchived(db, scope, c.req.param('id'), false)
     if (row === undefined) {
       return c.json({ error: 'Account not found.' }, 404)
     }
@@ -323,37 +313,28 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       parseTransactionFilters(value as Record<string, string | undefined>),
     ),
     async (c) => {
-      const db = createDb(c.env.DB)
-      const transactions = await listTransactions(
-        db,
-        c.var.membership.householdId,
-        c.req.valid('query'),
-      )
+      const { db, scope } = c.var
+      const transactions = await listTransactions(db, scope, c.req.valid('query'))
       return c.json({ transactions })
     },
   )
   .post('/api/transactions', parsedValidator('json', parseNewTransaction), async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await createTransaction(db, scopeOf(c.var), c.req.valid('json'))
+    const { db, scope } = c.var
+    const result = await createTransaction(db, scope, c.req.valid('json'))
     return result.ok
       ? c.json({ transaction: result.value })
       : c.json({ error: result.error }, result.status)
   })
   .patch('/api/transactions/:id', parsedValidator('json', parseTransactionPatch), async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await updateTransaction(
-      db,
-      scopeOf(c.var),
-      c.req.param('id'),
-      c.req.valid('json'),
-    )
+    const { db, scope } = c.var
+    const result = await updateTransaction(db, scope, c.req.param('id'), c.req.valid('json'))
     return result.ok
       ? c.json({ transaction: result.value })
       : c.json({ error: result.error }, result.status)
   })
   .delete('/api/transactions/:id', async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await deleteTransaction(db, scopeOf(c.var), c.req.param('id'))
+    const { db, scope } = c.var
+    const result = await deleteTransaction(db, scope, c.req.param('id'))
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status)
   })
   // --- Transfers (issue #12) — member-level like the rest of the ledger. A
@@ -363,22 +344,22 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // /api/transactions like any Transaction and excluded from the
   // Expense/Income views by kind (transactions.ts).
   .post('/api/transfers', parsedValidator('json', parseNewTransfer), async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await createTransfer(db, scopeOf(c.var), c.req.valid('json'))
+    const { db, scope } = c.var
+    const result = await createTransfer(db, scope, c.req.valid('json'))
     return result.ok
       ? c.json({ transfer: result.value })
       : c.json({ error: result.error }, result.status)
   })
   .patch('/api/transfers/:id', parsedValidator('json', parseTransferPatch), async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await updateTransfer(db, scopeOf(c.var), c.req.param('id'), c.req.valid('json'))
+    const { db, scope } = c.var
+    const result = await updateTransfer(db, scope, c.req.param('id'), c.req.valid('json'))
     return result.ok
       ? c.json({ transfer: result.value })
       : c.json({ error: result.error }, result.status)
   })
   .delete('/api/transfers/:id', async (c) => {
-    const db = createDb(c.env.DB)
-    const result = await deleteTransfer(db, scopeOf(c.var), c.req.param('id'))
+    const { db, scope } = c.var
+    const result = await deleteTransfer(db, scope, c.req.param('id'))
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status)
   })
   // --- CSV Imports (issue #13) — member-level like the rest of the ledger.
@@ -393,13 +374,13 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // the Account like Transactions (imports.ts). CONTEXT.md's revert is the
   // DELETE (issue #15), riding the import_id cascade.
   .get('/api/imports', async (c) => {
-    const db = createDb(c.env.DB)
-    return c.json({ imports: await listImports(db, c.var.membership.householdId) })
+    const { db, scope } = c.var
+    return c.json({ imports: await listImports(db, scope) })
   })
   .post('/api/imports', parsedValidator('json', parseNewImport), async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const fields = c.req.valid('json')
-    if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
+    if (!(await requireAccount(db, scope, fields.accountId))) {
       return c.json({ error: 'Unknown account.' }, 400)
     }
     const [header, ...data] = parseCsv(fields.csv)
@@ -431,8 +412,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     return c.json({ import: importView(row), columns: header.cells })
   })
   .get('/api/imports/:id', async (c) => {
-    const db = createDb(c.env.DB)
-    const loaded = await loadImport(db, scopeOf(c.var), c.req.param('id'))
+    const { db, scope } = c.var
+    const loaded = await loadImport(db, scope, c.req.param('id'))
     if (loaded === undefined) {
       return c.json({ error: 'Import not found.' }, 404)
     }
@@ -443,9 +424,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // previewed is exactly what confirm creates — and returns every data
   // row's fate, duplicate flags included.
   .post('/api/imports/:id/preview', parsedValidator('json', parseImportMapping), async (c) => {
-    const db = createDb(c.env.DB)
-    const { householdId } = c.var.membership
-    const loaded = await loadImport(db, scopeOf(c.var), c.req.param('id'))
+    const { db, scope } = c.var
+    const loaded = await loadImport(db, scope, c.req.param('id'))
     if (loaded === undefined) {
       return c.json({ error: 'Import not found.' }, 404)
     }
@@ -468,7 +448,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
         found.accountId,
         records,
         mapping,
-        await householdCurrency(db, householdId),
+        await householdCurrency(db, scope),
       ),
     })
   })
@@ -480,8 +460,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // through and parseImportConfirm defaults it.
     parsedValidator('json', parseImportConfirm),
     async (c) => {
-      const db = createDb(c.env.DB)
-      const result = await confirmImport(db, scopeOf(c.var), c.req.param('id'), c.req.valid('json'))
+      const { db, scope } = c.var
+      const result = await confirmImport(db, scope, c.req.param('id'), c.req.valid('json'))
       return result.ok
         ? c.json({ import: result.value })
         : c.json({ error: result.error }, result.status)
@@ -490,8 +470,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // The revert (CONTEXT.md): a bad column mapping is one click to undo,
   // whether pending or confirmed.
   .delete('/api/imports/:id', async (c) => {
-    const db = createDb(c.env.DB)
-    const found = await findImport(db, c.var.membership.householdId, c.req.param('id'))
+    const { db, scope } = c.var
+    const found = await findImport(db, scope, c.req.param('id'))
     if (found === undefined) {
       return c.json({ error: 'Import not found.' }, 404)
     }
@@ -511,35 +491,30 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // the retired vocabulary so it can be renamed or brought back.
     validator('query', (value) => ({ includeArchived: value.includeArchived === 'true' })),
     async (c) => {
-      const db = createDb(c.env.DB)
-      const { householdId } = c.var.membership
+      const { db, scope } = c.var
       // Households created before seeding existed get the default set on
       // first read — idempotent, so it happens exactly once (categories.ts).
-      await ensureSeededCategories(db, householdId)
+      await ensureSeededCategories(db, scope)
       const { includeArchived } = c.req.valid('query')
       const rows = await db
         .select()
         .from(category)
         .where(
-          and(
-            eq(category.householdId, householdId),
-            ...(includeArchived ? [] : [isNull(category.archivedAt)]),
-          ),
+          and(owned.category(scope), ...(includeArchived ? [] : [isNull(category.archivedAt)])),
         )
         .orderBy(...categoryOrder)
       return c.json({ categories: rows.map(categoryView) })
     },
   )
   .post('/api/categories', parsedValidator('json', parseCategoryFields), async (c) => {
-    const db = createDb(c.env.DB)
-    const { householdId } = c.var.membership
+    const { db, scope } = c.var
     // Backfill before the insert lands: otherwise a pre-seed Household
     // whose first categories call is a create would gain a row and pass
     // the zero-rows check forever, never receiving the defaults.
-    await ensureSeededCategories(db, householdId)
+    await ensureSeededCategories(db, scope)
     const row = {
       id: crypto.randomUUID(),
-      householdId,
+      householdId: scope.householdId,
       ...c.req.valid('json'),
       archivedAt: null,
       createdAt: new Date(),
@@ -549,16 +524,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   })
   // Rename — name is a Category's entire editable state.
   .patch('/api/categories/:id', parsedValidator('json', parseCategoryFields), async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const [updated] = await db
       .update(category)
       .set(c.req.valid('json'))
-      .where(
-        and(
-          eq(category.id, c.req.param('id')),
-          eq(category.householdId, c.var.membership.householdId),
-        ),
-      )
+      .where(and(eq(category.id, c.req.param('id')), owned.category(scope)))
       .returning()
     if (updated === undefined) {
       return c.json({ error: 'Category not found.' }, 404)
@@ -568,21 +538,16 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // Archive / unarchive mirror Accounts: rows are never deleted, and a
   // repeat archive keeps the original archivedAt (setCategoryArchived).
   .post('/api/categories/:id/archive', async (c) => {
-    const db = createDb(c.env.DB)
-    const row = await setCategoryArchived(db, c.var.membership.householdId, c.req.param('id'), true)
+    const { db, scope } = c.var
+    const row = await setCategoryArchived(db, scope, c.req.param('id'), true)
     if (row === undefined) {
       return c.json({ error: 'Category not found.' }, 404)
     }
     return c.json({ category: categoryView(row) })
   })
   .post('/api/categories/:id/unarchive', async (c) => {
-    const db = createDb(c.env.DB)
-    const row = await setCategoryArchived(
-      db,
-      c.var.membership.householdId,
-      c.req.param('id'),
-      false,
-    )
+    const { db, scope } = c.var
+    const row = await setCategoryArchived(db, scope, c.req.param('id'), false)
     if (row === undefined) {
       return c.json({ error: 'Category not found.' }, 404)
     }
@@ -601,9 +566,9 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // defaulted (the transactions filter-parsing stance).
     calendarMonthValidator('through'),
     async (c) => {
-      const db = createDb(c.env.DB)
+      const { db, scope } = c.var
       const through = c.req.valid('query').through ?? currentUtcMonth()
-      const series = await monthlyNetWorthSeries(db, c.var.membership.householdId, through)
+      const series = await monthlyNetWorthSeries(db, scope, through)
       return c.json({ series })
     },
   )
@@ -614,11 +579,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // Malformed values are rejected, never silently defaulted.
     calendarMonthValidator('month'),
     async (c) => {
-      const db = createDb(c.env.DB)
+      const { db, scope } = c.var
       // The resolved month echoes back so the client can label the default
       // view without re-deriving "the current month" and risking a skew.
       const month = c.req.valid('query').month ?? currentUtcMonth()
-      const slices = await spendingByCategory(db, c.var.membership.householdId, month)
+      const slices = await spendingByCategory(db, scope, month)
       return c.json({ month, slices })
     },
   )
@@ -630,11 +595,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     // defaulted.
     calendarMonthValidator('through'),
     async (c) => {
-      const db = createDb(c.env.DB)
+      const { db, scope } = c.var
       // The resolved edge echoes back so the client can label the default
       // view without re-deriving "the current month" and risking a skew.
       const through = c.req.valid('query').through ?? currentUtcMonth()
-      const months = await monthlyIncomeExpense(db, c.var.membership.householdId, through)
+      const months = await monthlyIncomeExpense(db, scope, through)
       return c.json({ through, months })
     },
   )
@@ -645,7 +610,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   .use('/api/invites/*', ownerGuard)
   .use('/api/invites', ownerGuard)
   .get('/api/members', async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const members = await db
       .select({
         id: member.id,
@@ -657,7 +622,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       })
       .from(member)
       .innerJoin(user, eq(user.id, member.userId))
-      .where(eq(member.householdId, c.var.membership.householdId))
+      .where(owned.member(scope))
       // Timestamps have second precision, so role breaks the tie and keeps
       // the owner first when rows land in the same second.
       .orderBy(asc(member.createdAt), desc(member.role), asc(member.id))
@@ -668,13 +633,11 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // orphaned one could never join another Household (unique membership), and
   // a lingering row would squat the unique email and block re-inviting them.
   .delete('/api/members/:id', async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const [target] = await db
       .select({ userId: member.userId, role: member.role })
       .from(member)
-      .where(
-        and(eq(member.id, c.req.param('id')), eq(member.householdId, c.var.membership.householdId)),
-      )
+      .where(and(eq(member.id, c.req.param('id')), owned.member(scope)))
       .limit(1)
     if (!target) {
       return c.json({ error: 'Member not found.' }, 404)
@@ -686,7 +649,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     return c.json({ ok: true })
   })
   .get('/api/invites', async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const now = new Date()
     const invites = await db
       .select({
@@ -698,12 +661,12 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       .from(invite)
       // Pending only: consumed, expired and revoked Invites are history, not
       // actionable, so the management screen never shows them.
-      .where(and(eq(invite.householdId, c.var.membership.householdId), pendingInviteFilter(now)))
+      .where(and(owned.invite(scope), pendingInviteFilter(now)))
       .orderBy(asc(invite.createdAt), asc(invite.id))
     return c.json({ invites })
   })
   .post('/api/invites', async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const body: unknown = await c.req.json().catch(() => ({}))
     const requested = (body as { expiresInSeconds?: unknown }).expiresInSeconds
     const ttlSeconds =
@@ -714,8 +677,8 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     const created = {
       id: crypto.randomUUID(),
       token: generateInviteToken(),
-      householdId: c.var.membership.householdId,
-      createdBy: c.var.user.id,
+      householdId: scope.householdId,
+      createdBy: scope.userId,
       expiresAt: new Date(now.getTime() + ttlSeconds * 1000),
       createdAt: now,
     }
@@ -727,14 +690,14 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   // makes revoking a just-consumed Invite report 404 instead of silently
   // rewriting history.
   .delete('/api/invites/:id', async (c) => {
-    const db = createDb(c.env.DB)
+    const { db, scope } = c.var
     const [revoked] = await db
       .update(invite)
       .set({ revokedAt: new Date() })
       .where(
         and(
           eq(invite.id, c.req.param('id')),
-          eq(invite.householdId, c.var.membership.householdId),
+          owned.invite(scope),
           isNull(invite.usedAt),
           isNull(invite.revokedAt),
         ),

@@ -1,8 +1,8 @@
 import { account, transaction, transfer, type Db } from '@pfinance/db'
 import { and, eq } from 'drizzle-orm'
 import type { Parsed, VerbResult } from './parsed.ts'
-import type { Scope } from './scope.ts'
-import { accountInHousehold, isCalendarDate, parseDescription } from './transactions.ts'
+import { ledgerAccountJoin, owned, requireAccount, type Scope } from './scope.ts'
+import { isCalendarDate, parseDescription } from './transactions.ts'
 
 // Parsing and shaping for the /api/transfers surface (issue #12). A Transfer
 // is a single entity linking an outflow leg on one Account to an inflow leg
@@ -128,7 +128,7 @@ export const transferView = (
 // one Household — enforced on every write — so scoping through the legs'
 // Accounts is scoping the Transfer; anything but the intact pair reads as
 // not found.
-export const findTransfer = async (db: Db, householdId: string, id: string) => {
+export const findTransfer = async (db: Db, scope: Scope, id: string) => {
   const legs = await db
     .select({
       id: transaction.id,
@@ -139,8 +139,8 @@ export const findTransfer = async (db: Db, householdId: string, id: string) => {
       createdAt: transaction.createdAt,
     })
     .from(transaction)
-    .innerJoin(account, eq(account.id, transaction.accountId))
-    .where(and(eq(transaction.transferId, id), eq(account.householdId, householdId)))
+    .innerJoin(account, ledgerAccountJoin)
+    .where(and(eq(transaction.transferId, id), owned.ledger(scope)))
   const outflow = legs.find((leg) => leg.amount < 0)
   const inflow = legs.find((leg) => leg.amount > 0)
   if (legs.length !== 2 || outflow === undefined || inflow === undefined) return undefined
@@ -161,7 +161,7 @@ export const createTransfer = async (
   fields: TransferFields,
 ): Promise<VerbResult<TransferView>> => {
   for (const accountId of [fields.fromAccountId, fields.toAccountId]) {
-    if (!(await accountInHousehold(db, scope.householdId, accountId))) {
+    if (!(await requireAccount(db, scope, accountId))) {
       return { ok: false, status: 400, error: 'Unknown account.' }
     }
   }
@@ -208,7 +208,7 @@ export const updateTransfer = async (
   id: string,
   patch: Partial<TransferFields>,
 ): Promise<VerbResult<TransferView>> => {
-  const found = await findTransfer(db, scope.householdId, id)
+  const found = await findTransfer(db, scope, id)
   if (found === undefined) {
     return { ok: false, status: 404, error: 'Transfer not found.' }
   }
@@ -218,7 +218,7 @@ export const updateTransfer = async (
     return { ok: false, status: 400, error: 'A transfer needs two different accounts.' }
   }
   for (const accountId of [patch.fromAccountId, patch.toAccountId]) {
-    if (accountId !== undefined && !(await accountInHousehold(db, scope.householdId, accountId))) {
+    if (accountId !== undefined && !(await requireAccount(db, scope, accountId))) {
       return { ok: false, status: 400, error: 'Unknown account.' }
     }
   }
@@ -237,7 +237,7 @@ export const updateTransfer = async (
   ])
   // Viewed from the re-read legs, never a hand-assembled merge: what the
   // caller sees is what the ledger now holds.
-  const updated = await findTransfer(db, scope.householdId, id)
+  const updated = await findTransfer(db, scope, id)
   if (updated === undefined) {
     return { ok: false, status: 404, error: 'Transfer not found.' }
   }
@@ -254,7 +254,7 @@ export const deleteTransfer = async (
   scope: Scope,
   id: string,
 ): Promise<VerbResult<null>> => {
-  const found = await findTransfer(db, scope.householdId, id)
+  const found = await findTransfer(db, scope, id)
   if (found === undefined) {
     return { ok: false, status: 404, error: 'Transfer not found.' }
   }
