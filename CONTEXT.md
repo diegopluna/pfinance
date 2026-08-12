@@ -41,7 +41,7 @@ An Account's opening balance plus the sum of its Transactions. Derived, never st
 _Avoid_: Current amount
 
 **Net Worth**:
-The sum of Balances across a Household's Accounts. Liability accounts contribute negatively.
+The sum of Balances across a Household's Accounts. Liability accounts contribute negatively through their user-entered negative Balances — the sign is user-carried, never flipped by kind (ADR 0001).
 _Avoid_: Total balance
 
 **Ledger**:

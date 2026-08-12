@@ -6,11 +6,12 @@ import { ledgerAccountJoin, owned, type Scope } from './scope.ts'
 // at each month's end, derived entirely from the ledger (ADR 0001) and
 // computed server-side — the web app renders, it never sums (issue #1).
 //
-// No sign flip on liabilities: the ledger convention stores debt as a
-// negative Balance (a credit card opens in debt with a negative opening
-// balance and spends negative — pinned in accounts.test.ts), so a liability
-// Account already contributes negatively to the plain sum. Flipping by kind
-// would double-negate and make debt raise Net Worth.
+// No sign flip on liabilities: the sign is user-carried (ADR 0001's
+// amendment, issue #50) — debt is entered as a negative Balance (a credit
+// card opens in debt with a negative opening balance and spends negative),
+// so a liability Account already contributes negatively to the plain sum.
+// Flipping by kind would double-negate and make debt raise Net Worth.
+// Pinned in liability-sign.test.ts, positive-entered liability included.
 
 export interface NetWorthPoint {
   month: string

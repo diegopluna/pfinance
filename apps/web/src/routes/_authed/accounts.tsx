@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import type { InferRequestType, InferResponseType } from 'hono/client'
-import { ACCOUNT_TYPES, isAccountType } from '@pfinance/db/account-types'
+import { ACCOUNT_TYPES, accountKind, isAccountType } from '@pfinance/db/account-types'
 import {
   formatAmount,
   fromMinorUnits,
@@ -348,28 +348,49 @@ function AccountFormDialog({
                 )}
               </form.AppField>
             </div>
-            <form.AppField
-              name="openingBalance"
-              validators={{
-                onSubmit: ({ value }) =>
-                  validAmount(value)
-                    ? undefined
-                    : `Enter an amount like ${amountExample(currency)}`,
+            {/* The sign is user-carried (ADR 0001, issue #50): the app never
+                flips liability amounts, so once a liability type is picked
+                the form nudges the opening balance negative — placeholder and
+                copy — instead of pretending it will handle the sign. */}
+            <form.Subscribe selector={(state) => state.values.type}>
+              {(type) => {
+                const liability = isAccountType(type) && accountKind(type) === 'liability'
+                return (
+                  <>
+                    <form.AppField
+                      name="openingBalance"
+                      validators={{
+                        onSubmit: ({ value }) =>
+                          validAmount(value)
+                            ? undefined
+                            : `Enter an amount like ${amountExample(currency)}`,
+                      }}
+                    >
+                      {(field) => (
+                        <field.TextField
+                          label={`Opening balance (${currency})`}
+                          placeholder={
+                            liability ? `-${amountExample(currency)}` : fromMinorUnits(0, currency)
+                          }
+                          inputMode="decimal"
+                        />
+                      )}
+                    </form.AppField>
+                    {/* Diverges deliberately from Claude Design 2d's hint,
+                        whose first sentence is the misleading claim issue #50
+                        fixes — flagged on that issue for the design project.
+                        The Balance Adjustment sentence is 2d's, kept. */}
+                    <p className="text-xs text-muted-foreground">
+                      {liability
+                        ? 'Enter what you owe as a negative amount — a card with 500 owed opens at -500. '
+                        : 'Liability types (credit card, loan) count against net worth through the negative balances you enter. '}
+                      The balance is derived from here on — use a Balance Adjustment if it ever
+                      drifts.
+                    </p>
+                  </>
+                )
               }}
-            >
-              {(field) => (
-                <field.TextField
-                  label={`Opening balance (${currency})`}
-                  placeholder={fromMinorUnits(0, currency)}
-                  inputMode="decimal"
-                />
-              )}
-            </form.AppField>
-            {/* Claude Design 2d's framing of the type choice. */}
-            <p className="text-xs text-muted-foreground">
-              Liability types (credit card, loan) count negatively toward net worth. The balance is
-              derived from here on.
-            </p>
+            </form.Subscribe>
             {error !== null && (
               <p role="alert" className="text-sm text-destructive">
                 {error}

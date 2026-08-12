@@ -39,7 +39,7 @@ Two things to carry over carefully:
 - **Uncategorized is a first-class, honest state and is never hidden.** It appears as its own row in spending, with a count surfaced ("3 uncategorized transactions").
 - **Transfers and Adjustments still appear in the ledger**, with a `TRANSFER` / `ADJUSTMENT` badge instead of a category chip and a muted, unsigned-looking amount.
 - **Balances are derived** — opening balance plus the sum of the account's transactions, "nothing here is directly editable" (`Core Screens.dc.html`). Drift is corrected with a Balance Adjustment.
-- **Liability accounts count negatively toward net worth** and are badged `LIABILITY`.
+- **Liability accounts count negatively toward net worth** through their user-entered negative balances — the sign is user-carried, never flipped by kind (ADR 0001 amendment, issue #50) — and are badged `LIABILITY`. The 2d dialog's hint copy predates this and claims the app does the signing; the shipped form diverges deliberately until the design project picks up the reworded hint (raised on issue #50).
 - **Currency is set once per household, at creation**, and is not editable afterwards.
 - Money is right-aligned and uses `font-variant-numeric: tabular-nums` throughout.
 

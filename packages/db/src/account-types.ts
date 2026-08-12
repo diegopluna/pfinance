@@ -1,7 +1,9 @@
 // The Account type vocabulary (issue #7). An Account's type marks it as an
-// asset or a liability so Net Worth can sign liabilities negatively (ADR
-// 0001, CONTEXT.md "Net Worth"). Kept free of drizzle imports so the web app
-// can import this entry without pulling the ORM into its bundle.
+// asset or a liability so debt reads as debt in the UI — the LIABILITY badge
+// and the account form's sign nudge. Net Worth itself never flips by kind:
+// the sign is user-carried (ADR 0001, CONTEXT.md "Net Worth"). Kept free of
+// drizzle imports so the web app can import this entry without pulling the
+// ORM into its bundle.
 
 export const ACCOUNT_TYPES = [
   { type: 'checking', label: 'Checking', kind: 'asset' },
