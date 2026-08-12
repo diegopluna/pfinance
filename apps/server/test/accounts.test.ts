@@ -97,8 +97,28 @@ test.provider(
       expect(card.kind).toBe('liability')
       expect(card.balance).toBe(-50000)
 
+      // The catch-alls (issue #51): an Account that fits no finer label —
+      // a gift-card balance, an IOU — still gets a home on each side of
+      // Net Worth.
+      const voucher = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Voucher',
+          type: 'other_asset',
+          openingBalance: 7500,
+        }),
+      )
+      expect(voucher.kind).toBe('asset')
+      const iou = yield* readAccount(
+        yield* createAccount(apiUrl, owner.cookie, {
+          name: 'Wedding IOU',
+          type: 'other_liability',
+          openingBalance: -20000,
+        }),
+      )
+      expect(iou.kind).toBe('liability')
+
       const both = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
-      expect(both.map((entry) => entry.name)).toEqual(['Nubank', 'Visa'])
+      expect(both.map((entry) => entry.name)).toEqual(['Nubank', 'Visa', 'Voucher', 'Wedding IOU'])
 
       // Edit: name, type, and opening balance are the editable state; the
       // derived Balance follows the opening balance.
@@ -135,7 +155,11 @@ test.provider(
       expect((yield* readAccount(rearchived)).archivedAt).toEqual(archivedCard.archivedAt)
 
       const defaultList = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
-      expect(defaultList.map((entry) => entry.name)).toEqual(['Nubank Checking'])
+      expect(defaultList.map((entry) => entry.name)).toEqual([
+        'Nubank Checking',
+        'Voucher',
+        'Wedding IOU',
+      ])
 
       const fullList = yield* readAccounts(
         yield* listAccounts(apiUrl, owner.cookie, '?includeArchived=true'),
@@ -143,6 +167,8 @@ test.provider(
       expect(fullList.map((entry) => [entry.name, entry.archivedAt !== null])).toEqual([
         ['Nubank Checking', false],
         ['Visa', true],
+        ['Voucher', false],
+        ['Wedding IOU', false],
       ])
 
       // Unarchive brings a closed Account back into the default list.
@@ -150,7 +176,12 @@ test.provider(
       expect(restored.status).toBe(200)
       expect((yield* readAccount(restored)).archivedAt).toBeNull()
       const restoredList = yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie))
-      expect(restoredList.map((entry) => entry.name)).toEqual(['Nubank Checking', 'Visa'])
+      expect(restoredList.map((entry) => entry.name)).toEqual([
+        'Nubank Checking',
+        'Visa',
+        'Voucher',
+        'Wedding IOU',
+      ])
 
       // Unknown Accounts 404 on every mutation.
       expect(

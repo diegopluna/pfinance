@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import type { InferResponseType } from 'hono/client'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
+import { ACCOUNT_TYPES, needsLiabilityMarker } from '@pfinance/db/account-types'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import { Button, buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -222,7 +222,7 @@ function AccountRow({ entry, currency }: { entry: AccountEntry; currency: Curren
         <span className="truncate text-[13px] font-medium">{entry.name}</span>
         <span className="truncate text-[11px] text-muted-foreground">
           {typeLabels.get(entry.type) ?? entry.type}
-          {entry.kind === 'liability' && ' · liability'}
+          {needsLiabilityMarker(entry.type) && ' · liability'}
         </span>
       </span>
       <span className="text-[13.5px] font-semibold tabular-nums">

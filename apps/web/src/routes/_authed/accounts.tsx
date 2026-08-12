@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import type { InferRequestType, InferResponseType } from 'hono/client'
-import { ACCOUNT_TYPES, accountKind, isAccountType } from '@pfinance/db/account-types'
+import {
+  ACCOUNT_TYPES,
+  accountKind,
+  isAccountType,
+  needsLiabilityMarker,
+} from '@pfinance/db/account-types'
 import {
   formatAmount,
   fromMinorUnits,
@@ -35,11 +40,11 @@ export const Route = createFileRoute('/_authed/accounts')({
   component: AccountsScreen,
 })
 
-const typeOptions = ACCOUNT_TYPES.map(({ type, label, kind }) => ({
+const typeOptions = ACCOUNT_TYPES.map(({ type, label }) => ({
   value: type,
   // The kind rides along in the picker so it's obvious which types will
   // count against Net Worth (ADR 0001).
-  label: kind === 'liability' ? `${label} — liability` : label,
+  label: needsLiabilityMarker(type) ? `${label} — liability` : label,
 }))
 
 const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) => [type, label]))
