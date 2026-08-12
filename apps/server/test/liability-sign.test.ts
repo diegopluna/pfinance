@@ -59,9 +59,15 @@ test('the same debt entered by the convention pulls Net Worth down', async () =>
 
 test('the write boundary accepts either sign for a liability opening balance', () => {
   // Coercing or rejecting by kind was considered and declined (issue #50):
-  // overpayment makes a positive liability Balance legitimate.
-  for (const openingBalance of [50000, -50000]) {
-    const parsed = parseNewAccount({ name: 'Visa', type: 'credit_card', openingBalance })
-    expect(parsed).toMatchObject({ ok: true, value: { openingBalance } })
+  // overpayment makes a positive liability Balance legitimate. The catch-all
+  // liability (issue #51) rides the same policy as credit cards and loans.
+  for (const [type, name] of [
+    ['credit_card', 'Visa'],
+    ['other_liability', 'IOU to Mom'],
+  ]) {
+    for (const openingBalance of [50000, -50000]) {
+      const parsed = parseNewAccount({ name, type, openingBalance })
+      expect(parsed).toMatchObject({ ok: true, value: { type, openingBalance } })
+    }
   }
 })
