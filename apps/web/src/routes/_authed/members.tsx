@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,8 +21,12 @@ import {
 } from '@pfinance/ui/components/card'
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
-import { api } from '@/lib/api'
+import type { DateFormat } from '@pfinance/db/date-formats'
+import { isForbidden } from '@/lib/api-call'
+import { useDateFormat } from '@/hooks/use-date-format'
+import { useInvites, useMemberMutations, useMembers } from '@/hooks/use-members'
 import { useMe } from '@/hooks/use-me'
+import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/members')({
   head: () => ({ meta: [{ title: 'Members · pfinance' }] }),
@@ -38,8 +41,9 @@ const inviteLink = (token: string) => `${window.location.origin}/sign-up?invite=
 const inviteLinkLabel = (token: string) =>
   `${window.location.host}/sign-up?invite=${token.slice(0, 4)}…${token.slice(-4)}`
 
-const joinedLabel = (iso: string) =>
-  `Joined ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+// Honors the Household date format (issue #31) like every other date.
+const joinedLabel = (iso: string, format: DateFormat) =>
+  `Joined ${formatMonthYear(new Date(iso), format)}`
 
 const expiryLabel = (iso: string) => {
   const ms = new Date(iso).getTime() - Date.now()
@@ -51,7 +55,7 @@ const expiryLabel = (iso: string) => {
 }
 
 function MembersScreen() {
-  const queryClient = useQueryClient()
+  const dateFormat = useDateFormat()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   // Removal is confirmed in an AlertDialog whose action repeats the
   // consequence; the target outlives `open` so the closing popup keeps its
@@ -60,65 +64,9 @@ function MembersScreen() {
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null)
   const { data: me } = useMe()
 
-  const membersQuery = useQuery({
-    queryKey: ['members'],
-    queryFn: async () => {
-      const response = await api.api.members.$get()
-      if (!response.ok) {
-        throw new Error(response.status === 403 ? 'forbidden' : 'Failed to load members')
-      }
-      return response.json()
-    },
-    retry: false,
-  })
-
-  const invitesQuery = useQuery({
-    queryKey: ['invites'],
-    queryFn: async () => {
-      const response = await api.api.invites.$get()
-      if (!response.ok) {
-        throw new Error(response.status === 403 ? 'forbidden' : 'Failed to load invites')
-      }
-      return response.json()
-    },
-    retry: false,
-  })
-
-  const createInvite = useMutation({
-    mutationFn: async () => {
-      const response = await api.api.invites.$post()
-      if (!response.ok) {
-        throw new Error('Failed to create invite')
-      }
-      return response.json()
-    },
-    onSuccess: async ({ invite }) => {
-      await queryClient.invalidateQueries({ queryKey: ['invites'] })
-      // Creating an Invite is for handing its link to someone — copy it
-      // right away so the owner can paste it without hunting for the row.
-      await copyLink(invite.id, invite.token)
-    },
-  })
-
-  const revokeInvite = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.invites[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to revoke invite')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invites'] }),
-  })
-
-  const removeMember = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.members[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to remove member')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['members'] }),
-  })
+  const membersQuery = useMembers()
+  const invitesQuery = useInvites()
+  const { createInvite, revokeInvite, removeMember } = useMemberMutations()
 
   const copyLink = async (id: string, token: string) => {
     await navigator.clipboard.writeText(inviteLink(token))
@@ -128,7 +76,7 @@ function MembersScreen() {
 
   // The management surface is the owner's alone; the server answers 403 for
   // everyone else, and this screen relays that instead of half-rendering.
-  if (membersQuery.error?.message === 'forbidden' || invitesQuery.error?.message === 'forbidden') {
+  if (isForbidden(membersQuery.error) || isForbidden(invitesQuery.error)) {
     return (
       <Card className="w-full max-w-2xl">
         <CardHeader>
@@ -159,7 +107,13 @@ function MembersScreen() {
         <Button
           variant="outline"
           disabled={createInvite.isPending}
-          onClick={() => createInvite.mutate()}
+          onClick={() =>
+            // Creating an Invite is for handing its link to someone — copy it
+            // right away so the owner can paste it without hunting for the row.
+            createInvite.mutate(undefined, {
+              onSuccess: ({ invite }) => copyLink(invite.id, invite.token),
+            })
+          }
         >
           New invite
         </Button>
@@ -190,7 +144,7 @@ function MembersScreen() {
                         {entry.email}
                         {me?.user.id === entry.userId
                           ? ' · you'
-                          : ` · ${joinedLabel(entry.createdAt)}`}
+                          : ` · ${joinedLabel(entry.createdAt, dateFormat)}`}
                       </p>
                     </div>
                   </div>

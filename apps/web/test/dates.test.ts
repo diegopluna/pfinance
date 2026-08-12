@@ -1,5 +1,10 @@
 import { expect, test } from 'vite-plus/test'
-import { formatCalendarDate, parseCalendarDate, toCalendarString } from '../src/lib/dates.ts'
+import {
+  formatCalendarDate,
+  formatMonthYear,
+  parseCalendarDate,
+  toCalendarString,
+} from '../src/lib/dates.ts'
 
 // Calendar date strings round-trip through local date parts only — no
 // UTC parsing that could shift a day west of Greenwich (CONTEXT.md:
@@ -38,4 +43,17 @@ test('system defers to the locale default (the pre-preference rendering)', () =>
 test('a malformed date string passes through untouched instead of throwing', () => {
   expect(formatCalendarDate('not-a-date', 'dmy')).toBe('not-a-date')
   expect(formatCalendarDate('', 'system')).toBe('')
+})
+
+// Month-level labels ("Archived Aug 2026", "Joined Aug 2026") honor the same
+// preference — previously they hardcoded the browser locale and ignored it.
+
+test('formatMonthYear follows the household preference', () => {
+  const december = new Date(2025, 11, 31)
+  expect(formatMonthYear(december, 'system', 'en-US')).toBe('Dec 2025')
+  expect(formatMonthYear(december, 'dmy', 'en-US')).toBe('Dec 2025')
+  expect(formatMonthYear(december, 'mdy', 'pt-BR')).toBe('dez. 2025')
+  expect(formatMonthYear(december, 'ymd')).toBe('2025-12')
+  // Single-digit months keep the ISO padding.
+  expect(formatMonthYear(new Date(2026, 0, 15), 'ymd')).toBe('2026-01')
 })

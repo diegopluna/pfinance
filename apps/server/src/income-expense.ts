@@ -1,6 +1,7 @@
 import { account, transaction, type Db } from '@pfinance/db'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, sql } from 'drizzle-orm'
 import { addMonths } from './net-worth.ts'
+import { ledgerAccountJoin, owned, type Scope } from './scope.ts'
 import { derivedViewConditions, type DerivedView } from './transactions.ts'
 
 // Income vs Expense by month (issue #19): the two derived views totaled per
@@ -28,7 +29,7 @@ const WINDOW_MONTHS = 12
 // calendar date) must not balloon the response — the net-worth stance.
 const MAX_SERIES_MONTHS = 1200
 
-const monthlyTotals = (db: Db, householdId: string, view: DerivedView) => {
+const monthlyTotals = (db: Db, scope: Scope, view: DerivedView) => {
   // Month bucketing is pure string slicing on the calendar date, the
   // net-worth convention: no Date, no timezone drift.
   const monthExpr = sql<string>`substr(${transaction.date}, 1, 7)`
@@ -39,8 +40,8 @@ const monthlyTotals = (db: Db, householdId: string, view: DerivedView) => {
       total: sql<number>`sum(${magnitude})`.mapWith(Number),
     })
     .from(transaction)
-    .innerJoin(account, eq(account.id, transaction.accountId))
-    .where(and(eq(account.householdId, householdId), ...derivedViewConditions(view)))
+    .innerJoin(account, ledgerAccountJoin)
+    .where(and(owned.ledger(scope), ...derivedViewConditions(view)))
     .groupBy(monthExpr)
     .orderBy(asc(monthExpr))
 }
@@ -53,11 +54,11 @@ const monthlyTotals = (db: Db, householdId: string, view: DerivedView) => {
 // month shows as an honest zero instead of a hole in the axis.
 export const monthlyIncomeExpense = async (
   db: Db,
-  householdId: string,
+  scope: Scope,
   through: string,
 ): Promise<IncomeExpensePoint[]> => {
-  const incomes = await monthlyTotals(db, householdId, 'income')
-  const expenses = await monthlyTotals(db, householdId, 'expense')
+  const incomes = await monthlyTotals(db, scope, 'income')
+  const expenses = await monthlyTotals(db, scope, 'expense')
   if (incomes.length === 0 && expenses.length === 0) return []
 
   const incomeByMonth = new Map(incomes.map((row) => [row.month, row.total]))

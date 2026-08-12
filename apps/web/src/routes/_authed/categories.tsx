@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { Button } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
@@ -13,19 +12,22 @@ import {
   DialogTitle,
 } from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
+import type { DateFormat } from '@pfinance/db/date-formats'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
+import { useCategories, useCategoryMutations } from '@/hooks/use-categories'
+import { useDateFormat } from '@/hooks/use-date-format'
 import { useMe } from '@/hooks/use-me'
+import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/categories')({
   head: () => ({ meta: [{ title: 'Categories · pfinance' }] }),
   component: CategoriesScreen,
 })
 
-const archivedLabel = (iso: string | null) =>
-  iso === null
-    ? 'Archived'
-    : `Archived ${new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+// Honors the Household date format (issue #31) like every other date.
+const archivedLabel = (iso: string | null, format: DateFormat) =>
+  iso === null ? 'Archived' : `Archived ${formatMonthYear(new Date(iso), format)}`
 
 // Both shapes are inferred from the server's route schema so they can't
 // drift: the editable state from the create validator, the listed Category
@@ -34,7 +36,6 @@ type CategoryFields = InferRequestType<typeof api.api.categories.$post>['json']
 type CategoryEntry = InferResponseType<typeof api.api.categories.$get, 200>['categories'][number]
 
 function CategoriesScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [showArchived, setShowArchived] = useState(false)
   // The dialog's target outlives `open` so the closing popup keeps its
@@ -46,49 +47,8 @@ function CategoriesScreen() {
     nonce: 0,
   })
 
-  const categoriesQuery = useQuery({
-    queryKey: ['categories', showArchived],
-    queryFn: async () => {
-      const response = await api.api.categories.$get({
-        query: { includeArchived: showArchived ? 'true' : 'false' },
-      })
-      if (!response.ok) {
-        throw new Error('Failed to load categories')
-      }
-      return response.json()
-    },
-  })
-
-  const saveCategory = useMutation({
-    mutationFn: async ({ id, fields }: { id: string | null; fields: CategoryFields }) => {
-      const response =
-        id === null
-          ? await api.api.categories.$post({ json: fields })
-          : await api.api.categories[':id'].$patch({ param: { id }, json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to save the category')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['categories'] })
-      setDialogOpen(false)
-    },
-  })
-
-  const setArchived = useMutation({
-    mutationFn: async ({ id, archive }: { id: string; archive: boolean }) => {
-      const route = api.api.categories[':id']
-      const response = archive
-        ? await route.archive.$post({ param: { id } })
-        : await route.unarchive.$post({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to update the category')
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['categories'] }),
-  })
+  const categoriesQuery = useCategories(showArchived)
+  const { save: saveCategory, setArchived } = useCategoryMutations()
 
   const openDialog = (entry: CategoryEntry | null) => {
     saveCategory.reset()
@@ -124,10 +84,11 @@ function CategoriesScreen() {
         onSubmit={(fields) =>
           saveCategory
             .mutateAsync({ id: target.entry?.id ?? null, fields })
-            // The mutation records failures for the dialog's error line;
-            // swallow the rejection so the form doesn't also throw.
+            // Close on success; the mutation records failures for the
+            // dialog's error line, so swallow the rejection so the form
+            // doesn't also throw.
             .then(
-              () => undefined,
+              () => setDialogOpen(false),
               () => undefined,
             )
         }
@@ -224,13 +185,14 @@ function CategoryRow({
   onSetArchived: (archive: boolean) => void
 }) {
   const isArchived = entry.archivedAt !== null
+  const dateFormat = useDateFormat()
   return (
     <li className="flex items-center justify-between gap-3 py-1.5">
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{entry.name}</span>
         {isArchived && (
           <span className="block text-xs text-muted-foreground">
-            {archivedLabel(entry.archivedAt)} · history preserved
+            {archivedLabel(entry.archivedAt, dateFormat)} · history preserved
           </span>
         )}
       </span>

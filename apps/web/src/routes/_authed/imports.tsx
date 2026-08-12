@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
 import {
@@ -35,8 +34,12 @@ import {
   TableRow,
 } from '@pfinance/ui/components/table'
 import { useDateFormat } from '@/hooks/use-date-format'
+import { guessMapping } from '@/lib/csv-mapping'
 import { formatCalendarDate, formatDayDate } from '@/lib/dates'
+import { summarizePreview } from '@/lib/import-preview'
 import { api } from '@/lib/api'
+import { useAccounts } from '@/hooks/use-accounts'
+import { useImportMutations, useImportPreview, useImports } from '@/hooks/use-imports'
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/imports')({
@@ -60,7 +63,11 @@ interface ActiveImport {
   rowCount: number
 }
 
-const DATE_FORMAT_OPTIONS = [
+// "Date order" on purpose, not "date format": this is how the CSV's dates
+// are PARSED (the mapping's dateFormat field), a different concept from the
+// Household's display date format (issue #31, settings.tsx) — two option
+// tables with overlapping values and different meanings.
+const CSV_DATE_ORDER_OPTIONS = [
   { value: 'ymd', label: 'Year first — 2026-01-31' },
   { value: 'dmy', label: 'Day first — 31/01/2026' },
   { value: 'mdy', label: 'Month first — 01/31/2026' },
@@ -74,22 +81,7 @@ const AMOUNT_SIGN_OPTIONS = [
   { value: 'flip', label: 'Flipped — credit-card statements' },
 ] satisfies { value: NonNullable<MappingFields['amountSign']>; label: string }[]
 
-// Guess the mapping from the header names so most files start correct; the
-// Member confirms or fixes it on the map step either way.
-const guessColumn = (columns: string[], pattern: RegExp, fallback: number) => {
-  const at = columns.findIndex((name) => pattern.test(name))
-  return at === -1 ? Math.min(fallback, columns.length - 1) : at
-}
-
-const guessMapping = (columns: string[]): MappingFields => ({
-  dateColumn: guessColumn(columns, /date|data|dia|fecha/i, 0),
-  descriptionColumn: guessColumn(columns, /desc|hist|memo|payee|narra|detail|concepto/i, 1),
-  amountColumn: guessColumn(columns, /amount|valor|value|montant|betrag|importe/i, 2),
-  dateFormat: 'ymd',
-})
-
 function ImportsScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const currency: CurrencyCode =
     me !== undefined && isSupportedCurrency(me.household.currency) ? me.household.currency : 'USD'
@@ -103,29 +95,11 @@ function ImportsScreen() {
 
   // All Accounts, archived included, so history rows on a closed Account
   // still name it; the upload picker below offers only open ones.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts', true],
-    queryFn: async () => {
-      const response = await api.api.accounts.$get({ query: { includeArchived: 'true' } })
-      if (!response.ok) {
-        throw new Error('Failed to load accounts')
-      }
-      return response.json()
-    },
-  })
+  const accountsQuery = useAccounts(true)
   const accounts = accountsQuery.data?.accounts ?? []
   const accountNames = new Map(accounts.map((entry) => [entry.id, entry.name]))
 
-  const importsQuery = useQuery({
-    queryKey: ['imports'],
-    queryFn: async () => {
-      const response = await api.api.imports.$get()
-      if (!response.ok) {
-        throw new Error('Failed to load imports')
-      }
-      return response.json()
-    },
-  })
+  const importsQuery = useImports()
   const imports = importsQuery.data?.imports ?? []
 
   const startMapping = (entry: ActiveImport) => {
@@ -146,110 +120,11 @@ function ImportsScreen() {
     })
   }
 
-  const upload = useMutation({
-    mutationFn: async (fields: { accountId: string; fileName: string; csv: string }) => {
-      const response = await api.api.imports.$post({ json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to upload the file')
-      }
-      return response.json()
-    },
-    onSuccess: async ({ import: batch, columns }) => {
-      await queryClient.invalidateQueries({ queryKey: ['imports'] })
-      startMapping({
-        id: batch.id,
-        fileName: batch.fileName,
-        accountId: batch.accountId,
-        columns,
-        rowCount: batch.rowCount,
-      })
-    },
-  })
-
-  // Resume a pending Import from the history: the single GET returns the
-  // file's columns again, and the stored mapping (if any) beats the guess.
-  const resume = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.imports[':id'].$get({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to load the import')
-      }
-      return response.json()
-    },
-    onSuccess: ({ import: batch, columns }) => {
-      setActive({
-        id: batch.id,
-        fileName: batch.fileName,
-        accountId: batch.accountId,
-        columns,
-        rowCount: batch.rowCount,
-      })
-      setMapping(batch.mapping ?? guessMapping(columns))
-      setOverrides(new Set())
-    },
-  })
+  const { upload, resume, confirm, remove: deleteImport } = useImportMutations()
 
   // The preview runs on every mapping change — it also persists the mapping
   // on the Import server-side, so confirm creates exactly what's on screen.
-  const previewQuery = useQuery({
-    queryKey: ['import-preview', active?.id, mapping],
-    enabled: active !== null && mapping !== null,
-    queryFn: async (): Promise<PreviewResponse> => {
-      if (active === null || mapping === null) {
-        throw new Error('No import selected')
-      }
-      const response = await api.api.imports[':id'].preview.$post({
-        param: { id: active.id },
-        json: mapping,
-      })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to preview the import')
-      }
-      return response.json()
-    },
-  })
-
-  // Confirming creates Transactions and reverting deletes them, so both
-  // refresh every ledger view.
-  const invalidateLedger = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['imports'] })
-    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-    await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-  }
-
-  const confirm = useMutation({
-    mutationFn: async (fields: { id: string; overrides: number[] }) => {
-      const response = await api.api.imports[':id'].confirm.$post({
-        param: { id: fields.id },
-        json: { overrides: fields.overrides },
-      })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to confirm the import')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await invalidateLedger()
-      setActive(null)
-      setMapping(null)
-      setOverrides(new Set())
-    },
-  })
-
-  // The revert (issue #15): deleting an Import deletes every Transaction it
-  // created server-side.
-  const deleteImport = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.imports[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to delete the import')
-      }
-    },
-    onSuccess: invalidateLedger,
-  })
+  const previewQuery = useImportPreview(active?.id, mapping)
 
   const closeWizard = () => {
     confirm.reset()
@@ -273,7 +148,18 @@ function ImportsScreen() {
           accounts={accounts}
           uploading={upload.isPending}
           error={upload.isError ? upload.error.message : null}
-          onUpload={(fields) => upload.mutate(fields)}
+          onUpload={(fields) =>
+            upload.mutate(fields, {
+              onSuccess: ({ import: batch, columns }) =>
+                startMapping({
+                  id: batch.id,
+                  fileName: batch.fileName,
+                  accountId: batch.accountId,
+                  columns,
+                  rowCount: batch.rowCount,
+                }),
+            })
+          }
         />
       ) : (
         <MappingCard
@@ -289,7 +175,18 @@ function ImportsScreen() {
           overrides={overrides}
           onToggleOverride={toggleOverride}
           onMappingChange={setMapping}
-          onConfirm={() => confirm.mutate({ id: active.id, overrides: [...overrides] })}
+          onConfirm={() =>
+            confirm.mutate(
+              { id: active.id, overrides: [...overrides] },
+              {
+                onSuccess: () => {
+                  setActive(null)
+                  setMapping(null)
+                  setOverrides(new Set())
+                },
+              },
+            )
+          }
           onClose={closeWizard}
         />
       )}
@@ -315,7 +212,22 @@ function ImportsScreen() {
               accountNames={accountNames}
               resuming={resume.isPending}
               deleting={deleteImport.isPending}
-              onResume={(id) => resume.mutate(id)}
+              onResume={(id) =>
+                // The stored mapping (if any) beats the guess.
+                resume.mutate(id, {
+                  onSuccess: ({ import: batch, columns }) => {
+                    setActive({
+                      id: batch.id,
+                      fileName: batch.fileName,
+                      accountId: batch.accountId,
+                      columns,
+                      rowCount: batch.rowCount,
+                    })
+                    setMapping(batch.mapping ?? guessMapping(columns))
+                    setOverrides(new Set())
+                  },
+                })
+              }
               onDelete={setPendingDelete}
             />
           </CardContent>
@@ -494,12 +406,7 @@ function MappingCard({
     label: name.trim() === '' ? `Column ${index + 1}` : name,
   }))
   const rows = preview?.rows ?? []
-  const readyCount = rows.filter((row) => row.parsed !== null).length
-  const malformedCount = rows.length - readyCount
-  const skippedDuplicates = rows.filter(
-    (row) => row.parsed !== null && row.duplicate && !overrides.has(row.line),
-  ).length
-  const importCount = readyCount - skippedDuplicates
+  const summary = summarizePreview(rows, overrides)
 
   const columnSelect = (
     id: string,
@@ -557,11 +464,11 @@ function MappingCard({
           {columnSelect('map-description', 'Description column', 'descriptionColumn')}
           {columnSelect('map-amount', 'Amount column', 'amountColumn')}
           <Field className="w-56 gap-1">
-            <FieldLabel htmlFor="map-date-format" className="text-xs text-muted-foreground">
-              Date format
+            <FieldLabel htmlFor="map-date-order" className="text-xs text-muted-foreground">
+              Date order
             </FieldLabel>
             <Select
-              items={DATE_FORMAT_OPTIONS}
+              items={CSV_DATE_ORDER_OPTIONS}
               value={mapping?.dateFormat ?? 'ymd'}
               onValueChange={(value: string | null) =>
                 mapping !== null &&
@@ -571,11 +478,11 @@ function MappingCard({
                 })
               }
             >
-              <SelectTrigger id="map-date-format" className="w-full">
+              <SelectTrigger id="map-date-order" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DATE_FORMAT_OPTIONS.map((option) => (
+                {CSV_DATE_ORDER_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -623,19 +530,19 @@ function MappingCard({
         ) : (
           <>
             <p className="text-sm">
-              {importCount} of {rows.length} rows will import
-              {malformedCount > 0 && (
+              {summary.importCount} of {summary.total} rows will import
+              {summary.malformed > 0 && (
                 <span className="text-destructive">
                   {' '}
-                  · {malformedCount} malformed {malformedCount === 1 ? 'row' : 'rows'} will be
+                  · {summary.malformed} malformed {summary.malformed === 1 ? 'row' : 'rows'} will be
                   skipped
                 </span>
               )}
-              {skippedDuplicates > 0 && (
+              {summary.skippedDuplicates > 0 && (
                 <span className="text-muted-foreground">
                   {' '}
-                  · {skippedDuplicates} {skippedDuplicates === 1 ? 'duplicate' : 'duplicates'} will
-                  be skipped
+                  · {summary.skippedDuplicates}{' '}
+                  {summary.skippedDuplicates === 1 ? 'duplicate' : 'duplicates'} will be skipped
                 </span>
               )}
             </p>
@@ -720,14 +627,16 @@ function MappingCard({
             Cancel
           </Button>
           <Button
-            disabled={previewPending || previewError !== null || readyCount === 0 || confirming}
+            disabled={previewPending || previewError !== null || !summary.canConfirm || confirming}
             onClick={onConfirm}
           >
             {confirming
               ? 'Importing…'
-              : importCount === 0
+              : summary.importCount === 0
                 ? 'Finish without importing'
-                : `Import ${importCount} ${importCount === 1 ? 'transaction' : 'transactions'}`}
+                : `Import ${summary.importCount} ${
+                    summary.importCount === 1 ? 'transaction' : 'transactions'
+                  }`}
           </Button>
         </div>
       </CardContent>

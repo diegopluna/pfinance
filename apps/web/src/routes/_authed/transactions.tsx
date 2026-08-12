@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import {
@@ -55,7 +54,11 @@ import { useDateFormat } from '@/hooks/use-date-format'
 import { formatCalendarDate } from '@/lib/dates'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
+import { useAccounts } from '@/hooks/use-accounts'
+import { useCategories } from '@/hooks/use-categories'
 import { useMe } from '@/hooks/use-me'
+import { useTransactionMutations, useTransactions } from '@/hooks/use-transactions'
+import { useTransferMutations } from '@/hooks/use-transfers'
 
 export const Route = createFileRoute('/_authed/transactions')({
   head: () => ({ meta: [{ title: 'Transactions · pfinance' }] }),
@@ -111,7 +114,6 @@ interface Filters {
 const noFilters: Filters = { accountId: '', categoryId: '', from: '', to: '', q: '' }
 
 function TransactionsScreen() {
-  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const [filters, setFilters] = useState<Filters>(noFilters)
   // The dialog's target outlives `open` so the closing popup keeps its
@@ -144,16 +146,7 @@ function TransactionsScreen() {
 
   // All Accounts, archived included: the ledger keeps history for closed
   // accounts, so the filter and the rows must still name them.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts', true],
-    queryFn: async () => {
-      const response = await api.api.accounts.$get({ query: { includeArchived: 'true' } })
-      if (!response.ok) {
-        throw new Error('Failed to load accounts')
-      }
-      return response.json()
-    },
-  })
+  const accountsQuery = useAccounts(true)
   const accounts = accountsQuery.data?.accounts ?? []
   const accountNames = new Map(accounts.map((entry) => [entry.id, entry.name]))
   const accountFilterOptions = [
@@ -163,16 +156,7 @@ function TransactionsScreen() {
 
   // All Categories, archived included, for the same reason as Accounts:
   // rows that carry a retired label must still name it (ADR 0003).
-  const categoriesQuery = useQuery({
-    queryKey: ['categories', true],
-    queryFn: async () => {
-      const response = await api.api.categories.$get({ query: { includeArchived: 'true' } })
-      if (!response.ok) {
-        throw new Error('Failed to load categories')
-      }
-      return response.json()
-    },
-  })
+  const categoriesQuery = useCategories(true)
   const categories = categoriesQuery.data?.categories ?? []
   const categoryNames = new Map(categories.map((entry) => [entry.id, entry.name]))
   const categoryFilterOptions = [
@@ -181,94 +165,19 @@ function TransactionsScreen() {
     ...categories.map((entry) => ({ value: entry.id, label: entry.name })),
   ]
 
-  const transactionsQuery = useQuery({
-    queryKey: ['transactions', filters],
-    queryFn: async () => {
-      const response = await api.api.transactions.$get({
-        query: {
-          ...(filters.accountId !== '' && { accountId: filters.accountId }),
-          ...(filters.categoryId !== '' && { categoryId: filters.categoryId }),
-          ...(filters.from !== '' && { from: filters.from }),
-          ...(filters.to !== '' && { to: filters.to }),
-          ...(filters.q.trim() !== '' && { q: filters.q.trim() }),
-        },
-      })
-      if (!response.ok) {
-        throw new Error('Failed to load transactions')
-      }
-      return response.json()
-    },
-    // Keep the previous page while a filter keystroke refetches, so the list
-    // doesn't blink empty on every character.
-    placeholderData: keepPreviousData,
+  const transactionsQuery = useTransactions({
+    ...(filters.accountId !== '' && { accountId: filters.accountId }),
+    ...(filters.categoryId !== '' && { categoryId: filters.categoryId }),
+    ...(filters.from !== '' && { from: filters.from }),
+    ...(filters.to !== '' && { to: filters.to }),
+    ...(filters.q.trim() !== '' && { q: filters.q.trim() }),
   })
 
-  const saveTransaction = useMutation({
-    mutationFn: async ({ id, fields }: { id: string | null; fields: TransactionFields }) => {
-      const response =
-        id === null
-          ? await api.api.transactions.$post({ json: fields })
-          : await api.api.transactions[':id'].$patch({ param: { id }, json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to save the transaction')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      // Balances are derived from the ledger, so Accounts refresh too.
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setDialogOpen(false)
-    },
-  })
-
-  const deleteTransaction = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.transactions[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to delete the transaction')
-      }
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-    },
-  })
-
+  const { save: saveTransaction, remove: deleteTransaction } = useTransactionMutations()
   // Transfers write through their own surface (issue #12): both legs move
-  // atomically server-side, so the same two invalidations cover them.
-  const saveTransfer = useMutation({
-    mutationFn: async ({ id, fields }: { id: string | null; fields: TransferFields }) => {
-      const response =
-        id === null
-          ? await api.api.transfers.$post({ json: fields })
-          : await api.api.transfers[':id'].$patch({ param: { id }, json: fields })
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? 'Failed to save the transfer')
-      }
-      return response.json()
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setTransferDialogOpen(false)
-    },
-  })
-
-  const deleteTransfer = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.api.transfers[':id'].$delete({ param: { id } })
-      if (!response.ok) {
-        throw new Error('Failed to delete the transfer')
-      }
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-    },
-  })
+  // atomically server-side, so the same derived-ledger invalidation covers
+  // them (query-keys.ts).
+  const { save: saveTransfer, remove: deleteTransfer } = useTransferMutations()
 
   const openDialog = (entry: TransactionEntry | null) => {
     saveTransaction.reset()
@@ -331,10 +240,11 @@ function TransactionsScreen() {
         onSubmit={(fields) =>
           saveTransaction
             .mutateAsync({ id: target.entry?.id ?? null, fields })
-            // The mutation records failures for the dialog's error line;
-            // swallow the rejection so the form doesn't also throw.
+            // Close on success; the mutation records failures for the
+            // dialog's error line, so swallow the rejection so the form
+            // doesn't also throw.
             .then(
-              () => undefined,
+              () => setDialogOpen(false),
               () => undefined,
             )
         }
@@ -350,7 +260,7 @@ function TransactionsScreen() {
         error={saveTransfer.isError ? saveTransfer.error.message : null}
         onSubmit={(fields) =>
           saveTransfer.mutateAsync({ id: transferTarget.entry?.transferId ?? null, fields }).then(
-            () => undefined,
+            () => setTransferDialogOpen(false),
             () => undefined,
           )
         }

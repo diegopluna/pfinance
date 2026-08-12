@@ -1,5 +1,6 @@
 import { account, category, transaction, type Db } from '@pfinance/db'
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { ledgerAccountJoin, owned, type Scope } from './scope.ts'
 import { derivedViewConditions } from './transactions.ts'
 
 // Spending by Category for one calendar month (issue #18): the Expense view
@@ -21,7 +22,7 @@ export interface SpendingSlice {
 
 export const spendingByCategory = async (
   db: Db,
-  householdId: string,
+  scope: Scope,
   month: string,
 ): Promise<SpendingSlice[]> => {
   const total = sql<number>`sum(-${transaction.amount})`.mapWith(Number)
@@ -33,14 +34,14 @@ export const spendingByCategory = async (
         total,
       })
       .from(transaction)
-      .innerJoin(account, eq(account.id, transaction.accountId))
+      .innerJoin(account, ledgerAccountJoin)
       // Left join: the Uncategorized bucket has no category row, and an
       // archived Category's history still names it (archiving retires a label
       // from assignment, not from the ledger).
       .leftJoin(category, eq(category.id, transaction.categoryId))
       .where(
         and(
-          eq(account.householdId, householdId),
+          owned.ledger(scope),
           // Month bucketing is pure string slicing on the calendar date, the
           // net-worth convention: no Date, no timezone drift.
           eq(sql`substr(${transaction.date}, 1, 7)`, month),

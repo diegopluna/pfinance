@@ -1,6 +1,7 @@
 import { category, type Db } from '@pfinance/db'
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Parsed } from './parsed.ts'
+import { owned, type Scope } from './scope.ts'
 
 // Seeds, parsing and archive semantics for the /api/categories surface
 // (issue #10, ADR 0003). A Category is a flat household-owned label; its
@@ -40,14 +41,17 @@ export const seedCategoryRows = (householdId: string, createdAt: Date) =>
 // of calls dodges it. Zero rows means never seeded: Categories are archived,
 // never deleted, so a Household that has been seeded keeps at least one row
 // forever. The conflict-ignore makes the check-then-insert race harmless.
-export const ensureSeededCategories = async (db: Db, householdId: string) => {
+export const ensureSeededCategories = async (db: Db, scope: Scope) => {
   const [existing] = await db
     .select({ id: category.id })
     .from(category)
-    .where(eq(category.householdId, householdId))
+    .where(owned.category(scope))
     .limit(1)
   if (existing !== undefined) return
-  await db.insert(category).values(seedCategoryRows(householdId, new Date())).onConflictDoNothing()
+  await db
+    .insert(category)
+    .values(seedCategoryRows(scope.householdId, new Date()))
+    .onConflictDoNothing()
 }
 
 export interface CategoryFields {
@@ -69,20 +73,15 @@ export const parseCategoryFields = (body: unknown): Parsed<CategoryFields> => {
 // repeat call keeps the original archivedAt instead of rewriting it. Returns
 // the row (updated or already in the requested state), or undefined when no
 // such Category exists.
-export const setCategoryArchived = async (
-  db: Db,
-  householdId: string,
-  id: string,
-  archived: boolean,
-) => {
-  const scope = and(eq(category.id, id), eq(category.householdId, householdId))
+export const setCategoryArchived = async (db: Db, scope: Scope, id: string, archived: boolean) => {
+  const target = and(eq(category.id, id), owned.category(scope))
   const [updated] = await db
     .update(category)
     .set({ archivedAt: archived ? new Date() : null })
-    .where(and(scope, archived ? isNull(category.archivedAt) : isNotNull(category.archivedAt)))
+    .where(and(target, archived ? isNull(category.archivedAt) : isNotNull(category.archivedAt)))
     .returning()
   if (updated !== undefined) return updated
-  const [existing] = await db.select().from(category).where(scope).limit(1)
+  const [existing] = await db.select().from(category).where(target).limit(1)
   return existing
 }
 

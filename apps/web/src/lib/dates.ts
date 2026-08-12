@@ -48,3 +48,18 @@ export const formatCalendarDate = (value: string, format: DateFormat, locale?: s
   const date = parseCalendarDate(value)
   return date === undefined ? value : formatDayDate(date, format, locale)
 }
+
+// A month-level label ("Archived Aug 2026", "Joined Aug 2026") under the
+// same preference: 'system' defers to the browser locale, the fixed
+// month-first formats read as "Aug 2026", and ymd keeps its ISO shape.
+export const formatMonthYear = (date: Date, format: DateFormat, locale?: string): string => {
+  switch (format) {
+    case 'system':
+      return date.toLocaleDateString(locale, { month: 'short', year: 'numeric' })
+    case 'dmy':
+    case 'mdy':
+      return `${monthShort(date, locale)} ${date.getFullYear()}`
+    case 'ymd':
+      return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}`
+  }
+}
