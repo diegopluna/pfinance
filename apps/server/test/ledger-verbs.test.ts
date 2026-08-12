@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm'
 import { expect, test } from 'vite-plus/test'
 import { chunkRows, confirmImport, type ImportMapping } from '../src/imports.ts'
 import type { Scope } from '../src/scope.ts'
+import { createTransfer, deleteTransfer, updateTransfer } from '../src/transfers.ts'
 import { createTestDb, seedLedger } from './db-harness.ts'
 
 // --- Ledger verbs (Transaction, Transfer, Import write paths) ---
@@ -236,4 +237,143 @@ test('chunkRows respects the D1 parameter cap and a long confirm lands every chu
   const result = await confirmImport(db, scope, importId, { overrides: [] })
   expect(result).toMatchObject({ ok: true, value: { createdCount: 20 } })
   expect(await db.select().from(transaction)).toHaveLength(20)
+})
+
+// --- createTransfer / updateTransfer / deleteTransfer ---
+
+test('createTransfer mints mirrored legs and views the pair', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId, otherAccountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+
+  const result = await createTransfer(db, scope, {
+    fromAccountId: accountId,
+    toAccountId: otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      fromAccountId: accountId,
+      toAccountId: otherAccountId,
+      amount: 2500,
+      date: '2026-02-01',
+      description: 'Card payoff',
+    },
+  })
+  const legs = await db.select().from(transaction)
+  expect(legs).toHaveLength(2)
+  // The sign convention carries the direction; everything else mirrors.
+  expect(legs.map((leg) => leg.amount).sort((a, b) => a - b)).toEqual([-2500, 2500])
+  expect(new Set(legs.map((leg) => leg.kind))).toEqual(new Set(['transfer']))
+  expect(new Set(legs.map((leg) => leg.transferId))).toEqual(
+    new Set([result.ok ? result.value.id : '']),
+  )
+})
+
+test('createTransfer rejects an Account outside the Household — including a real foreign one', async () => {
+  const db = await createTestDb()
+  const mine = await seedLedger(db)
+  const theirs = await seedLedger(db)
+  const scope = { householdId: mine.householdId, userId: mine.userId }
+
+  // A genuine Account of another Household reads as unknown, not forbidden.
+  const result = await createTransfer(db, scope, {
+    fromAccountId: mine.accountId,
+    toAccountId: theirs.accountId,
+    amount: 100,
+    date: '2026-02-01',
+    description: 'Exfiltration',
+  })
+  expect(result).toEqual({ ok: false, status: 400, error: 'Unknown account.' })
+  expect(await db.select().from(transaction)).toHaveLength(0)
+})
+
+test('updateTransfer keeps the legs mirrored and returns the re-read pair', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId, otherAccountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+  const created = await createTransfer(db, scope, {
+    fromAccountId: accountId,
+    toAccountId: otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  if (!created.ok) throw new Error(created.error)
+
+  const updated = await updateTransfer(db, scope, created.value.id, { amount: 900 })
+  expect(updated).toMatchObject({
+    ok: true,
+    // The view reflects the ledger after the write — real legs, not a merge.
+    value: { amount: 900, date: '2026-02-01', description: 'Card payoff' },
+  })
+  const legs = await db.select().from(transaction)
+  expect(legs.map((leg) => leg.amount).sort((a, b) => a - b)).toEqual([-900, 900])
+})
+
+test('updateTransfer holds the two-different-accounts rule on the merged result', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId, otherAccountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+  const created = await createTransfer(db, scope, {
+    fromAccountId: accountId,
+    toAccountId: otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  if (!created.ok) throw new Error(created.error)
+
+  // The patch names only one side, but collapsing onto the stored other
+  // side must still be caught.
+  expect(
+    await updateTransfer(db, scope, created.value.id, { fromAccountId: otherAccountId }),
+  ).toEqual({
+    ok: false,
+    status: 400,
+    error: 'A transfer needs two different accounts.',
+  })
+})
+
+test('a foreign Household cannot see, edit, or delete a Transfer', async () => {
+  const db = await createTestDb()
+  const mine = await seedLedger(db)
+  const theirs = await seedLedger(db)
+  const scope = { householdId: mine.householdId, userId: mine.userId }
+  const otherScope = { householdId: theirs.householdId, userId: theirs.userId }
+  const created = await createTransfer(db, scope, {
+    fromAccountId: mine.accountId,
+    toAccountId: mine.otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  if (!created.ok) throw new Error(created.error)
+
+  const notFound = { ok: false, status: 404, error: 'Transfer not found.' }
+  expect(await updateTransfer(db, otherScope, created.value.id, { amount: 1 })).toEqual(notFound)
+  expect(await deleteTransfer(db, otherScope, created.value.id)).toEqual(notFound)
+  // Untouched: both legs still on my ledger.
+  expect(await db.select().from(transaction)).toHaveLength(2)
+})
+
+test('deleteTransfer removes the entity and both legs atomically', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId, otherAccountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+  const created = await createTransfer(db, scope, {
+    fromAccountId: accountId,
+    toAccountId: otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  if (!created.ok) throw new Error(created.error)
+
+  expect(await deleteTransfer(db, scope, created.value.id)).toEqual({ ok: true, value: null })
+  expect(await db.select().from(transaction)).toHaveLength(0)
+  expect(await db.select().from(transfer)).toHaveLength(0)
 })
