@@ -9,7 +9,7 @@ The tenant. All financial data (accounts, transactions, categories) belongs to a
 _Avoid_: Family, group, workspace, organization
 
 **Import**:
-A revertible batch of Transactions created from one CSV file into exactly one Account: upload, map columns, preview, confirm. Rows exact-matching an existing Transaction (account + date + amount + description) are flagged and skipped by default; created Transactions remember their Import, and deleting an Import deletes them.
+A revertible batch of Transactions created from one CSV file into exactly one Account: upload, map columns, preview, confirm. Rows exact-matching an existing Transaction of any kind (account + date + amount + description — Transfer legs match deliberately) or repeating an earlier row in the same file are flagged and skipped by default, each overridable per row; created Transactions remember their Import, and deleting an Import deletes them.
 _Avoid_: Upload, sync
 
 **Invite**:
