@@ -1,8 +1,9 @@
-import { csvImport, transaction, transfer, type Db } from '@pfinance/db'
+import { category, csvImport, transaction, transfer, type Db } from '@pfinance/db'
 import { asc, eq } from 'drizzle-orm'
 import { expect, test } from 'vite-plus/test'
 import { chunkRows, confirmImport, type ImportMapping } from '../src/imports.ts'
 import type { Scope } from '../src/scope.ts'
+import { createTransaction, deleteTransaction, updateTransaction } from '../src/transactions.ts'
 import { createTransfer, deleteTransfer, updateTransfer } from '../src/transfers.ts'
 import { createTestDb, seedLedger } from './db-harness.ts'
 
@@ -376,4 +377,187 @@ test('deleteTransfer removes the entity and both legs atomically', async () => {
   expect(await deleteTransfer(db, scope, created.value.id)).toEqual({ ok: true, value: null })
   expect(await db.select().from(transaction)).toHaveLength(0)
   expect(await db.select().from(transfer)).toHaveLength(0)
+})
+
+// --- createTransaction / updateTransaction / deleteTransaction ---
+
+const FIELDS = {
+  date: '2026-03-01',
+  amount: -1200,
+  description: 'Groceries',
+  kind: 'standard' as const,
+  categoryId: null,
+}
+
+test('createTransaction pins the manual-entry invariants and views the row with attribution', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+
+  const result = await createTransaction(db, scope, { accountId, ...FIELDS })
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      accountId,
+      amount: -1200,
+      description: 'Groceries',
+      kind: 'standard',
+      categoryId: null,
+      // Never a leg, never Import-born, attributed by name via the join.
+      transferId: null,
+      importId: null,
+      counterpartAccountId: null,
+      enteredBy: 'Tester',
+    },
+  })
+})
+
+test('createTransaction rejects a foreign Account and a foreign or archived Category', async () => {
+  const db = await createTestDb()
+  const mine = await seedLedger(db)
+  const theirs = await seedLedger(db)
+  const scope = { householdId: mine.householdId, userId: mine.userId }
+
+  expect(await createTransaction(db, scope, { accountId: theirs.accountId, ...FIELDS })).toEqual({
+    ok: false,
+    status: 400,
+    error: 'Unknown account.',
+  })
+
+  const archivedId = crypto.randomUUID()
+  const foreignId = crypto.randomUUID()
+  await db.insert(category).values([
+    {
+      id: archivedId,
+      householdId: mine.householdId,
+      name: 'Retired',
+      archivedAt: new Date(),
+      createdAt: new Date(),
+    },
+    {
+      id: foreignId,
+      householdId: theirs.householdId,
+      name: 'Their label',
+      createdAt: new Date(),
+    },
+  ])
+  expect(
+    await createTransaction(db, scope, {
+      accountId: mine.accountId,
+      ...FIELDS,
+      categoryId: archivedId,
+    }),
+  ).toEqual({
+    ok: false,
+    status: 400,
+    error: 'That category is archived; unarchive it to assign it.',
+  })
+  // A foreign Category reads as unknown, not forbidden.
+  expect(
+    await createTransaction(db, scope, {
+      accountId: mine.accountId,
+      ...FIELDS,
+      categoryId: foreignId,
+    }),
+  ).toEqual({ ok: false, status: 400, error: 'Unknown category.' })
+})
+
+test('a row already carrying an archived Category stays editable; naming it anew does not', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+  const archivedId = crypto.randomUUID()
+  await db.insert(category).values({
+    id: archivedId,
+    householdId,
+    name: 'Retired',
+    archivedAt: new Date(),
+    createdAt: new Date(),
+  })
+  // The row predates the archiving (inserted directly — the create verb
+  // would rightly refuse).
+  const rowId = crypto.randomUUID()
+  await db.insert(transaction).values({
+    id: rowId,
+    accountId,
+    date: '2026-03-01',
+    amount: -1200,
+    description: 'Groceries',
+    kind: 'standard',
+    categoryId: archivedId,
+    createdBy: userId,
+    createdAt: new Date(),
+  })
+
+  // A full-field resubmit (the web form's shape) re-asserts the current
+  // Category — that is not an assignment, so the row stays editable.
+  const resubmit = await updateTransaction(db, scope, rowId, {
+    amount: -1500,
+    categoryId: archivedId,
+  })
+  expect(resubmit).toMatchObject({ ok: true, value: { amount: -1500, categoryId: archivedId } })
+
+  // A second row newly naming the archived Category is an assignment.
+  const otherRowId = crypto.randomUUID()
+  await db.insert(transaction).values({
+    id: otherRowId,
+    accountId,
+    date: '2026-03-02',
+    amount: -100,
+    description: 'Snacks',
+    kind: 'standard',
+    createdBy: userId,
+    createdAt: new Date(),
+  })
+  expect(await updateTransaction(db, scope, otherRowId, { categoryId: archivedId })).toEqual({
+    ok: false,
+    status: 400,
+    error: 'That category is archived; unarchive it to assign it.',
+  })
+})
+
+test('Transfer legs are immutable through the Transaction verbs', async () => {
+  const db = await createTestDb()
+  const { householdId, userId, accountId, otherAccountId } = await seedLedger(db)
+  const scope = { householdId, userId }
+  const created = await createTransfer(db, scope, {
+    fromAccountId: accountId,
+    toAccountId: otherAccountId,
+    amount: 2500,
+    date: '2026-02-01',
+    description: 'Card payoff',
+  })
+  if (!created.ok) throw new Error(created.error)
+  const [leg] = await db.select().from(transaction).limit(1)
+  if (leg === undefined) throw new Error('no leg')
+
+  expect(await updateTransaction(db, scope, leg.id, { amount: 1 })).toEqual({
+    ok: false,
+    status: 400,
+    error: 'Transfer legs are edited through their transfer.',
+  })
+  expect(await deleteTransaction(db, scope, leg.id)).toEqual({
+    ok: false,
+    status: 400,
+    error: 'Transfer legs are deleted through their transfer.',
+  })
+  expect(await db.select().from(transaction)).toHaveLength(2)
+})
+
+test('a foreign Household cannot edit or delete a Transaction', async () => {
+  const db = await createTestDb()
+  const mine = await seedLedger(db)
+  const theirs = await seedLedger(db)
+  const scope = { householdId: mine.householdId, userId: mine.userId }
+  const otherScope = { householdId: theirs.householdId, userId: theirs.userId }
+  const created = await createTransaction(db, scope, { accountId: mine.accountId, ...FIELDS })
+  if (!created.ok) throw new Error(created.error)
+
+  const notFound = { ok: false, status: 404, error: 'Transaction not found.' }
+  expect(await updateTransaction(db, otherScope, created.value.id, { amount: 1 })).toEqual(notFound)
+  expect(await deleteTransaction(db, otherScope, created.value.id)).toEqual(notFound)
+  expect(await db.select().from(transaction)).toHaveLength(1)
+
+  expect(await deleteTransaction(db, scope, created.value.id)).toEqual({ ok: true, value: null })
+  expect(await db.select().from(transaction)).toHaveLength(0)
 })

@@ -63,13 +63,13 @@ import { selfServeSignUpAllowed } from './signup-gate.ts'
 import { spendingByCategory } from './spending.ts'
 import {
   accountInHousehold,
-  categoryAssignmentError,
-  findTransaction,
+  createTransaction,
+  deleteTransaction,
   listTransactions,
   parseNewTransaction,
   parseTransactionFilters,
   parseTransactionPatch,
-  transactionView,
+  updateTransaction,
 } from './transactions.ts'
 import {
   createTransfer,
@@ -334,79 +334,27 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
   )
   .post('/api/transactions', parsedValidator('json', parseNewTransaction), async (c) => {
     const db = createDb(c.env.DB)
-    const fields = c.req.valid('json')
-    if (!(await accountInHousehold(db, c.var.membership.householdId, fields.accountId))) {
-      return c.json({ error: 'Unknown account.' }, 400)
-    }
-    if (fields.categoryId !== null) {
-      const rejection = await categoryAssignmentError(
-        db,
-        c.var.membership.householdId,
-        fields.categoryId,
-      )
-      if (rejection !== undefined) return c.json({ error: rejection }, 400)
-    }
-    const row = {
-      id: crypto.randomUUID(),
-      ...fields,
-      // Never a Transfer leg: those are created only through /api/transfers.
-      transferId: null,
-      // Manual entry — Import-born rows are created only through
-      // /api/imports/:id/confirm.
-      importId: null,
-      createdBy: c.var.user.id,
-      createdAt: new Date(),
-    }
-    await db.insert(transaction).values(row)
-    return c.json({ transaction: transactionView(row, c.var.user.name) })
+    const result = await createTransaction(db, scopeOf(c.var), c.req.valid('json'))
+    return result.ok
+      ? c.json({ transaction: result.value })
+      : c.json({ error: result.error }, result.status)
   })
   .patch('/api/transactions/:id', parsedValidator('json', parseTransactionPatch), async (c) => {
     const db = createDb(c.env.DB)
-    const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
-    if (existing === undefined) {
-      return c.json({ error: 'Transaction not found.' }, 404)
-    }
-    // A Transfer leg is not independently editable (issue #12): the pair
-    // can never drift, so every change goes through /api/transfers.
-    if (existing.transferId !== null) {
-      return c.json({ error: 'Transfer legs are edited through their transfer.' }, 400)
-    }
-    const patch = c.req.valid('json')
-    if (
-      patch.accountId !== undefined &&
-      !(await accountInHousehold(db, c.var.membership.householdId, patch.accountId))
-    ) {
-      return c.json({ error: 'Unknown account.' }, 400)
-    }
-    // Guard only a newly named Category (null clears, undefined keeps, and
-    // re-asserting the row's current one is not an assignment): a row
-    // already carrying an archived Category stays editable — including
-    // through clients that resubmit the whole field set, like the web form.
-    if (patch.categoryId != null && patch.categoryId !== existing.categoryId) {
-      const rejection = await categoryAssignmentError(
-        db,
-        c.var.membership.householdId,
-        patch.categoryId,
-      )
-      if (rejection !== undefined) return c.json({ error: rejection }, 400)
-    }
-    await db.update(transaction).set(patch).where(eq(transaction.id, existing.id))
-    // enteredBy stays the creator: editing a row doesn't re-attribute it.
-    return c.json({ transaction: { ...existing, ...patch } })
+    const result = await updateTransaction(
+      db,
+      scopeOf(c.var),
+      c.req.param('id'),
+      c.req.valid('json'),
+    )
+    return result.ok
+      ? c.json({ transaction: result.value })
+      : c.json({ error: result.error }, result.status)
   })
   .delete('/api/transactions/:id', async (c) => {
     const db = createDb(c.env.DB)
-    const existing = await findTransaction(db, c.var.membership.householdId, c.req.param('id'))
-    if (existing === undefined) {
-      return c.json({ error: 'Transaction not found.' }, 404)
-    }
-    // Deleting one leg would leave half a Transfer (issue #12): both legs go
-    // together through DELETE /api/transfers/:id.
-    if (existing.transferId !== null) {
-      return c.json({ error: 'Transfer legs are deleted through their transfer.' }, 400)
-    }
-    await db.delete(transaction).where(eq(transaction.id, existing.id))
-    return c.json({ ok: true })
+    const result = await deleteTransaction(db, scopeOf(c.var), c.req.param('id'))
+    return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status)
   })
   // --- Transfers (issue #12) — member-level like the rest of the ledger. A
   // Transfer is one entity whose two legs can never drift: every write lands
