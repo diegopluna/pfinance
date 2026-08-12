@@ -10,6 +10,7 @@ import {
   cookieHeader,
   deploy,
   destroy,
+  executeWarm,
   freshApiUrl,
   readMe,
   signInRequest,
@@ -505,6 +506,80 @@ test.provider(
         }),
       )
       expect(rejoined.status).toBe(200)
+    }),
+  { timeout: 600_000 },
+)
+
+// --- Household date format (issue #31) ---
+
+const patchDateFormat = (apiUrl: string, cookie: string, dateFormat: unknown) =>
+  Test.executeWhenReady(
+    HttpClientRequest.patch(`${apiUrl}/api/household`).pipe(
+      trustedOrigin,
+      withCookie(cookie),
+      HttpClientRequest.bodyJsonUnsafe({ dateFormat }),
+    ),
+  )
+
+const meFor = (apiUrl: string, cookie: string) =>
+  Effect.flatMap(
+    Test.executeWhenReady(HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie))),
+    readMe,
+  )
+
+test.provider(
+  'Household date format: defaults to system, any Member may change it, bad values rejected',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const owner = yield* signUpOwner(apiUrl, 'date-format-owner@example.com')
+
+      // Ships defaulted: a Household that never visited Settings renders
+      // exactly as before the column existed.
+      const initial = yield* meFor(apiUrl, owner.cookie)
+      expect(initial.household.dateFormat).toBe('system')
+
+      // Household data: no session, no access.
+      const anonymous = yield* executeWarm(
+        HttpClientRequest.patch(`${apiUrl}/api/household`).pipe(
+          trustedOrigin,
+          HttpClientRequest.bodyJsonUnsafe({ dateFormat: 'dmy' }),
+        ),
+      )
+      expect(anonymous.status).toBe(401)
+
+      const patched = yield* patchDateFormat(apiUrl, owner.cookie, 'dmy')
+      expect(patched.status).toBe(200)
+      const patchedBody = (yield* patched.json) as unknown as {
+        household: { dateFormat: string }
+      }
+      expect(patchedBody.household.dateFormat).toBe('dmy')
+
+      // The write persisted: a fresh read through /api/me agrees.
+      const after = yield* meFor(apiUrl, owner.cookie)
+      expect(after.household.dateFormat).toBe('dmy')
+
+      // Outside the vocabulary (date-formats.ts) → 400, preference unchanged.
+      const bogus = yield* patchDateFormat(apiUrl, owner.cookie, 'stardate')
+      expect(bogus.status).toBe(400)
+      const missing = yield* patchDateFormat(apiUrl, owner.cookie, undefined)
+      expect(missing.status).toBe(400)
+      expect((yield* meFor(apiUrl, owner.cookie)).household.dateFormat).toBe('dmy')
+
+      // Member-level, not owner-only: presentation of the shared ledger is
+      // every Member's, like the ledger itself (CONTEXT.md) — so a plain
+      // Member may change it too.
+      const invited = yield* readCreatedInvite(yield* createInvite(apiUrl, owner.cookie))
+      const joined = yield* Test.executeWhenReady(
+        signUpRequest(apiUrl, 'date-format-member@example.com', 'Member', {
+          currency: null,
+          inviteToken: invited.invite.token,
+        }),
+      )
+      expect(joined.status).toBe(200)
+      const memberPatch = yield* patchDateFormat(apiUrl, cookieHeader(joined), 'ymd')
+      expect(memberPatch.status).toBe(200)
+      expect((yield* meFor(apiUrl, owner.cookie)).household.dateFormat).toBe('ymd')
     }),
   { timeout: 600_000 },
 )

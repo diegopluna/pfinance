@@ -1,0 +1,1 @@
+ALTER TABLE `household` ADD `date_format` text DEFAULT 'system' NOT NULL;

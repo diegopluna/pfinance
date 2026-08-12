@@ -3,30 +3,8 @@ import { CalendarIcon } from 'lucide-react'
 import { Button } from '@pfinance/ui/components/button'
 import { Calendar } from '@pfinance/ui/components/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@pfinance/ui/components/popover'
-
-// The ledger's dates are calendar date strings (YYYY-MM-DD, never a
-// timestamp — CONTEXT.md), while react-day-picker deals in Date objects.
-// Every conversion here goes through local date parts only: toISOString or
-// Date-string parsing would read the date as UTC midnight and shift it a day
-// west of Greenwich.
-
-export const parseCalendarDate = (value: string): Date | undefined => {
-  const [year, month, day] = value.split('-').map(Number)
-  if (year === undefined || month === undefined || day === undefined) return undefined
-  return new Date(year, month - 1, day)
-}
-
-const pad = (value: number, length: number) => value.toString().padStart(length, '0')
-
-export const toCalendarString = (date: Date): string =>
-  `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}`
-
-export const formatCalendarDate = (value: string): string => {
-  const date = parseCalendarDate(value)
-  return date === undefined
-    ? value
-    : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-}
+import { useDateFormat } from '@/hooks/use-date-format'
+import { formatCalendarDate, parseCalendarDate, toCalendarString } from '@/lib/dates'
 
 // shadcn date picker (Popover + Calendar) over a calendar date string: ''
 // means "nothing picked". Clicking the selected day again clears it, which
@@ -44,6 +22,7 @@ export function CalendarDatePicker({
   placeholder?: string
 } & Pick<React.ComponentProps<'button'>, 'aria-invalid' | 'aria-describedby'>) {
   const [open, setOpen] = useState(false)
+  const dateFormat = useDateFormat()
   const selected = value === '' ? undefined : parseCalendarDate(value)
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -59,7 +38,7 @@ export function CalendarDatePicker({
         }
       >
         <span className={value === '' ? 'text-muted-foreground' : undefined}>
-          {value === '' ? placeholder : formatCalendarDate(value)}
+          {value === '' ? placeholder : formatCalendarDate(value, dateFormat)}
         </span>
         <CalendarIcon className="size-4 text-muted-foreground" />
       </PopoverTrigger>

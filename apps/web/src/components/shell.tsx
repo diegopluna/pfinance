@@ -102,6 +102,16 @@ export function Shell() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
+                {/* Last in the nav (Claude Design 2e); every Member's, like
+                    the preferences it holds (issue #31). */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith('/settings')}
+                    render={<Link to="/settings" />}
+                  >
+                    Settings
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

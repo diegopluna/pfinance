@@ -33,6 +33,7 @@ import {
   parseCategoryFields,
   setCategoryArchived,
 } from './categories.ts'
+import { parseHouseholdPatch } from './household.ts'
 import {
   findInvite,
   generateInviteToken,
@@ -168,8 +169,14 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     const db = createDb(c.env.DB)
     const { householdId, role } = c.var.membership
     const [householdRow] = await db
-      // currency rides along so clients can format every amount (ADR 0002).
-      .select({ id: household.id, name: household.name, currency: household.currency })
+      // currency rides along so clients can format every amount (ADR 0002),
+      // dateFormat so they can format every calendar date (issue #31).
+      .select({
+        id: household.id,
+        name: household.name,
+        currency: household.currency,
+        dateFormat: household.dateFormat,
+      })
       .from(household)
       .where(eq(household.id, householdId))
       .limit(1)
@@ -189,6 +196,35 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
       role,
     })
   })
+  // --- Household settings (issue #31) — member-level: the preference shapes
+  // how the shared ledger reads, and the ledger is every Member's
+  // (CONTEXT.md), so no ownerGuard. Presentation only — no stored date is
+  // ever rewritten by this.
+  .patch(
+    '/api/household',
+    validator('json', (value, c) => {
+      const parsed = parseHouseholdPatch(value)
+      return parsed.ok ? parsed.value : c.json({ error: parsed.error }, 400)
+    }),
+    async (c) => {
+      const db = createDb(c.env.DB)
+      const { householdId } = c.var.membership
+      const [updated] = await db
+        .update(household)
+        .set(c.req.valid('json'))
+        .where(eq(household.id, householdId))
+        .returning({
+          id: household.id,
+          name: household.name,
+          currency: household.currency,
+          dateFormat: household.dateFormat,
+        })
+      if (!updated) {
+        return c.json({ error: 'Household not found' }, 500)
+      }
+      return c.json({ household: updated })
+    },
+  )
   // --- Accounts (issue #7) — member-level: every Member sees and edits the
   // Household's shared ledger (CONTEXT.md), so no ownerGuard here. Balance is
   // always derived via accountView (ADR 0001), never read from a column.
