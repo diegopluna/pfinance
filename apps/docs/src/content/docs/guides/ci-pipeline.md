@@ -24,8 +24,8 @@ On every pull request and every push to `master`:
 2. **Deploy** — pull requests deploy an isolated `pr-N` preview stage and
    comment the web, API, and docs preview URLs on the PR; branch pushes
    deploy a stage named after the branch (`master` pushes deploy a `master`
-   stage — the workflow only names the stage `prod` for a branch called
-   `main`).
+   stage — never `prod`, which is reserved for your manually deployed
+   instance).
 3. **Cleanup** — closing a PR destroys its `pr-N` preview stage (and any
    leftover `test-pr-N` stage).
 
