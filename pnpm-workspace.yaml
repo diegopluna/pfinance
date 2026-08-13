@@ -18,7 +18,7 @@ catalog:
   '@tanstack/router-plugin': ^1.168.23
   '@types/node': ^24
   alchemy: 2.0.0-beta.67
-  better-auth: ^1.6.25
+  better-auth: ^1.6.27
   class-variance-authority: ^0.7.1
   date-fns: ^4.4.0
   drizzle-kit: 1.0.0-rc.4
