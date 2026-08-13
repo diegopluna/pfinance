@@ -709,7 +709,7 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     return c.json({ ok: true })
   })
 
-// The RPC surface consumed by hc<AppType>() in apps/web.
+// The RPC surface consumed by hc<AppType>() in @pfinance/api-client.
 export type AppType = typeof app
 
 export default app

@@ -10,9 +10,9 @@
     "preview": "vp preview"
   },
   "dependencies": {
+    "@pfinance/api-client": "workspace:*",
     "@pfinance/currency": "workspace:*",
     "@pfinance/db": "workspace:*",
-    "@pfinance/server": "workspace:*",
     "@pfinance/ui": "workspace:*",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",

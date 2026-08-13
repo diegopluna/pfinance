@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { call } from '@/lib/api-call'
+import { call } from '@pfinance/api-client'
 import { keys } from '@/lib/query-keys'
 
 // The monthly Net Worth series (issue #17), server-derived like every chart
