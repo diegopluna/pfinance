@@ -63,12 +63,16 @@ const isApiMeta = (body: unknown): body is ApiMeta => {
   )
 }
 
-// One probe of `${base}/api/meta`, reduced to the four outcomes the
+// One probe of `${base}/api/meta`, reduced to the five outcomes the
 // classifier distinguishes. 'missing' is specifically a 404: per ADR 0007
-// the endpoint's absence is itself the "Server too old" signal, while any
-// other non-contract answer means the URL isn't a pfinance API at all.
+// the endpoint's absence is itself the "Server too old" signal.
+// 'server-error' (5xx) is a server failing rather than missing or foreign —
+// it reads as unreachable, never as "not a pfinance Server", so an outage
+// tells the user "try again" instead of "your URL is wrong". Everything
+// else off-contract means the URL isn't a pfinance API at all.
 type MetaProbe =
   | { kind: 'network-error' }
+  | { kind: 'server-error' }
   | { kind: 'missing' }
   | { kind: 'invalid' }
   | { kind: 'valid'; meta: ApiMeta }
@@ -80,6 +84,7 @@ const fetchMeta = async (base: string, fetchImpl: typeof fetch): Promise<MetaPro
   } catch {
     return { kind: 'network-error' }
   }
+  if (response.status >= 500) return { kind: 'server-error' }
   if (response.status === 404) return { kind: 'missing' }
   if (!response.ok) return { kind: 'invalid' }
   const body: unknown = await response.json().catch(() => null)
@@ -95,6 +100,7 @@ const classify = (
 ): ConnectionState => {
   switch (probe.kind) {
     case 'network-error':
+    case 'server-error':
       return { state: 'unreachable' }
     case 'missing':
       return { state: 'server-too-old', apiUrl }
@@ -156,7 +162,8 @@ export const probeConnection = async (
   // host answers /api/meta with 200 HTML; a plain static host with 404), so
   // look for the pairing file and probe where it points. Without one, the
   // typed base's own answer stands: a 404 means a Server from before ADR
-  // 0007, anything else isn't a pfinance Server.
+  // 0007, a 5xx means a Server that's down, anything else isn't a pfinance
+  // Server.
   const target = await fetchWellKnownApiUrl(base, fetchImpl)
   if (target === null) return classify(probe, supported, base)
   return classify(await fetchMeta(target, fetchImpl), supported, target)

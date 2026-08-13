@@ -20,6 +20,10 @@ afterAll.skipIf(!process.env.CI)(destroy(Stack), { timeout: 600_000 })
 // that window away; every test probes only after this succeeds.
 const warm = (apiUrl: string) => Test.getWhenReady(`${apiUrl}/api/meta`)
 
+// What every deployed test worker serves from GET /api/meta (ADR 0007) —
+// apiVersion is 1 until the first breaking API change.
+const liveMeta = { product: 'pfinance', apiVersion: 1, serverVersion: expect.any(String) }
+
 test(
   'probing the API URL with a range containing the live apiVersion connects',
   Effect.gen(function* () {
@@ -33,7 +37,7 @@ test(
     expect(state).toEqual({
       state: 'connected',
       apiUrl,
-      meta: { product: 'pfinance', apiVersion: 1, serverVersion: expect.any(String) },
+      meta: liveMeta,
     })
   }),
   { timeout: 120_000 },
@@ -57,7 +61,7 @@ test(
     expect(tooOld).toEqual({
       state: 'server-too-old',
       apiUrl,
-      meta: { product: 'pfinance', apiVersion: 1, serverVersion: expect.any(String) },
+      meta: liveMeta,
     })
 
     // Above the supported range: the app predates the Server → update app.
@@ -65,7 +69,7 @@ test(
     expect(tooNew).toEqual({
       state: 'app-too-old',
       apiUrl,
-      meta: { product: 'pfinance', apiVersion: 1, serverVersion: expect.any(String) },
+      meta: liveMeta,
     })
   }),
   { timeout: 120_000 },
@@ -158,6 +162,15 @@ test.provider(
       )
 
       expect(state).toEqual({ state: 'not-a-server' })
+
+      // A 5xx is a server failing, not a server missing: a real pfinance
+      // Server mid-outage must read as unreachable ("try again"), never as
+      // "not a pfinance Server" ("your URL is wrong") — issue #70's designed
+      // states point at the right fix. /broken answers 500 on every path.
+      const outage = yield* Effect.promise(() =>
+        probeConnection(`${url}/broken`, { minApiVersion: 1, maxApiVersion: 1 }),
+      )
+      expect(outage).toEqual({ state: 'unreachable' })
     }),
   { timeout: 600_000 },
 )
@@ -195,7 +208,7 @@ test.provider(
       expect(state).toEqual({
         state: 'connected',
         apiUrl,
-        meta: { product: 'pfinance', apiVersion: 1, serverVersion: expect.any(String) },
+        meta: liveMeta,
       })
     }),
   { timeout: 600_000 },
