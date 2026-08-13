@@ -7,17 +7,17 @@ catalogMode: prefer
 nodeLinker: hoisted
 
 catalog:
-  "@base-ui/react": ^1.6.0
-  "@better-auth/expo": ^1.6.25
-  "@cloudflare/workers-types": ^5.20260801.1
-  "@libsql/client": ^0.17.4
-  "@effect/platform-node": 4.0.0-beta.102
-  "@tanstack/react-form": ^1.33.3
-  "@tanstack/react-query": ^5.101.4
-  "@tanstack/react-router": ^1.170.18
-  "@tanstack/react-table": ^8.21.3
-  "@tanstack/router-plugin": ^1.168.23
-  "@types/node": ^24
+  '@base-ui/react': ^1.6.0
+  '@better-auth/expo': ^1.6.25
+  '@cloudflare/workers-types': ^5.20260801.1
+  '@libsql/client': ^0.17.4
+  '@effect/platform-node': 4.0.0-beta.102
+  '@tanstack/react-form': ^1.33.3
+  '@tanstack/react-query': ^5.101.4
+  '@tanstack/react-router': ^1.170.18
+  '@tanstack/react-table': ^8.21.3
+  '@tanstack/router-plugin': ^1.168.23
+  '@types/node': ^24
   alchemy: 2.0.0-beta.67
   better-auth: ^1.6.27
   class-variance-authority: ^0.7.1
@@ -36,12 +36,12 @@ catalog:
   node-addon-api: ^8.9.1
   node-gyp: ^13.0.1
 overrides:
-  vite: "catalog:"
+  vite: 'catalog:'
 peerDependencyRules:
   allowAny:
     - vite
   allowedVersions:
-    vite: "*"
+    vite: '*'
 minimumReleaseAgeExclude:
   - hono@4.13.0
 allowBuilds:
