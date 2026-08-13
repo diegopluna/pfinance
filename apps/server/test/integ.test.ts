@@ -231,7 +231,7 @@ test.provider(
 )
 
 test.provider(
-  'native-style sign-in reaches /api/me with the session replayed as a header',
+  'native-style sign-in reaches /api/me; native-style sign-out revokes the session',
   (scratch) =>
     Effect.gen(function* () {
       const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
@@ -263,6 +263,25 @@ test.provider(
       const body = yield* readMe(me)
       expect(body.user.email).toBe(email)
       expect(body.role).toBe('owner')
+
+      // Native-style sign-out (issue #77): same transport — expo-origin for
+      // the CSRF check, the stored cookie replayed as a header. The session
+      // must die server-side, not merely leave the device's secure store.
+      const signOut = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/auth/sign-out`).pipe(
+          nativeOrigin,
+          withCookie(cookie),
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ),
+      )
+      expect(signOut.status).toBe(200)
+
+      // executeWhenReady, not executeWarm: this asserts a 401, so retrying
+      // past a stray edge placeholder 404 (issue #68) can't mask the result.
+      const after = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
+      )
+      expect(after.status).toBe(401)
     }),
   { timeout: 600_000 },
 )

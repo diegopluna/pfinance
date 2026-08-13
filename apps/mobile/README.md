@@ -23,11 +23,21 @@ pnpm android # Android emulator
 The connect flow (issue #76): type a Server address or scan the pairing QR
 code from the web app's settings, and the shared probe in
 `@pfinance/api-client` classifies the URL into one of five connection states
-(ADR 0007), each rendered as its own screen. A successful connect ends at a
-sign-in placeholder.
+(ADR 0007), each rendered as its own screen.
+
+Sign-in and the app shell (issue #77): a successful connect leads to real
+email+password sign-in — the same credentials as the web, via the Better
+Auth Expo client, with the session cookie kept in the device secure store —
+and lands on a home screen showing the Household's name and Currency from
+`/api/me`. The connected Server's URL persists in the secure store too, so
+the session survives relaunch (the launch gate in `src/app/index.tsx`
+decides connect vs sign-in vs home from the two stored facts). Settings
+shows the Server URL and offers sign-out and switch-Server; both revoke the
+session server-side and return to connect — the app holds one Server at a
+time.
 
 The app renders the probe's states but owns none of the logic. Its only
-logic on top — the state → screen copy mapping and the supported apiVersion
-range in `src/connect/content.ts` — is node-testable and covered by
-`test/connect-content.test.ts`, which runs with `vp test` from the workspace
-root.
+logic on top is node-testable and covered from the workspace root by
+`vp test`: the state → screen copy mapping and the supported apiVersion
+range (`src/connect/content.ts`, `test/connect-content.test.ts`), and the
+launch-gate decision (`src/shell/route.ts`, `test/shell-route.test.ts`).
