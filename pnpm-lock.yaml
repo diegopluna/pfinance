@@ -349,6 +349,9 @@ importers:
       '@pfinance/currency':
         specifier: workspace:*
         version: link:../../packages/currency
+      '@pfinance/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       better-auth:
         specifier: 'catalog:'
         version: 1.6.27(@cloudflare/workers-types@5.20260801.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3))(mongodb@6.21.0(@aws-sdk/credential-providers@3.1101.0))(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.1.10)

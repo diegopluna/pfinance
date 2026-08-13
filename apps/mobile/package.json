@@ -15,6 +15,7 @@
     "@gorhom/bottom-sheet": "^5.2.14",
     "@pfinance/api-client": "workspace:*",
     "@pfinance/currency": "workspace:*",
+    "@pfinance/db": "workspace:*",
     "better-auth": "catalog:",
     "expo": "~57.0.0",
     "expo-camera": "~57.0.3",
