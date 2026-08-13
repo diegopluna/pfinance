@@ -1,12 +1,13 @@
-import { formatAmount, isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
+import { call, type ApiClient } from '@pfinance/api-client'
+import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
-import { call } from '@pfinance/api-client'
-import type { InferResponseType } from 'hono/client'
 import { Redirect } from 'expo-router'
 import { Chip, Typography } from 'heroui-native'
+import type { InferResponseType } from 'hono/client'
 import { useCallback, type JSX } from 'react'
 import { FlatList, View } from 'react-native'
 import { apiFor } from '@/api/client'
+import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
@@ -18,8 +19,7 @@ import { storedServerUrl } from '@/connect/store'
 // here. Liabilities carry the LIABILITY badge so debt reads as debt at a
 // glance; their sign is user-carried, never flipped by kind.
 
-type ApiShape = ReturnType<typeof apiFor>
-type AccountEntry = InferResponseType<ApiShape['api']['accounts']['$get'], 200>['accounts'][number]
+type AccountEntry = InferResponseType<ApiClient['api']['accounts']['$get'], 200>['accounts'][number]
 
 const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) => [type, label]))
 
@@ -55,10 +55,7 @@ function AccountRow({
 export default function AccountsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
 
-  const fetchMe = useCallback(
-    () => call(apiFor(apiUrl ?? '').api.me.$get(), 'Could not load your Household.'),
-    [apiUrl],
-  )
+  const { me, currency } = useHousehold(apiUrl)
   const fetchAccounts = useCallback(
     () =>
       call(
@@ -67,17 +64,9 @@ export default function AccountsScreen(): JSX.Element {
       ),
     [apiUrl],
   )
-  const me = useApiQuery(apiUrl === null ? null : fetchMe)
   const accounts = useApiQuery(apiUrl === null ? null : fetchAccounts)
 
   if (apiUrl === null) return <Redirect href="/" />
-
-  // A Server newer than this build may know Currencies this bundle doesn't;
-  // formatting falls back rather than crashing the list (the web stance).
-  const currency: CurrencyCode =
-    me.data !== null && isSupportedCurrency(me.data.household.currency)
-      ? me.data.household.currency
-      : 'USD'
 
   const error = me.error ?? accounts.error
   const retry = () => {

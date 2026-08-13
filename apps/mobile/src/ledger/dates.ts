@@ -43,3 +43,11 @@ export const formatCalendarDate = (value: string, format: DateFormat, locale?: s
   const date = parseCalendarDate(value)
   return date === undefined ? value : formatDayDate(date, format, locale)
 }
+
+// The device's local calendar date — what the period presets count back
+// from. Local parts, never toISOString: UTC would name tomorrow's date all
+// evening east of Greenwich.
+export const todayCalendarString = (): string => {
+  const now = new Date()
+  return `${pad(now.getFullYear(), 4)}-${pad(now.getMonth() + 1, 2)}-${pad(now.getDate(), 2)}`
+}

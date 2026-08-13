@@ -5,8 +5,11 @@ import type { TransactionKind } from '@pfinance/db/transaction-kinds'
 // (issue #78) and pinned from Core Screens 2a via the web table
 // (DECISIONS.md): expenses plain, income positive with an explicit +,
 // Transfers muted and unsigned (direction is from → to, never a sign),
-// Adjustments muted keeping their sign. Free of react-native imports so the
-// workspace's node test runner covers it.
+// Adjustments muted keeping their sign. Mirrors the amount cell inlined in
+// apps/web/src/routes/_authed/transactions.tsx — the two clients must
+// render the same row the same way; promote to a shared package when a
+// third caller appears. Free of react-native imports so the workspace's
+// node test runner covers it.
 
 export interface LedgerAmount {
   text: string

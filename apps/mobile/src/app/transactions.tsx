@@ -1,36 +1,38 @@
-import { isSupportedCurrency, type CurrencyCode } from '@pfinance/currency'
-import { isDateFormat, type DateFormat } from '@pfinance/db/date-formats'
-import { call } from '@pfinance/api-client'
-import type { InferResponseType } from 'hono/client'
+import { call, type ApiClient } from '@pfinance/api-client'
+import type { CurrencyCode } from '@pfinance/currency'
+import type { DateFormat } from '@pfinance/db/date-formats'
 import { Redirect } from 'expo-router'
 import { Chip, SearchField, Typography } from 'heroui-native'
+import type { InferResponseType } from 'hono/client'
 import { useCallback, useState, type JSX } from 'react'
 import { FlatList, ScrollView, View } from 'react-native'
 import { apiFor } from '@/api/client'
+import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { storedServerUrl } from '@/connect/store'
-import { formatCalendarDate } from '@/ledger/dates'
+import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
-import { noFilters, transactionQuery, type TransactionFilters } from '@/ledger/filters'
+import {
+  noFilters,
+  transactionQuery,
+  UNCATEGORIZED,
+  type PeriodPreset,
+  type TransactionFilters,
+} from '@/ledger/filters'
 
 // The browsable Ledger (issue #78): the Transaction list with the existing
 // API's filters — Account, Category (Uncategorized included, never hidden),
-// the Expense/Income derived views, and description search. Amounts render
-// through the ledger display rules (ledger/display.ts): a Transfer leg or
-// Balance Adjustment is visibly badged and never reads as an ordinary
-// entry. Date-range filtering waits for a mobile date picker.
+// the Expense/Income derived views, whole-month period presets over the
+// from/to bounds, and description search. Amounts render through the ledger
+// display rules (ledger/display.ts): a Transfer leg or Balance Adjustment
+// is visibly badged and never reads as an ordinary entry.
 
-type ApiShape = ReturnType<typeof apiFor>
 type TransactionEntry = InferResponseType<
-  ApiShape['api']['transactions']['$get'],
+  ApiClient['api']['transactions']['$get'],
   200
 >['transactions'][number]
-
-// The filter sentinel for the Uncategorized state — a state, not a Category
-// row, so it can't collide with a real id (server-side transactions.ts).
-const UNCATEGORIZED = 'uncategorized'
 
 function FilterChip({
   label,
@@ -122,14 +124,20 @@ function TransactionRow({
   )
 }
 
+const PERIOD_CHOICES: { value: PeriodPreset; label: string }[] = [
+  { value: 'this-month', label: 'This month' },
+  { value: 'last-month', label: 'Last month' },
+  { value: 'last-3-months', label: 'Last 3 months' },
+]
+
+const isPeriodPreset = (value: string): value is PeriodPreset =>
+  value === '' || PERIOD_CHOICES.some((choice) => choice.value === value)
+
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
 
-  const fetchMe = useCallback(
-    () => call(apiFor(apiUrl ?? '').api.me.$get(), 'Could not load your Household.'),
-    [apiUrl],
-  )
+  const { me, currency, dateFormat } = useHousehold(apiUrl)
   // Archived Accounts and Categories still name existing rows, so both
   // lookups load the full vocabulary (the web transactions screen's stance).
   const fetchAccounts = useCallback(
@@ -153,28 +161,20 @@ export default function TransactionsScreen(): JSX.Element {
   const fetchTransactions = useCallback(
     () =>
       call(
-        apiFor(apiUrl ?? '').api.transactions.$get({ query: transactionQuery(filters) }),
+        apiFor(apiUrl ?? '').api.transactions.$get({
+          query: transactionQuery(filters, todayCalendarString()),
+        }),
         'Could not load your Transactions.',
       ),
     [apiUrl, filters],
   )
 
   const skip = apiUrl === null
-  const me = useApiQuery(skip ? null : fetchMe)
   const accounts = useApiQuery(skip ? null : fetchAccounts)
   const categories = useApiQuery(skip ? null : fetchCategories)
   const transactions = useApiQuery(skip ? null : fetchTransactions)
 
   if (apiUrl === null) return <Redirect href="/" />
-
-  const currency: CurrencyCode =
-    me.data !== null && isSupportedCurrency(me.data.household.currency)
-      ? me.data.household.currency
-      : 'USD'
-  const dateFormat: DateFormat =
-    me.data !== null && isDateFormat(me.data.household.dateFormat)
-      ? me.data.household.dateFormat
-      : 'system'
 
   const accountNames = new Map(
     (accounts.data?.accounts ?? []).map((entry) => [entry.id, entry.name]),
@@ -184,11 +184,11 @@ export default function TransactionsScreen(): JSX.Element {
   )
 
   const queries = [me, accounts, categories, transactions]
-  const error = queries.find((q) => q.error !== null)?.error ?? null
+  const error = queries.find((query) => query.error !== null)?.error ?? null
   const retry = () => {
-    for (const q of queries) if (q.error !== null) q.retry()
+    for (const query of queries) if (query.error !== null) query.retry()
   }
-  const loaded = queries.every((q) => q.data !== null)
+  const loaded = queries.every((query) => query.data !== null)
 
   // Active (unarchived) choices only: an archived Account or Category can't
   // be picked as a filter, it just still names its old rows.
@@ -201,6 +201,7 @@ export default function TransactionsScreen(): JSX.Element {
       .filter((entry) => entry.archivedAt === null)
       .map((entry) => ({ value: entry.id, label: entry.name })),
   ]
+  const filtering = Object.keys(transactionQuery(filters, todayCalendarString())).length > 0
 
   return (
     <ListScreen title="Transactions">
@@ -219,6 +220,13 @@ export default function TransactionsScreen(): JSX.Element {
         value={filters.view}
         onChange={(view) =>
           setFilters((f) => ({ ...f, view: view === 'expense' || view === 'income' ? view : '' }))
+        }
+      />
+      <ChipRow
+        choices={PERIOD_CHOICES}
+        value={filters.period}
+        onChange={(period) =>
+          setFilters((f) => ({ ...f, period: isPeriodPreset(period) ? period : '' }))
         }
       />
       {accountChoices.length > 1 && (
@@ -240,9 +248,9 @@ export default function TransactionsScreen(): JSX.Element {
           error={null}
           retry={retry}
           empty={
-            Object.keys(transactionQuery(filters)).length === 0
-              ? 'No transactions yet — the ledger fills up from the web app.'
-              : 'No transactions match these filters.'
+            filtering
+              ? 'No transactions match these filters.'
+              : 'No transactions yet — the ledger fills up from the web app.'
           }
         />
       ) : (
