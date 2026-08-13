@@ -39,7 +39,7 @@ const freshDatabase = Cloudflare.D1.Database(
   Effect.map(schema, (s) => ({ migrationsDir: s.out })),
 )
 
-const freshServer = Cloudflare.Worker('FreshServer', {
+export const freshServer = Cloudflare.Worker('FreshServer', {
   main: './apps/server/src/index.ts',
   compatibility: { flags: ['nodejs_compat'] },
   env: {

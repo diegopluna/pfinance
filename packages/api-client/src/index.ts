@@ -1,3 +1,5 @@
+export * from './connection.ts'
+
 import { hc } from 'hono/client'
 import type { ClientRequestOptions, ClientResponse } from 'hono/client'
 import type { SuccessStatusCode } from 'hono/utils/http-status'
