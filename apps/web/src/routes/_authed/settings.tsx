@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { renderSVG } from 'uqr'
 import { DATE_FORMATS, isDateFormat, type DateFormat } from '@pfinance/db/date-formats'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { Field, FieldLabel } from '@pfinance/ui/components/field'
@@ -33,6 +34,16 @@ const dateFormatOptions = () => {
     label: `${DATE_FORMAT_LABELS[format]} · ${formatDayDate(today, format)}`,
   }))
 }
+
+// The pairing QR (issue #74): the raw https URL of the Server's API — no
+// custom scheme, no structured payload — so the app's scanner feeds the same
+// probe as typing the address by hand. A build-time constant, so it is
+// encoded once at module load. Black-on-white regardless of theme: a QR is
+// an optical artifact, and scanners want dark modules on a light ground.
+const serverUrl = import.meta.env.VITE_API_URL
+const serverQr = serverUrl
+  ? `data:image/svg+xml;utf8,${encodeURIComponent(renderSVG(serverUrl, { ecc: 'M', border: 2 }))}`
+  : null
 
 // Settings (issue #31; Claude Design 2e places Settings last in the nav).
 // One Display card for now — the date format preference. Household-level
@@ -97,6 +108,33 @@ function SettingsScreen() {
                 </p>
               )}
             </Field>
+          </CardContent>
+        </Card>
+      )}
+
+      {serverQr && (
+        <Card size="sm" className="max-w-xl">
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-sm font-medium">Mobile app</h2>
+              <p className="text-sm text-muted-foreground">
+                Scan with the pfinance app on your phone to connect it to this server.
+              </p>
+            </div>
+            <img
+              src={serverQr}
+              alt="QR code of this server's address"
+              width={192}
+              height={192}
+              className="size-48 rounded-lg border border-border"
+            />
+            <p className="text-xs text-muted-foreground">
+              Can&apos;t scan? Enter{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+                {serverUrl}
+              </code>{' '}
+              in the app instead.
+            </p>
           </CardContent>
         </Card>
       )}
