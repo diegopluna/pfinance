@@ -15,6 +15,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@pfinance/api-client": "workspace:*",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },

@@ -346,9 +346,13 @@ test.provider(
       const full = yield* readAccounts(
         yield* listAccounts(apiUrl, owner.cookie, '?includeArchived=true'),
       )
-      // Name breaks the creation-timestamp tie (second precision), so the
-      // full list is alphabetical here.
-      expect(full.map((entry) => [entry.name, entry.balance, entry.archivedAt !== null])).toEqual([
+      // Compared alphabetically, not in list order: the list orders by
+      // creation timestamp at second precision with name as the tie-break,
+      // and whether the three creations share a second depends on request
+      // latency — locally they tie, over a real network they may not.
+      const rows = full.map((entry) => [entry.name, entry.balance, entry.archivedAt !== null])
+      rows.sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+      expect(rows).toEqual([
         ['Checking', 247000, false],
         ['Old Savings', 26000, true],
         ['Visa', -80000, false],
