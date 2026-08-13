@@ -792,8 +792,11 @@ test.provider(
         balanceOf(yield* readAccounts(yield* listAccounts(apiUrl, owner.cookie)), checking.id),
       ).toBe(150700)
 
-      // Revert: one DELETE undoes the whole batch.
-      const reverted = yield* executeWarm(deleteImportRequest(apiUrl, owner.cookie, mistake.id))
+      // Revert: one DELETE undoes the whole batch. executeWhenReady: this
+      // expects 200, so edge placeholder 404s retry away (issue #68).
+      const reverted = yield* Test.executeWhenReady(
+        deleteImportRequest(apiUrl, owner.cookie, mistake.id),
+      )
       expect(reverted.status).toBe(200)
       expect(yield* reverted.json).toEqual({ ok: true })
 
@@ -829,7 +832,8 @@ test.provider(
         }),
       )
       expect(
-        (yield* executeWarm(deleteImportRequest(apiUrl, owner.cookie, abandoned.id))).status,
+        (yield* Test.executeWhenReady(deleteImportRequest(apiUrl, owner.cookie, abandoned.id)))
+          .status,
       ).toBe(200)
       expect(
         (yield* readImports(yield* listImports(apiUrl, owner.cookie))).map(
