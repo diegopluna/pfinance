@@ -1,10 +1,9 @@
-import type { CurrencyCode } from '@pfinance/currency'
+import { compactAmount, type CurrencyCode } from '@pfinance/currency'
 import { useThemeColor } from 'heroui-native'
 import { useState, type JSX } from 'react'
 import { useColorScheme, View } from 'react-native'
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg'
-import { compactAmount } from '@/charts/compact'
-import { lineLayout, monthTickIndices } from '@/charts/layout'
+import { lineLayout, monthLabelAnchor, monthTickIndices } from '@/charts/layout'
 import { monthLabel } from '@/charts/months'
 import { chartPalette } from '@/charts/palette'
 
@@ -66,7 +65,15 @@ export function NetWorthChart({
             />
           ))}
           {layout.ticks.map((tick) => (
-            <SvgText key={`label-${tick.value}`} x={0} y={tick.y - 4} fontSize={10} fill={muted}>
+            <SvgText
+              key={`label-${tick.value}`}
+              x={0}
+              // Labels sit above their gridline; the top tick's sits below
+              // it instead — above would clip on the frame edge.
+              y={tick.y < 12 ? tick.y + 12 : tick.y - 4}
+              fontSize={10}
+              fill={muted}
+            >
               {compactAmount(tick.value, currency)}
             </SvgText>
           ))}
@@ -100,7 +107,7 @@ export function NetWorthChart({
                 y={CHART_HEIGHT + LABEL_BAND - 4}
                 fontSize={10}
                 fill={muted}
-                textAnchor={point.x < 32 ? 'start' : point.x > width - 40 ? 'end' : 'middle'}
+                textAnchor={monthLabelAnchor(point.x, width)}
               >
                 {monthLabel(month, 'tick')}
               </SvgText>

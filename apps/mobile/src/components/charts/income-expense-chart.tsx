@@ -2,7 +2,12 @@ import { useThemeColor, Typography } from 'heroui-native'
 import { useState, type JSX } from 'react'
 import { useColorScheme, View } from 'react-native'
 import Svg, { Line, Path, Text as SvgText } from 'react-native-svg'
-import { monthTickIndices, pairedBarsLayout, topRoundedBarPath } from '@/charts/layout'
+import {
+  monthLabelAnchor,
+  monthTickIndices,
+  pairedBarsLayout,
+  topRoundedBarPath,
+} from '@/charts/layout'
 import { monthLabel } from '@/charts/months'
 import { chartPalette } from '@/charts/palette'
 
@@ -86,7 +91,7 @@ export function IncomeExpenseChart({
                   y={CHART_HEIGHT + LABEL_BAND - 4}
                   fontSize={10}
                   fill={muted}
-                  textAnchor={bar.x < 32 ? 'start' : bar.x > width - 40 ? 'end' : 'middle'}
+                  textAnchor={monthLabelAnchor(bar.x, width)}
                 >
                   {monthLabel(month, 'tick')}
                 </SvgText>

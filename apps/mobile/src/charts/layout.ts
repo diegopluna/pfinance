@@ -14,8 +14,9 @@ const niceStep = (raw: number): number => {
 // Gridline values covering [min, max] in minor units. The domain follows
 // the data instead of forcing a zero baseline — net worth lives below zero
 // in a household deep in a mortgage (the web chart's stance); bar charts
-// pass min 0 themselves. A flat series widens by one major unit per side so
-// a single-month ledger still has a band to sit in.
+// pass min 0 themselves. A flat series widens by a fixed 100 minor units
+// per side — the scale is currency-blind, the pad only gives a single-month
+// ledger a band to sit in.
 export const valueTicks = (min: number, max: number, count = 4): number[] => {
   const lo = min === max ? min - 100 : min
   const hi = min === max ? max + 100 : max
@@ -90,6 +91,12 @@ export const monthTickIndices = (count: number, maxLabels: number): number[] => 
   }
   return indices.slice(-maxLabels)
 }
+
+// A month label near either frame edge anchors inward so it never clips —
+// one rule for both time-series charts. The margins approximate a rendered
+// "Aug 2026" at the axis font size.
+export const monthLabelAnchor = (x: number, width: number): 'start' | 'middle' | 'end' =>
+  x < 32 ? 'start' : x > width - 40 ? 'end' : 'middle'
 
 export interface BarRect {
   x: number

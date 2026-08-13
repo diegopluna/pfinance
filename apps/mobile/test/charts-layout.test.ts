@@ -1,5 +1,6 @@
 import { expect, test } from 'vite-plus/test'
 import {
+  monthLabelAnchor,
   lineLayout,
   monthTickIndices,
   pairedBarsLayout,
@@ -127,4 +128,14 @@ test('topRoundedBarPath clamps the radius to a short bar', () => {
 
 test('topRoundedBarPath draws nothing for a zero-height bar', () => {
   expect(topRoundedBarPath({ x: 0, y: 100, width: 12, height: 0 }, 4)).toBe('')
+})
+
+// --- Month-label anchoring ---
+// A label near either frame edge anchors inward so it never clips; the
+// same rule serves both time-series charts.
+
+test('monthLabelAnchor anchors edge labels inward', () => {
+  expect(monthLabelAnchor(0, 320)).toBe('start')
+  expect(monthLabelAnchor(160, 320)).toBe('middle')
+  expect(monthLabelAnchor(320, 320)).toBe('end')
 })

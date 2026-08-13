@@ -1,14 +1,12 @@
 import { expect, test } from 'vite-plus/test'
-import { compactAmount } from '../src/charts/compact.ts'
+import { compactAmount } from '../src/index.ts'
 
-// --- Compact axis labels (issue #79) ---
+// --- Compact amounts (issue #79) ---
 // The short value form for display-only chart geometry — axis ticks and bar
-// tips; exact amounts always render via formatAmount. Unlike the web's
-// Intl-compact version (apps/web/src/lib/format.ts), this one is pure
-// string-free math so Hermes' partial Intl support can't vary the output
-// between devices. The minor→major conversion reads the exponent from the
-// shared currency package (ADR 0006) — the one float division here never
-// touches a ledger amount that is kept.
+// tips; exact amounts always render via formatAmount. Fixed English
+// suffixes and integer arithmetic, so Hermes' partial Intl support can't
+// vary the output between devices and no float ever touches an amount
+// (ADR 0006).
 
 test('small amounts render as whole major units', () => {
   expect(compactAmount(23456, 'USD')).toBe('235')
@@ -36,8 +34,15 @@ test('rounding can promote across a threshold', () => {
 
 test('negative amounts keep their sign — net worth lives below zero too', () => {
   expect(compactAmount(-123456, 'USD')).toBe('-1.2K')
+  // ...but an amount that rounds to nothing never renders "-0".
+  expect(compactAmount(-40, 'USD')).toBe('0')
 })
 
-test('zero-exponent currencies count their minor units as major', () => {
+test('the exponent comes from the Currency, not an assumption of cents', () => {
   expect(compactAmount(1500, 'JPY')).toBe('1.5K')
+  expect(compactAmount(1500000, 'BHD')).toBe('1.5K')
+})
+
+test('non-integer input is rejected, the package boundary rule', () => {
+  expect(() => compactAmount(12.5, 'USD')).toThrow(RangeError)
 })
