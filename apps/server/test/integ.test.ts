@@ -11,6 +11,7 @@ import {
   deploy,
   destroy,
   freshApiUrl,
+  nativeOrigin,
   readMe,
   signInRequest,
   signUpOwner,
@@ -65,6 +66,34 @@ test(
       apiVersion: 1,
       serverVersion: expect.any(String),
     })
+  }),
+  { timeout: 120_000 },
+)
+
+test(
+  'CORS reflects the web origin but never the native app scheme',
+  Effect.gen(function* () {
+    const { apiUrl = '' } = yield* stack
+
+    // The web client's cross-site requests keep working: its origin is
+    // reflected and credentialed, exactly as before issue #75.
+    const web = yield* Test.executeWhenReady(
+      HttpClientRequest.get(`${apiUrl}/api/meta`).pipe(trustedOrigin),
+    )
+    expect(web.status).toBe(200)
+    expect(web.headers['access-control-allow-origin']).toBe('http://localhost:3000')
+    expect(web.headers['access-control-allow-credentials']).toBe('true')
+
+    // The app scheme is trusted by Better Auth only (via the expo-origin
+    // header) — a browser claiming it as an Origin gets nothing reflected,
+    // so trusting the scheme widened no CORS surface.
+    const scheme = yield* Test.executeWhenReady(
+      HttpClientRequest.get(`${apiUrl}/api/meta`).pipe(
+        HttpClientRequest.setHeader('origin', 'pfinance://'),
+      ),
+    )
+    expect(scheme.status).toBe(200)
+    expect(scheme.headers['access-control-allow-origin']).toBeUndefined()
   }),
   { timeout: 120_000 },
 )
@@ -197,6 +226,43 @@ test.provider(
         ),
       )
       expect(signIn.status).toBe(401)
+    }),
+  { timeout: 600_000 },
+)
+
+test.provider(
+  'native-style sign-in reaches /api/me with the session replayed as a header',
+  (scratch) =>
+    Effect.gen(function* () {
+      const { apiUrl = '' } = yield* scratch.deploy(freshApiUrl)
+      const email = 'mobile-member@example.com'
+
+      // The account exists from the web flow — mobile is sign-in only (#70).
+      const signUp = yield* Test.executeWhenReady(signUpRequest(apiUrl, email, 'Mobile Member'))
+      expect(signUp.status).toBe(200)
+
+      // Native-style sign-in: no browser Origin header anywhere; the app's
+      // custom scheme rides the expo-origin header instead, exactly as the
+      // Expo auth client sends it. Same email+password endpoint as the web.
+      const signIn = yield* Test.executeWhenReady(
+        HttpClientRequest.post(`${apiUrl}/api/auth/sign-in/email`).pipe(
+          nativeOrigin,
+          HttpClientRequest.bodyJsonUnsafe({ email, password: 'correct-horse-battery' }),
+        ),
+      )
+      expect(signIn.status).toBe(200)
+      const cookie = cookieHeader(signIn)
+      expect(cookie).not.toBe('')
+
+      // The Expo client keeps the session cookie in the device secure store
+      // and replays it as a plain header — no browser cookie jar involved.
+      const me = yield* Test.executeWhenReady(
+        HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
+      )
+      expect(me.status).toBe(200)
+      const body = yield* readMe(me)
+      expect(body.user.email).toBe(email)
+      expect(body.role).toBe('owner')
     }),
   { timeout: 600_000 },
 )

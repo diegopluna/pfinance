@@ -1,10 +1,11 @@
+import { expo } from '@better-auth/expo'
 import { authAccount, createDb, session, user, verification } from '@pfinance/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError } from 'better-auth/api'
 import type { ServerEnv } from './env.ts'
 import { findInvite, inviteRejectionMessage } from './invites.ts'
-import { trustedOrigins } from './origins.ts'
+import { appScheme, trustedOrigins } from './origins.ts'
 import { selfServeSignUpAllowed } from './signup-gate.ts'
 import { attachMember, requireSupportedCurrency, signupFieldsFrom } from './signup.ts'
 
@@ -28,8 +29,14 @@ export const createAuth = (env: ServerEnv, baseURL: string) => {
     }),
     // The web app runs on its own origin (localhost:3000 in dev, its own
     // workers.dev domain deployed), so its origin must be trusted and the
-    // session cookie must survive cross-site requests.
-    trustedOrigins: trustedOrigins(env),
+    // session cookie must survive cross-site requests. The mobile app's
+    // custom scheme is trusted here only — never in the CORS list.
+    trustedOrigins: [...trustedOrigins(env), appScheme],
+    // The Expo plugin lets the native app past the CSRF origin check: it
+    // promotes the expo-origin header (the app's custom scheme, absent any
+    // browser Origin) to the Origin validated against trustedOrigins. It
+    // adds no auth methods — email+password stays the only one (ADR 0005).
+    plugins: [expo()],
     advanced: {
       defaultCookieAttributes: { sameSite: 'none', secure: true },
     },

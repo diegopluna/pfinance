@@ -66,6 +66,13 @@ export const trustedOrigin = HttpClientRequest.setHeader('origin', 'http://local
 
 export const withCookie = (cookie: string) => HttpClientRequest.setHeader('cookie', cookie)
 
+// A native client sends no browser Origin at all; the Expo auth client
+// advertises the app's custom scheme via the expo-origin header instead, and
+// the server-side Expo plugin promotes it to the Origin the CSRF check
+// validates. The literal scheme here is the test's own source of truth for
+// what the server must trust (issue #75).
+export const nativeOrigin = HttpClientRequest.setHeader('expo-origin', 'pfinance://')
+
 export const signUpRequest = (
   apiUrl: string,
   email: string,
