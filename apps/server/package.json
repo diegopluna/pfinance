@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@better-auth/expo": "catalog:",
     "@pfinance/currency": "workspace:*",
     "@pfinance/db": "workspace:*",
     "better-auth": "catalog:",
