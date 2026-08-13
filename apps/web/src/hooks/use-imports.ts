@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { api } from '@/lib/api'
-import { call } from '@/lib/api-call'
+import { call } from '@pfinance/api-client'
 import { invalidateLedger, keys } from '@/lib/query-keys'
 
 type MappingFields = InferRequestType<(typeof api.api.imports)[':id']['preview']['$post']>['json']

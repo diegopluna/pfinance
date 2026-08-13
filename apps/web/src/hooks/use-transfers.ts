@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType } from 'hono/client'
 import { api } from '@/lib/api'
-import { call } from '@/lib/api-call'
+import { call } from '@pfinance/api-client'
 import { invalidateLedger } from '@/lib/query-keys'
 
 type TransferFields = InferRequestType<typeof api.api.transfers.$post>['json']

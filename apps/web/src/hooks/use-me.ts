@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InferRequestType } from 'hono/client'
 import { api } from '@/lib/api'
-import { call } from '@/lib/api-call'
+import { call } from '@pfinance/api-client'
 import { keys } from '@/lib/query-keys'
 
 type HouseholdPatch = InferRequestType<typeof api.api.household.$patch>['json']

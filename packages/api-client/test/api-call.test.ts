@@ -1,8 +1,8 @@
 import type { ClientResponse } from 'hono/client'
 import { expect, test } from 'vite-plus/test'
-import { ApiError, call, isForbidden } from '../src/lib/api-call'
+import { ApiError, call, isForbidden } from '../src/index.ts'
 
-// --- The web application seam (lib/api-call.ts) ---
+// --- The shared client error seam (@pfinance/api-client) ---
 // call() is the one place the ok-check, the server's uniform { error } body,
 // and the throw convention live. No HTTP, no DOM — stubbed responses.
 

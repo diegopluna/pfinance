@@ -10,7 +10,6 @@ import {
   cookieHeader,
   deploy,
   destroy,
-  executeWarm,
   freshApiUrl,
   readMe,
   signInRequest,
@@ -212,7 +211,9 @@ test.provider(
 
       // Replaying the pre-sign-out cookie proves the server revoked the
       // session row — a browser merely clearing its cookie wouldn't 401 here.
-      const after = yield* executeWarm(
+      // executeWhenReady, not executeWarm: this asserts a 401, so retrying
+      // past a stray edge placeholder 404 (issue #68) can't mask the result.
+      const after = yield* Test.executeWhenReady(
         HttpClientRequest.get(`${apiUrl}/api/me`).pipe(withCookie(cookie)),
       )
       expect(after.status).toBe(401)
@@ -580,8 +581,9 @@ test.provider(
       const initial = yield* meFor(apiUrl, owner.cookie)
       expect(initial.household.dateFormat).toBe('system')
 
-      // Household data: no session, no access.
-      const anonymous = yield* executeWarm(
+      // Household data: no session, no access. executeWhenReady: the 401
+      // assertion is safe to retry past edge placeholder 404s (issue #68).
+      const anonymous = yield* Test.executeWhenReady(
         HttpClientRequest.patch(`${apiUrl}/api/household`).pipe(
           trustedOrigin,
           HttpClientRequest.bodyJsonUnsafe({ dateFormat: 'dmy' }),

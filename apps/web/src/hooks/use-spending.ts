@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { call } from '@/lib/api-call'
+import { call } from '@pfinance/api-client'
 import { keys } from '@/lib/query-keys'
 
 // One month of Spending by Category (issue #18), server-computed like every

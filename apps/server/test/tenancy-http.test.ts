@@ -59,7 +59,10 @@ const authedDelete = (apiUrl: string, cookie: string, path: string) =>
 // together, so a failure prints both at the offending line.
 const probe = (request: HttpClientRequest.HttpClientRequest, status: number, error: string) =>
   Effect.gen(function* () {
-    const response = yield* executeWarm(request)
+    // 404-asserting probes must hit the (by then long warm) worker directly —
+    // executeWhenReady would retry away exactly the 404 they assert. Every
+    // other status rides whenReady past edge placeholder 404s (issue #68).
+    const response = yield* status === 404 ? executeWarm(request) : Test.executeWhenReady(request)
     const body = (yield* response.json) as unknown as { error?: string }
     expect({ status: response.status, error: body.error }).toEqual({ status, error })
   })

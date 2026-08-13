@@ -22,7 +22,7 @@ import {
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { isForbidden } from '@/lib/api-call'
+import { isForbidden } from '@pfinance/api-client'
 import { useDateFormat } from '@/hooks/use-date-format'
 import { useInvites, useMemberMutations, useMembers } from '@/hooks/use-members'
 import { useMe } from '@/hooks/use-me'

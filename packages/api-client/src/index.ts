@@ -1,10 +1,21 @@
-import type { ClientResponse } from 'hono/client'
+import { hc } from 'hono/client'
+import type { ClientRequestOptions, ClientResponse } from 'hono/client'
 import type { SuccessStatusCode } from 'hono/utils/http-status'
+import type { AppType } from '@pfinance/server'
 
-// The application seam over the typed RPC client (lib/api.ts): every request
-// crosses call(), so the ok-check, the server's uniform { error } body, and
-// the throw convention exist exactly once. Components keep rendering
-// error.message unchanged; status-dependent UI reads ApiError.status.
+// Typed RPC client over the server's chained route schema. The base URL is a
+// runtime value — each app (web, mobile) binds its own origin and fetch
+// options (cookies, headers) at instantiation.
+export const createApiClient = (baseUrl: string, options?: ClientRequestOptions) =>
+  hc<AppType>(baseUrl, options)
+
+export type ApiClient = ReturnType<typeof createApiClient>
+
+// The application seam over the typed RPC client: every request crosses
+// call(), so the ok-check, the server's uniform { error } body, and the
+// throw convention exist exactly once — every client decodes errors
+// identically. Components keep rendering error.message unchanged;
+// status-dependent UI reads ApiError.status.
 export class ApiError extends Error {
   readonly status: number
   constructor(message: string, status: number) {
