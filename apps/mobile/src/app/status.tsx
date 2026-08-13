@@ -4,8 +4,22 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { Button, Spinner, Typography } from 'heroui-native'
 import { useEffect, useState, type JSX } from 'react'
 import { View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { Screen } from '@/components/screen'
 import { connectStateContent, supportedApiVersions } from '@/connect/content'
+
+// A Server that accepts the TCP connection but never answers would otherwise
+// pin the spinner forever — the platform fetch has no default deadline.
+const PROBE_TIMEOUT_MS = 10_000
+
+const fetchWithTimeout: typeof fetch = async (input, init) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // Both entry paths — the typed address and the scanned QR code — land here
 // with the raw input, and this screen runs the shared probe on it. The five
@@ -19,9 +33,9 @@ export default function StatusScreen(): JSX.Element {
   useEffect(() => {
     let cancelled = false
     setResult(null)
-    // probeConnection resolves for every input — network failures classify
-    // as 'unreachable', they don't reject.
-    void probeConnection(input ?? '', supportedApiVersions).then((state) => {
+    // probeConnection resolves for every input — network failures (the
+    // timeout abort included) classify as 'unreachable', they don't reject.
+    void probeConnection(input ?? '', supportedApiVersions, fetchWithTimeout).then((state) => {
       if (!cancelled) setResult(state)
     })
     return () => {
@@ -30,28 +44,29 @@ export default function StatusScreen(): JSX.Element {
   }, [input, attempt])
 
   return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }}>
-        <View className="flex-1 justify-center gap-8 px-6">
-          {result === null ? (
-            <Probing input={input ?? ''} />
-          ) : (
-            <StateScreen result={result} retry={() => setAttempt((n) => n + 1)} />
-          )}
-        </View>
-      </SafeAreaView>
-    </View>
+    <Screen>
+      {result === null ? (
+        <Probing input={input ?? ''} />
+      ) : (
+        <StateScreen result={result} retry={() => setAttempt((n) => n + 1)} />
+      )}
+    </Screen>
   )
 }
 
 function Probing({ input }: { input: string }): JSX.Element {
   return (
-    <View className="items-center gap-4">
-      <Spinner size="lg" />
-      <Typography.Paragraph color="muted" align="center">
-        Checking {input}…
-      </Typography.Paragraph>
-    </View>
+    <>
+      <View className="items-center gap-4">
+        <Spinner size="lg" />
+        <Typography.Paragraph color="muted" align="center">
+          Checking {input}…
+        </Typography.Paragraph>
+      </View>
+      <Button variant="ghost" onPress={() => router.back()}>
+        Cancel
+      </Button>
+    </>
   )
 }
 

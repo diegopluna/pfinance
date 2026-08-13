@@ -4,6 +4,7 @@ import { Button, Typography } from 'heroui-native'
 import { useRef, type JSX } from 'react'
 import { Linking, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Screen } from '@/components/screen'
 
 // The QR path into the connect flow: the web app's settings show the
 // Server's API URL as a plain QR code (issue #74 — a raw https URL, no
@@ -21,29 +22,25 @@ export default function ScanScreen(): JSX.Element {
 
   if (!permission.granted) {
     return (
-      <View className="flex-1 bg-background">
-        <SafeAreaView style={{ flex: 1 }}>
-          <View className="flex-1 justify-center gap-8 px-6">
-            <View className="gap-2">
-              <Typography.Heading type="h2">Camera access</Typography.Heading>
-              <Typography.Paragraph color="muted">
-                Scanning the QR code needs the camera. The code is in the web app, under Settings →
-                Mobile app.
-              </Typography.Paragraph>
-            </View>
-            <View className="gap-3">
-              {permission.canAskAgain ? (
-                <Button onPress={() => void requestPermission()}>Allow camera access</Button>
-              ) : (
-                <Button onPress={() => void Linking.openSettings()}>Open device settings</Button>
-              )}
-              <Button variant="ghost" onPress={() => router.back()}>
-                Type the address instead
-              </Button>
-            </View>
-          </View>
-        </SafeAreaView>
-      </View>
+      <Screen>
+        <View className="gap-2">
+          <Typography.Heading type="h2">Camera access</Typography.Heading>
+          <Typography.Paragraph color="muted">
+            Scanning the QR code needs the camera. The code is in the web app, under Settings →
+            Mobile app.
+          </Typography.Paragraph>
+        </View>
+        <View className="gap-3">
+          {permission.canAskAgain ? (
+            <Button onPress={() => void requestPermission()}>Allow camera access</Button>
+          ) : (
+            <Button onPress={() => void Linking.openSettings()}>Open device settings</Button>
+          )}
+          <Button variant="ghost" onPress={() => router.back()}>
+            Type the address instead
+          </Button>
+        </View>
+      </Screen>
     )
   }
 

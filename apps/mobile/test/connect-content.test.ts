@@ -1,5 +1,5 @@
 import { expect, test } from 'vite-plus/test'
-import type { ApiMeta } from '@pfinance/api-client'
+import type { ApiMeta, ConnectionState } from '@pfinance/api-client'
 import { apiMeta } from '../../server/src/compat.ts'
 import {
   SELF_HOSTING_DOCS_URL,
@@ -19,6 +19,15 @@ const meta = (apiVersion: number): ApiMeta => ({
   serverVersion: '9.9.9',
 })
 
+// One instance of each of the five states (issue #73).
+const allStates: ConnectionState[] = [
+  { state: 'unreachable' },
+  { state: 'not-a-server' },
+  { state: 'server-too-old', apiUrl: 'https://api.example.com' },
+  { state: 'app-too-old', apiUrl: 'https://api.example.com', meta: meta(99) },
+  { state: 'connected', apiUrl: 'https://api.example.com', meta: meta(1) },
+]
+
 test('the supported range tracks the workspace apiVersion', () => {
   // The app is built from the same workspace as the server types it calls,
   // so its ceiling must be that server's apiVersion — if this fails, the
@@ -28,36 +37,15 @@ test('the supported range tracks the workspace apiVersion', () => {
 })
 
 test('each of the five states gets its own screen copy', () => {
-  const titles = new Set(
-    [
-      connectStateContent({ state: 'unreachable' }),
-      connectStateContent({ state: 'not-a-server' }),
-      connectStateContent({ state: 'server-too-old', apiUrl: 'https://api.example.com' }),
-      connectStateContent({
-        state: 'app-too-old',
-        apiUrl: 'https://api.example.com',
-        meta: meta(99),
-      }),
-      connectStateContent({ state: 'connected', apiUrl: 'https://api.example.com', meta: meta(1) }),
-    ].map((content) => content.title),
-  )
-  expect(titles.size).toBe(5)
+  const titles = new Set(allStates.map((state) => connectStateContent(state).title))
+  expect(titles.size).toBe(allStates.length)
 })
 
 test('server-too-old links to the self-hosting docs; no other state does', () => {
-  const tooOld = connectStateContent({ state: 'server-too-old', apiUrl: 'https://api.example.com' })
-  expect(tooOld.docsUrl).toBe(SELF_HOSTING_DOCS_URL)
-  for (const content of [
-    connectStateContent({ state: 'unreachable' }),
-    connectStateContent({ state: 'not-a-server' }),
-    connectStateContent({
-      state: 'app-too-old',
-      apiUrl: 'https://api.example.com',
-      meta: meta(99),
-    }),
-    connectStateContent({ state: 'connected', apiUrl: 'https://api.example.com', meta: meta(1) }),
-  ]) {
-    expect(content.docsUrl).toBeUndefined()
+  for (const state of allStates) {
+    expect(connectStateContent(state).docsUrl).toBe(
+      state.state === 'server-too-old' ? SELF_HOSTING_DOCS_URL : undefined,
+    )
   }
 })
 
