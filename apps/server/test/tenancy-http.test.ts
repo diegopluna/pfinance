@@ -1,3 +1,4 @@
+import * as Test from 'alchemy/Test/Vitest'
 import * as Effect from 'effect/Effect'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 import { expect } from 'vite-plus/test'
@@ -97,7 +98,12 @@ test.provider(
       const { transaction } = (yield* createdTransaction.json) as unknown as {
         transaction: { id: string }
       }
-      const createdTransfer = yield* executeWarm(
+      // Setup writes and success reads go through executeWhenReady: edge
+      // convergence isn't sticky, so a request on the seconds-old fresh
+      // worker can still land on a PoP serving the workers.dev placeholder
+      // 404 (seen in CI, issue #68). Only the probes use the plain execute,
+      // since whenReady would retry away exactly the 404s they assert.
+      const createdTransfer = yield* Test.executeWhenReady(
         authedPost(apiUrl, cookie, '/api/transfers', {
           fromAccountId: checking.id,
           toAccountId: savings.id,
@@ -109,7 +115,7 @@ test.provider(
       const { transfer } = (yield* createdTransfer.json) as unknown as {
         transfer: { id: string }
       }
-      const createdImport = yield* executeWarm(
+      const createdImport = yield* Test.executeWhenReady(
         authedPost(apiUrl, cookie, '/api/imports', {
           accountId: checking.id,
           fileName: 'statement.csv',
@@ -117,7 +123,7 @@ test.provider(
         }),
       )
       expect(createdImport.status).toBe(200)
-      const createdInvite = yield* executeWarm(authedPost(apiUrl, cookie, '/api/invites'))
+      const createdInvite = yield* Test.executeWhenReady(authedPost(apiUrl, cookie, '/api/invites'))
       expect(createdInvite.status).toBe(200)
 
       // What a foreign Household's id looks like from this side of the seam.
@@ -291,7 +297,9 @@ test.provider(
 
       // --- ids in list filters: a foreign id narrows to nothing, never widens ---
       for (const query of [`accountId=${foreignId}`, `categoryId=${foreignId}`]) {
-        const filtered = yield* executeWarm(authedGet(apiUrl, cookie, `/api/transactions?${query}`))
+        const filtered = yield* Test.executeWhenReady(
+          authedGet(apiUrl, cookie, `/api/transactions?${query}`),
+        )
         expect(filtered.status).toBe(200)
         const body = (yield* filtered.json) as unknown as { transactions: unknown[] }
         expect(body.transactions).toEqual([])
@@ -303,7 +311,7 @@ test.provider(
         ['Checking', null],
         ['Savings', null],
       ])
-      const ledger = yield* executeWarm(authedGet(apiUrl, cookie, '/api/transactions'))
+      const ledger = yield* Test.executeWhenReady(authedGet(apiUrl, cookie, '/api/transactions'))
       const { transactions } = (yield* ledger.json) as unknown as {
         transactions: Array<{ description: string; categoryId: string | null }>
       }
@@ -314,12 +322,12 @@ test.provider(
         'Transfer',
         'Transfer',
       ])
-      const imports = yield* executeWarm(authedGet(apiUrl, cookie, '/api/imports'))
+      const imports = yield* Test.executeWhenReady(authedGet(apiUrl, cookie, '/api/imports'))
       const importList = (yield* imports.json) as unknown as {
         imports: Array<{ status: string }>
       }
       expect(importList.imports.map((row) => row.status)).toEqual(['pending'])
-      const invites = yield* executeWarm(authedGet(apiUrl, cookie, '/api/invites'))
+      const invites = yield* Test.executeWhenReady(authedGet(apiUrl, cookie, '/api/invites'))
       const inviteList = (yield* invites.json) as unknown as { invites: Array<{ id: string }> }
       expect(inviteList.invites).toHaveLength(1)
     }),
