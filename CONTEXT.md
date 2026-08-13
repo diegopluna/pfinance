@@ -71,3 +71,7 @@ _Avoid_: Reconciliation (reserved for the richer post-MVP concept)
 **User**:
 A person who signs in. A User belongs to a Household as a Member and holds no financial data directly.
 _Avoid_: Account (reserved for financial accounts)
+
+**Server**:
+One self-hosted deployment of pfinance that a client (web or mobile) connects to, identified by its URL. Advertises its compatibility to clients via the public meta probe (ADR 0007).
+_Avoid_: Instance, backend, API URL (in user-facing copy)

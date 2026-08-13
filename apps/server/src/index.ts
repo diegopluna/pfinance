@@ -56,6 +56,7 @@ import {
   parseImportMapping,
   parseNewImport,
 } from './imports.ts'
+import { apiMeta } from './compat.ts'
 import { monthlyIncomeExpense } from './income-expense.ts'
 import { currentUtcMonth, monthlyNetWorthSeries } from './net-worth.ts'
 import { matchesTrustedOrigin, trustedOrigins } from './origins.ts'
@@ -126,6 +127,12 @@ const app = new Hono<{ Bindings: ServerEnv; Variables: Variables }>()
     await db.select({ key: meta.key }).from(meta).limit(1)
     return c.json({ ok: true })
   })
+  // Public: the compatibility probe (ADR 0007). A store-distributed client
+  // hits this before any session exists to classify the Server — its absence
+  // on old deployments is itself the "Server too old" signal, so the route
+  // must stay public, sessionless, and registered before the /api/* session
+  // middleware below.
+  .get('/api/meta', (c) => c.json(apiMeta))
   // Better Auth owns everything under /api/auth/* (sign-up, sign-in,
   // sign-out, get-session). Registered before the session middleware, so it
   // stays public.

@@ -47,6 +47,29 @@ test(
 )
 
 test(
+  'GET /api/meta is public and returns the compatibility contract',
+  Effect.gen(function* () {
+    const { apiUrl } = yield* stack
+
+    // No cookie, no Origin header — exactly how a store-distributed client
+    // probes an unknown Server before any session exists (ADR 0007).
+    const response = yield* Test.getWhenReady(`${apiUrl}/api/meta`)
+    expect(response.status).toBe(200)
+
+    // The exact contract shape: product identifies a pfinance Server,
+    // apiVersion is the integer the client ranges over (1 until the first
+    // breaking change), serverVersion is informational only.
+    const body = yield* response.json
+    expect(body).toEqual({
+      product: 'pfinance',
+      apiVersion: 1,
+      serverVersion: expect.any(String),
+    })
+  }),
+  { timeout: 120_000 },
+)
+
+test(
   'unauthenticated requests to protected routes are rejected',
   Effect.gen(function* () {
     const { apiUrl = '' } = yield* stack
