@@ -29,6 +29,52 @@ export const database = Cloudflare.D1.Database(
   })),
 )
 
+// Optional production URLs (docs/fork-deploy.md): each var attaches its
+// hostname to the matching worker as a Cloudflare custom domain — DNS record
+// and edge certificate are managed by Alchemy, with the zone inferred from
+// the hostname (it must already exist in the account). The worker's primary
+// url output becomes https://<domain>, so VITE_API_URL and the printed
+// deploy URLs follow along. Unset (CI previews, tests, forks without a
+// domain) the prop resolves to undefined, which leaves custom domains
+// unmanaged and the workers on their *.workers.dev URLs.
+//
+// Production-only, enforced: a hostname can be attached to only one worker
+// account-wide, so any other stage deploying with one of these vars set
+// (say, exported in the deploying shell) would detach the domain from the
+// production instance. Every stack composing these workers yields this guard
+// before its first resource, turning that into a loud failure — before
+// anything is created — instead of a silent takeover. The production stage
+// is 'prod' (the quickstart's manual deploy) unless PROD_STAGE designates
+// another; the CI workflow sets it to the branch name on push deploys, so a
+// CI-hosted production (this repo: stage 'master') can carry the domains
+// while pr-N previews and test stages never can.
+//
+// The guard is a standalone step (not folded into the domain props) because
+// the worker provider reads `domain` structurally — an Effect-valued prop is
+// not resolved, it is mistaken for a WorkerDomainConfig.
+const domainVars = ['WEB_DOMAIN', 'API_DOMAIN', 'DOCS_DOMAIN'] as const
+const prodStage = process.env.PROD_STAGE || 'prod'
+export const assertDomainsProdOnly = Effect.gen(function* () {
+  const stage = yield* Alchemy.Stage
+  if (stage === prodStage) return
+  for (const envVar of domainVars) {
+    if (process.env[envVar]) {
+      return yield* Effect.die(
+        new Error(
+          `${envVar}=${process.env[envVar]} is set, but custom domains attach only on ` +
+            `the production stage '${prodStage}' — this deploy targets stage '${stage}', ` +
+            `which would steal the domain from the production instance. Unset ${envVar} ` +
+            `for non-production deploys, or set PROD_STAGE if your production stage has ` +
+            `another name.`,
+        ),
+      )
+    }
+  }
+})
+const [webDomain, apiDomain, docsDomain] = domainVars.map(
+  (envVar) => process.env[envVar] || undefined,
+)
+
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
   compatibility: { flags: ['nodejs_compat'] },
@@ -42,8 +88,13 @@ export const server = Cloudflare.Worker('Server', {
     // Pins the browser origin trusted for credentialed requests (see
     // apps/server/src/origins.ts). Unset ('') falls back to trusting
     // workers.dev broadly — fine for dev/previews, set it in production.
-    WEB_ORIGIN: Config.string('WEB_ORIGIN').pipe(Config.withDefault('')),
+    // A WEB_DOMAIN deploy is origin-pinned without a second knob: the
+    // default becomes that domain's origin, and explicit WEB_ORIGIN wins.
+    WEB_ORIGIN: Config.string('WEB_ORIGIN').pipe(
+      Config.withDefault(webDomain ? `https://${webDomain}` : ''),
+    ),
   },
+  domain: apiDomain,
   dev: {
     port: 3001,
   },
@@ -66,11 +117,13 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
+    yield* assertDomainsProdOnly
     const api = yield* server
     const web = yield* Cloudflare.Website.Vite('Web', {
       assets: { notFoundHandling: 'single-page-application' },
       rootDir: './apps/web/',
       env: { VITE_API_URL: api.url.as<string>() },
+      domain: webDomain,
       dev: {
         port: 3000,
       },
@@ -79,6 +132,7 @@ export default Alchemy.Stack(
       cwd: './apps/docs',
       command: 'vp run build',
       outdir: 'dist',
+      domain: docsDomain,
       compatibility: {
         flags: ['nodejs_compat'],
       },

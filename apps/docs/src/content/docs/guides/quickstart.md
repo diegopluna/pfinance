@@ -134,7 +134,45 @@ CLOUDFLARE_API_TOKEN=<your-token> CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
 ```
 
 Pass `WEB_ORIGIN` on every subsequent deploy (or export it in the shell you
-deploy from).
+deploy from). If you move the app to a custom domain with `WEB_DOMAIN`
+(step 8), `WEB_ORIGIN` defaults to that domain's origin and you can drop it.
+
+## 8. Production URLs (optional)
+
+Out of the box each worker serves on a generated `*.workers.dev` URL. If you
+own a domain whose zone is already in your Cloudflare account, put your
+instance on stable production URLs by passing a hostname per app:
+
+```sh
+CLOUDFLARE_API_TOKEN=<your-token> CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
+  WEB_DOMAIN=pfinance.example.com \
+  API_DOMAIN=api.pfinance.example.com \
+  DOCS_DOMAIN=docs.pfinance.example.com \
+  vpx alchemy deploy --stage prod --yes
+```
+
+Each variable attaches its hostname to the matching worker as a Cloudflare
+custom domain: the DNS record and edge certificate are created and managed
+for you, and the deploy's printed URLs switch to the custom domains. The web
+app is rebuilt against the API's new URL on the same deploy, and `WEB_ORIGIN`
+defaults to `https://$WEB_DOMAIN`, so a custom-domain deploy is
+origin-pinned without step 7's variable.
+
+All three are independent — set only the ones you want (`DOCS_DOMAIN` is
+often worth skipping). Like `WEB_ORIGIN`, pass them on every subsequent
+deploy. A deploy without them leaves already-attached domains in place
+(Alchemy treats the omitted setting as unmanaged, not as a detach), but the
+web app would be rebuilt against the API's `workers.dev` URL and the
+`WEB_ORIGIN` default would revert — so exporting the variables in the shell
+you deploy from is the safest habit.
+
+The variables only work on the production stage (`--stage prod` here): a
+custom domain attaches to exactly one worker, so any other stage deploying
+with them set would pull the domain off your production instance. The deploy
+refuses with a clear error instead — if you hit it, unset the `*_DOMAIN`
+variables for that deploy. (Hosting your production from CI instead of a
+manual `prod` stage? Set them as repository Actions variables — see
+[custom domains in the CI pipeline](/guides/ci-pipeline/#custom-domains-for-a-ci-hosted-production).)
 
 ## Next steps
 

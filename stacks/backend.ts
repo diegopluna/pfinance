@@ -3,7 +3,7 @@ import * as Cloudflare from 'alchemy/Cloudflare'
 import { providers as drizzleProviders } from 'alchemy/Drizzle/Providers'
 import * as Layer from 'effect/Layer'
 import * as Effect from 'effect/Effect'
-import { server } from '../alchemy.run.ts'
+import { assertDomainsProdOnly, server } from '../alchemy.run.ts'
 
 // Backend-only composition: Schema → D1 → Worker. The integration tests
 // deploy this stack, so proving the API doesn't provision Web, Docs, or
@@ -19,6 +19,7 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
+    yield* assertDomainsProdOnly
     const api = yield* server
     return { apiUrl: api.url }
   }),
