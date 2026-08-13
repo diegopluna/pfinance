@@ -1,10 +1,10 @@
-import { ApiError, call, createApiClient } from '@pfinance/api-client'
+import { ApiError, call } from '@pfinance/api-client'
 import { getCurrency, isSupportedCurrency } from '@pfinance/currency'
 import { Redirect, router } from 'expo-router'
 import { Button, Spinner, Typography } from 'heroui-native'
 import { useEffect, useState, type JSX } from 'react'
 import { View } from 'react-native'
-import { sessionCookie } from '@/auth/client'
+import { apiFor } from '@/api/client'
 import { Screen } from '@/components/screen'
 import { storedServerUrl } from '@/connect/store'
 
@@ -12,12 +12,8 @@ import { storedServerUrl } from '@/connect/store'
 // (issue #77): the authenticated identity — the Household's name and
 // Currency from /api/me. The shared client replays the secure-store session
 // cookie as a header, exactly as the seam test drives the Server.
-const fetchMe = (apiUrl: string) => {
-  const api = createApiClient(apiUrl, {
-    headers: () => ({ cookie: sessionCookie(apiUrl) }),
-  })
-  return call(api.api.me.$get(), 'Could not load your Household.')
-}
+const fetchMe = (apiUrl: string) =>
+  call(apiFor(apiUrl).api.me.$get(), 'Could not load your Household.')
 
 type Me = Awaited<ReturnType<typeof fetchMe>>
 
@@ -102,10 +98,11 @@ export default function HomeScreen(): JSX.Element {
         </Typography.Paragraph>
       </View>
 
+      {/* The Ledger is browsable (issue #78): Accounts with Balances and
+          the filterable Transaction list. Writes still land in updates. */}
       <View className="gap-3">
-        <Typography.Paragraph type="body-sm" color="muted">
-          Your Ledger, dashboards, and quick expense logging land here in upcoming updates.
-        </Typography.Paragraph>
+        <Button onPress={() => router.push('/accounts')}>Accounts</Button>
+        <Button onPress={() => router.push('/transactions')}>Transactions</Button>
         <Button variant="outline" onPress={() => router.push('/settings')}>
           Settings
         </Button>
