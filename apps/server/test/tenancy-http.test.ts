@@ -62,7 +62,21 @@ const probe = (request: HttpClientRequest.HttpClientRequest, status: number, err
     // 404-asserting probes must hit the (by then long warm) worker directly —
     // executeWhenReady would retry away exactly the 404 they assert. Every
     // other status rides whenReady past edge placeholder 404s (issue #68).
-    const response = yield* status === 404 ? executeWarm(request) : Test.executeWhenReady(request)
+    // A stray placeholder can still interleave here, but the handler's own
+    // 404 carries a JSON { error } body while the placeholder is HTML — so
+    // retry only while the body doesn't parse, which never masks the route's
+    // real answer. The last attempt decodes strictly and fails loudly.
+    let response = yield* status === 404 ? executeWarm(request) : Test.executeWhenReady(request)
+    for (let attempt = 0; attempt < 9; attempt++) {
+      const parsed = yield* response.json.pipe(Effect.catch(() => Effect.succeed(null)))
+      if (parsed !== null) {
+        const body = parsed as unknown as { error?: string }
+        expect({ status: response.status, error: body.error }).toEqual({ status, error })
+        return
+      }
+      yield* Effect.sleep('3 seconds')
+      response = yield* status === 404 ? executeWarm(request) : Test.executeWhenReady(request)
+    }
     const body = (yield* response.json) as unknown as { error?: string }
     expect({ status: response.status, error: body.error }).toEqual({ status, error })
   })
