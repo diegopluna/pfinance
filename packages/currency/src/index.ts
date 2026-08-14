@@ -139,3 +139,40 @@ export function toMinorUnits(decimal: string, code: CurrencyCode): number {
   }
   return sign === '-' ? -units : units
 }
+
+/**
+ * The compact value form ("1.2K") for display-only chart geometry — axis
+ * ticks and bar tips; exact amounts always render via formatAmount. Fixed
+ * English suffixes and integer arithmetic throughout: Hermes' partial Intl
+ * support can't vary the output between devices, and no float ever touches
+ * the amount (ADR 0006). A suffix is picked when the magnitude rounds to at
+ * least 1.0 of it in tenths, so 999,999.99 promotes to 1M and 999.95 to 1K
+ * — never a four-digit "1000K".
+ */
+export function compactAmount(minorUnits: number, code: CurrencyCode): string {
+  if (!Number.isSafeInteger(minorUnits)) {
+    throw new RangeError(`Amount must be a safe integer in minor units, got ${minorUnits}`)
+  }
+  const { minorUnitExponent } = getCurrency(code)
+  const sign = minorUnits < 0 ? '-' : ''
+  const value = Math.abs(minorUnits)
+  const minorPerMajor = 10 ** minorUnitExponent
+  const steps = [
+    { major: 1_000_000_000, suffix: 'B' },
+    { major: 1_000_000, suffix: 'M' },
+    { major: 1_000, suffix: 'K' },
+  ]
+  for (const { major, suffix } of steps) {
+    // Tenths of the suffix's step, rounded half-up — integer divmod, so the
+    // amount never passes through a float.
+    const perTenth = (major / 10) * minorPerMajor
+    const tenths = Math.floor(value / perTenth) + ((value % perTenth) * 2 >= perTenth ? 1 : 0)
+    if (tenths >= 10) {
+      // One decimal, with a round result rendering bare: 10K, never 10.0K.
+      return `${sign}${Math.floor(tenths / 10)}${tenths % 10 === 0 ? '' : `.${tenths % 10}`}${suffix}`
+    }
+  }
+  const units =
+    Math.floor(value / minorPerMajor) + ((value % minorPerMajor) * 2 >= minorPerMajor ? 1 : 0)
+  return units === 0 ? '0' : `${sign}${units}`
+}

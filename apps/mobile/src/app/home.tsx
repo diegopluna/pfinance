@@ -98,9 +98,13 @@ export default function HomeScreen(): JSX.Element {
         </Typography.Paragraph>
       </View>
 
-      {/* The Ledger is browsable (issue #78): Accounts with Balances and
-          the filterable Transaction list. Writes still land in updates. */}
+      {/* The read surfaces: the three dashboards (issue #79) over the
+          browsable Ledger (issue #78) — Accounts with Balances and the
+          filterable Transaction list. Writes still land in updates. */}
       <View className="gap-3">
+        <Button onPress={() => router.push('/net-worth')}>Net worth</Button>
+        <Button onPress={() => router.push('/spending')}>Spending</Button>
+        <Button onPress={() => router.push('/income-expense')}>Income vs expense</Button>
         <Button onPress={() => router.push('/accounts')}>Accounts</Button>
         <Button onPress={() => router.push('/transactions')}>Transactions</Button>
         <Button variant="outline" onPress={() => router.push('/settings')}>
