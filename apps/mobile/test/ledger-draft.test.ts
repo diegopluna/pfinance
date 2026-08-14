@@ -15,6 +15,7 @@ const draft = {
   amount: '12.34',
   date: '2026-08-13',
   description: 'Groceries',
+  balanceAdjustment: false,
   categoryId: 'cat-9',
 }
 
@@ -25,11 +26,12 @@ test('a fresh draft starts as an expense dated today with nothing filled in', ()
     amount: '',
     date: '2026-08-13',
     description: '',
+    balanceAdjustment: false,
     categoryId: '',
   })
 })
 
-test('money out composes a negative amount in minor units', () => {
+test('money out composes a negative amount in minor units, as the standard kind', () => {
   expect(validateDraft(draft, 'USD')).toEqual({
     ok: true,
     value: {
@@ -37,6 +39,7 @@ test('money out composes a negative amount in minor units', () => {
       date: '2026-08-13',
       amount: -1234,
       description: 'Groceries',
+      kind: 'standard',
       categoryId: 'cat-9',
     },
   })
@@ -98,12 +101,18 @@ test('an unparseable, zero, or too-precise amount is rejected with an example', 
   })
 })
 
+test('the toggle composes the Balance Adjustment kind', () => {
+  const result = validateDraft({ ...draft, balanceAdjustment: true }, 'USD')
+  expect(result.ok && result.value.kind).toBe('balance_adjustment')
+})
+
 test('editing decomposes a stored amount back into direction and decimal', () => {
   const entry = {
     accountId: 'acc-1',
     amount: -1234,
     date: '2026-08-13',
     description: 'Groceries',
+    kind: 'standard' as const,
     categoryId: 'cat-9',
   }
   expect(draftFromTransaction(entry, 'USD')).toEqual(draft)
@@ -114,12 +123,25 @@ test('editing decomposes a stored amount back into direction and decimal', () =>
   })
 })
 
+test('editing a Balance Adjustment sets the toggle', () => {
+  const entry = {
+    accountId: 'acc-1',
+    amount: -1234,
+    date: '2026-08-13',
+    description: 'Drift correction',
+    kind: 'balance_adjustment' as const,
+    categoryId: null,
+  }
+  expect(draftFromTransaction(entry, 'USD').balanceAdjustment).toBe(true)
+})
+
 test('editing an Uncategorized row yields the blank Category', () => {
   const entry = {
     accountId: 'acc-1',
     amount: -1234,
     date: '2026-08-13',
     description: 'Groceries',
+    kind: 'standard' as const,
     categoryId: null,
   }
   expect(draftFromTransaction(entry, 'USD').categoryId).toBe('')
@@ -131,6 +153,7 @@ test('a draft round-trips: entry → draft → the same wire fields', () => {
     amount: -1234,
     date: '2026-08-13',
     description: 'Groceries',
+    kind: 'balance_adjustment' as const,
     categoryId: null,
   }
   expect(validateDraft(draftFromTransaction(entry, 'USD'), 'USD')).toEqual({
