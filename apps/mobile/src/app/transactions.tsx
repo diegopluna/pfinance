@@ -149,12 +149,14 @@ export default function TransactionsScreen(): JSX.Element {
   // The in-place form's target: null = closed, entry: null = create, an
   // existing row = edit. A Transfer leg opens the Transfer form — the pair
   // can never drift, so legs are only edited through their Transfer (issue
-  // #81). ?new=true (home's "New transaction") opens create on arrival —
-  // the param is the trigger, so closing the form doesn't reopen.
-  const [form, setForm] = useState<{
-    kind: 'transaction' | 'transfer'
-    entry: TransactionEntry | null
-  } | null>(null)
+  // #81) — and the union pins that a transfer edit always carries its
+  // Transfer's id. ?new=true (home's "New transaction") opens create on
+  // arrival — the param is the trigger, so closing the form doesn't reopen.
+  const [form, setForm] = useState<
+    | { kind: 'transaction'; entry: TransactionEntry | null }
+    | { kind: 'transfer'; entry: (TransactionEntry & { transferId: string }) | null }
+    | null
+  >(null)
   const { new: openNew } = useLocalSearchParams<{ new?: string }>()
   useEffect(() => {
     if (openNew === 'true') setForm({ kind: 'transaction', entry: null })
@@ -341,10 +343,11 @@ export default function TransactionsScreen(): JSX.Element {
               accountNames={accountNames}
               categoryNames={categoryNames}
               onPress={() =>
-                setForm({
-                  kind: item.kind === 'transfer' ? 'transfer' : 'transaction',
-                  entry: item,
-                })
+                setForm(
+                  item.transferId !== null
+                    ? { kind: 'transfer', entry: { ...item, transferId: item.transferId } }
+                    : { kind: 'transaction', entry: item },
+                )
               }
             />
           )}

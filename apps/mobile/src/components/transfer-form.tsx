@@ -1,22 +1,14 @@
 import { call, type ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import {
-  Button,
-  Chip,
-  Dialog,
-  FieldError,
-  Input,
-  Label,
-  TextField,
-  Typography,
-} from 'heroui-native'
+import { Button, Dialog, FieldError, Input, Label, TextField, Typography } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
-import { useState, type JSX, type ReactNode } from 'react'
+import { useState, type JSX } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { apiFor } from '@/api/client'
 import { failureMessage } from '@/api/use-query'
+import { ChoiceChips, FieldBlock } from '@/components/form-fields'
 import {
   formatCalendarDate,
   isCalendarDate,
@@ -46,42 +38,9 @@ type TransactionEntry = InferResponseType<
 >['transactions'][number]
 type AccountEntry = InferResponseType<ApiClient['api']['accounts']['$get'], 200>['accounts'][number]
 
-// The quick-entry form's mutually exclusive choice row (its ChoiceChips):
-// a form field holds a value, so there is no tap-again-to-clear.
-function ChoiceChips({
-  choices,
-  value,
-  onChange,
-}: {
-  choices: { value: string; label: string }[]
-  value: string
-  onChange: (value: string) => void
-}): JSX.Element {
-  return (
-    <View className="flex-row flex-wrap gap-2">
-      {choices.map((choice) => (
-        <Chip
-          key={choice.value}
-          size="sm"
-          variant={value === choice.value ? 'primary' : 'soft'}
-          color="default"
-          onPress={() => onChange(choice.value)}
-        >
-          <Chip.Label>{choice.label}</Chip.Label>
-        </Chip>
-      ))}
-    </View>
-  )
-}
-
-function FieldBlock({ label, children }: { label: string; children: ReactNode }): JSX.Element {
-  return (
-    <View className="gap-2">
-      <Label>{label}</Label>
-      {children}
-    </View>
-  )
-}
+// A Transfer leg always carries its Transfer's id — the type narrows it so
+// an edit can never silently miss its target.
+type TransferLeg = TransactionEntry & { transferId: string }
 
 export function TransferForm({
   apiUrl,
@@ -94,7 +53,7 @@ export function TransferForm({
 }: {
   apiUrl: string
   // null = create; a Transfer leg = edit the whole Transfer it belongs to.
-  entry: TransactionEntry | null
+  entry: TransferLeg | null
   accounts: AccountEntry[]
   currency: CurrencyCode
   dateFormat: DateFormat
@@ -103,9 +62,10 @@ export function TransferForm({
   onClose: () => void
 }): JSX.Element {
   const today = todayCalendarString()
-  const [draft, setDraft] = useState<TransferDraft>(() =>
-    entry === null ? emptyTransferDraft(today) : transferDraftFromLeg(entry, currency),
-  )
+  // The stored pair's sides, as they are in the ledger — the draft below
+  // starts from them but drifts as the user edits.
+  const stored = entry === null ? null : transferDraftFromLeg(entry, currency)
+  const [draft, setDraft] = useState<TransferDraft>(() => stored ?? emptyTransferDraft(today))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -118,13 +78,12 @@ export function TransferForm({
   // without forcibly moving the money (the quick-entry form's rule). Both
   // sides share one list: the server rejects a same-account pair, and the
   // validation catches it before the network does.
-  const sides = entry === null ? emptyTransferDraft(today) : transferDraftFromLeg(entry, currency)
   const accountChoices = accounts
     .filter(
       (account) =>
         account.archivedAt === null ||
-        account.id === sides.fromAccountId ||
-        account.id === sides.toAccountId,
+        account.id === stored?.fromAccountId ||
+        account.id === stored?.toAccountId,
     )
     .map((account) => ({ value: account.id, label: account.name }))
 
@@ -142,7 +101,7 @@ export function TransferForm({
           apiFor(apiUrl).api.transfers.$post({ json: parsed.value }),
           'Could not save the transfer.',
         )
-      } else if (entry.transferId !== null) {
+      } else {
         await call(
           apiFor(apiUrl).api.transfers[':id'].$patch({
             param: { id: entry.transferId },
@@ -159,7 +118,7 @@ export function TransferForm({
   }
 
   const remove = async () => {
-    if (entry?.transferId == null) return
+    if (entry === null) return
     setBusy(true)
     setError(null)
     try {

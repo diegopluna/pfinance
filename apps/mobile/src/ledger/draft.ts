@@ -82,9 +82,10 @@ export const amountExample = (currency: CurrencyCode): string => {
 
 // The unsigned decimal → positive integer minor units, or null for anything
 // the API would refuse: not a decimal, more precision than the Currency
-// carries, a stray sign, or zero (no money moved — with a direction toggle
-// it has no sign to carry).
-const parseAmount = (text: string, currency: CurrencyCode): number | null => {
+// carries, a stray sign, or zero (no money moved). Direction never lives in
+// the amount text — quick entry's toggle or a Transfer's from → to carries
+// it (transfer-draft.ts shares this parser).
+export const parseUnsignedAmount = (text: string, currency: CurrencyCode): number | null => {
   const trimmed = text.trim()
   if (trimmed.startsWith('-')) return null
   try {
@@ -102,7 +103,7 @@ export const validateDraft = (draft: TransactionDraft, currency: CurrencyCode): 
   if (draft.accountId === '') return { ok: false, error: 'Choose an account.' }
   const description = draft.description.trim()
   if (description === '') return { ok: false, error: 'Describe the transaction.' }
-  const amount = parseAmount(draft.amount, currency)
+  const amount = parseUnsignedAmount(draft.amount, currency)
   if (amount === null) {
     return { ok: false, error: `Enter an amount like ${amountExample(currency)}.` }
   }

@@ -1,6 +1,6 @@
-import { fromMinorUnits, toMinorUnits, type CurrencyCode } from '@pfinance/currency'
+import { fromMinorUnits, type CurrencyCode } from '@pfinance/currency'
 import { isCalendarDate } from './dates'
-import { amountExample } from './draft'
+import { amountExample, parseUnsignedAmount } from './draft'
 
 // The Transfer form's state and its wire mapping (issue #81). A Transfer
 // moves money between two of the Household's own Accounts (CONTEXT.md):
@@ -67,21 +67,6 @@ export const transferDraftFromLeg = (
   description: leg.description,
 })
 
-// The unsigned decimal → positive integer minor units, or null for anything
-// the API would refuse: not a decimal, more precision than the Currency
-// carries, a stray sign, or zero (no money moved) — quick entry's rule
-// (ledger/draft.ts).
-const parseAmount = (text: string, currency: CurrencyCode): number | null => {
-  const trimmed = text.trim()
-  if (trimmed.startsWith('-')) return null
-  try {
-    const units = toMinorUnits(trimmed, currency)
-    return units > 0 ? units : null
-  } catch {
-    return null
-  }
-}
-
 // The first problem in the user's terms, or the whole wire shape — the
 // server's Parsed stance (apps/server/src/transfers.ts), client-side so the
 // form fails before the network does.
@@ -98,7 +83,7 @@ export const validateTransferDraft = (
   if (draft.fromAccountId === draft.toAccountId) {
     return { ok: false, error: 'Pick two different accounts.' }
   }
-  const amount = parseAmount(draft.amount, currency)
+  const amount = parseUnsignedAmount(draft.amount, currency)
   if (amount === null) {
     return { ok: false, error: `Enter an amount like ${amountExample(currency)}.` }
   }
