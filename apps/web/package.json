@@ -21,8 +21,8 @@
     "better-auth": "catalog:",
     "hono": "catalog:",
     "lucide-react": "catalog:",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "recharts": "catalog:",
     "uqr": "^0.1.3"
   },

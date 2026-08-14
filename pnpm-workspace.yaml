@@ -27,7 +27,15 @@ catalog:
   effect: 4.0.0-beta.102
   hono: ^4.13.0
   lucide-react: ^0.539.0
+  # Pinned exactly and shared by apps/web and apps/mobile so the workspace
+  # resolves a single physical React. Under `nodeLinker: hoisted` two React
+  # versions produce two copies in the web bundle, and hooks reached through
+  # the second copy (better-auth's useSession -> nanostores) see a null
+  # dispatcher. Expo 57 / React Native 0.86 pin 19.2.3, so that is the shared
+  # version; bump both together when the Expo SDK moves.
+  react: 19.2.3
   react-day-picker: ^10.0.1
+  react-dom: 19.2.3
   recharts: ^3.10.1
   shadcn: ^3.8.5
   typescript: ^7.0.2
@@ -37,6 +45,12 @@ catalog:
   node-gyp: ^13.0.1
 overrides:
   vite: 'catalog:'
+  # packages/ui declares React as a peer (^19.0.0); pnpm's autoInstallPeers
+  # otherwise resolves that range on its own and materializes a second copy
+  # next to the catalog one. Overriding pins every react/react-dom spec in
+  # the tree — direct, peer, and transitive — to the single catalog version.
+  react: 'catalog:'
+  react-dom: 'catalog:'
 peerDependencyRules:
   allowAny:
     - vite
