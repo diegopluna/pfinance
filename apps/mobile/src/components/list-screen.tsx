@@ -7,12 +7,15 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 // The screen shell for the list screens (issue #78): top-aligned so a
 // FlatList owns the remaining height, unlike Screen's centered column. Same
 // SafeAreaView caveat as screen.tsx — className is silently dropped on it,
-// so the theme background lives on the outer core View.
+// so the theme background lives on the outer core View. The optional action
+// slot sits beside Back for a screen's one primary verb (issue #80's New).
 export function ListScreen({
   title,
+  action,
   children,
 }: {
   title: string
+  action?: ReactNode
   children: ReactNode
 }): JSX.Element {
   return (
@@ -21,9 +24,12 @@ export function ListScreen({
         <View className="flex-1 gap-4 px-6 pt-2">
           <View className="flex-row items-center justify-between">
             <Typography.Heading type="h2">{title}</Typography.Heading>
-            <Button variant="ghost" size="sm" onPress={() => router.back()}>
-              Back
-            </Button>
+            <View className="flex-row items-center gap-2">
+              {action}
+              <Button variant="ghost" size="sm" onPress={() => router.back()}>
+                Back
+              </Button>
+            </View>
           </View>
           {children}
         </View>

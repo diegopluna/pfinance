@@ -98,10 +98,14 @@ export default function HomeScreen(): JSX.Element {
         </Typography.Paragraph>
       </View>
 
-      {/* The read surfaces: the three dashboards (issue #79) over the
-          browsable Ledger (issue #78) — Accounts with Balances and the
-          filterable Transaction list. Writes still land in updates. */}
+      {/* Quick entry first (issue #80): recording a Transaction is the
+          highest-frequency task in the product (parent issue #70) — one tap
+          from launch, straight into the form. Then the read surfaces: the
+          three dashboards (issue #79) over the browsable Ledger (issue #78). */}
       <View className="gap-3">
+        <Button onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}>
+          New transaction
+        </Button>
         <Button onPress={() => router.push('/net-worth')}>Net worth</Button>
         <Button onPress={() => router.push('/spending')}>Spending</Button>
         <Button onPress={() => router.push('/income-expense')}>Income vs expense</Button>
