@@ -12,6 +12,7 @@ import { useApiQuery } from '@/api/use-query'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { TransactionForm } from '@/components/transaction-form'
+import { TransferForm } from '@/components/transfer-form'
 import { storedServerUrl } from '@/connect/store'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
@@ -31,6 +32,8 @@ import {
 // is visibly badged and never reads as an ordinary entry. Quick entry
 // (issue #80) lives here too: New and tapping a row open the form in place
 // of the list, so the edited entry never has to survive a route change.
+// Transfers (issue #81) get the sibling form the same way: New transfer,
+// and tapping either leg opens the whole pair.
 
 type TransactionEntry = InferResponseType<
   ApiClient['api']['transactions']['$get'],
@@ -93,9 +96,7 @@ function TransactionRow({
   dateFormat: DateFormat
   accountNames: Map<string, string>
   categoryNames: Map<string, string>
-  // Absent for a Transfer leg: the pair can never drift, so legs are edited
-  // through their Transfer (issue #81's surface, the web today).
-  onPress?: () => void
+  onPress: () => void
 }): JSX.Element {
   const badge = kindBadge(
     entry.kind,
@@ -109,7 +110,7 @@ function TransactionRow({
       ? categoryLabel(entry.kind, null)
       : categoryLabel(entry.kind, categoryNames.get(entry.categoryId) ?? 'Unknown category')
   return (
-    <Pressable onPress={onPress} disabled={onPress === undefined}>
+    <Pressable onPress={onPress}>
       <View className="flex-row items-start justify-between gap-3 border-b border-separator py-3">
         <View className="flex-1 gap-1">
           <Typography.Paragraph numberOfLines={1} className="font-medium">
@@ -145,13 +146,18 @@ const isPeriodPreset = (value: string): value is PeriodPreset =>
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
-  // The quick-entry form's target: null = closed, { entry: null } = create,
-  // { entry } = edit. ?new=true (home's "New transaction") opens create on
-  // arrival — the param is the trigger, so closing the form doesn't reopen.
-  const [form, setForm] = useState<{ entry: TransactionEntry | null } | null>(null)
+  // The in-place form's target: null = closed, entry: null = create, an
+  // existing row = edit. A Transfer leg opens the Transfer form — the pair
+  // can never drift, so legs are only edited through their Transfer (issue
+  // #81). ?new=true (home's "New transaction") opens create on arrival —
+  // the param is the trigger, so closing the form doesn't reopen.
+  const [form, setForm] = useState<{
+    kind: 'transaction' | 'transfer'
+    entry: TransactionEntry | null
+  } | null>(null)
   const { new: openNew } = useLocalSearchParams<{ new?: string }>()
   useEffect(() => {
-    if (openNew === 'true') setForm({ entry: null })
+    if (openNew === 'true') setForm({ kind: 'transaction', entry: null })
   }, [openNew])
 
   const { me, currency, dateFormat } = useHousehold(apiUrl)
@@ -220,11 +226,25 @@ export default function TransactionsScreen(): JSX.Element {
   ]
   const filtering = Object.keys(transactionQuery(filters, todayCalendarString())).length > 0
 
-  // The form waits for the vocabulary AND the Household: composing minor
+  // The forms wait for the vocabulary AND the Household: composing minor
   // units under the USD fallback's exponent would store a wrong amount for
   // a zero- or three-exponent Currency (ADR 0006).
   if (form !== null && me.data !== null && accounts.data !== null && categories.data !== null) {
-    return (
+    const done = () => {
+      setForm(null)
+      transactions.retry()
+    }
+    return form.kind === 'transfer' ? (
+      <TransferForm
+        apiUrl={apiUrl}
+        entry={form.entry}
+        accounts={accounts.data.accounts}
+        currency={currency}
+        dateFormat={dateFormat}
+        onDone={done}
+        onClose={() => setForm(null)}
+      />
+    ) : (
       <TransactionForm
         apiUrl={apiUrl}
         entry={form.entry}
@@ -232,10 +252,7 @@ export default function TransactionsScreen(): JSX.Element {
         categories={categories.data.categories}
         currency={currency}
         dateFormat={dateFormat}
-        onDone={() => {
-          setForm(null)
-          transactions.retry()
-        }}
+        onDone={done}
         onCategoryCreated={() => categories.retry()}
         onClose={() => setForm(null)}
       />
@@ -246,9 +263,21 @@ export default function TransactionsScreen(): JSX.Element {
     <ListScreen
       title="Transactions"
       action={
-        <Button size="sm" onPress={() => setForm({ entry: null })}>
-          New
-        </Button>
+        <View className="flex-row gap-2">
+          {/* A Transfer needs two Accounts to move between. */}
+          {accountChoices.length > 1 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => setForm({ kind: 'transfer', entry: null })}
+            >
+              New transfer
+            </Button>
+          )}
+          <Button size="sm" onPress={() => setForm({ kind: 'transaction', entry: null })}>
+            New
+          </Button>
+        </View>
       }
     >
       <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
@@ -311,7 +340,12 @@ export default function TransactionsScreen(): JSX.Element {
               dateFormat={dateFormat}
               accountNames={accountNames}
               categoryNames={categoryNames}
-              onPress={item.kind === 'transfer' ? undefined : () => setForm({ entry: item })}
+              onPress={() =>
+                setForm({
+                  kind: item.kind === 'transfer' ? 'transfer' : 'transaction',
+                  entry: item,
+                })
+              }
             />
           )}
         />

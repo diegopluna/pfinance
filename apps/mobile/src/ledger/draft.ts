@@ -1,4 +1,5 @@
 import { fromMinorUnits, getCurrency, toMinorUnits, type CurrencyCode } from '@pfinance/currency'
+import type { TransactionKind } from '@pfinance/db/transaction-kinds'
 import { isCalendarDate } from './dates'
 
 // The quick-entry form's state and its wire mapping (issue #80). The form
@@ -19,19 +20,23 @@ export interface TransactionDraft {
   // A calendar date string (YYYY-MM-DD) — never a timestamp (CONTEXT.md).
   date: string
   description: string
+  // The Balance Adjustment flavor (issue #81): it moves the Balance but is
+  // never counted as spending or income. A toggle, not a kind picker — the
+  // transfer kind can't exist here (legs only write through /api/transfers).
+  balanceAdjustment: boolean
   // '' is the form's Uncategorized; the API's is null (ADR 0003).
   categoryId: string
 }
 
-// The editable state the API accepts, minus kind: POST defaults it to
-// standard, and a PATCH that omits it preserves the row's own — so the form
-// can edit a Balance Adjustment without ever handling kinds (issue #81's
-// surface).
+// The editable state the API accepts. The kind is composed from the toggle
+// and sent on create and edit alike (the web form's rule), so a Balance
+// Adjustment is both recordable and revertible in place.
 export interface TransactionFields {
   accountId: string
   date: string
   amount: number
   description: string
+  kind: 'standard' | 'balance_adjustment'
   categoryId: string | null
 }
 
@@ -45,6 +50,7 @@ export const emptyDraft = (today: string): TransactionDraft => ({
   amount: '',
   date: today,
   description: '',
+  balanceAdjustment: false,
   categoryId: '',
 })
 
@@ -52,8 +58,10 @@ export const emptyDraft = (today: string): TransactionDraft => ({
 // Zero decomposes as money in — an amount the form itself never produces
 // (validation refuses zero), so the arbitrary side only shows in rows
 // created elsewhere.
+// The input kind is the API's full vocabulary — the form is never handed a
+// Transfer leg (legs open the TransferForm), but the row type carries it.
 export const draftFromTransaction = (
-  entry: Omit<TransactionFields, 'amount'> & { amount: number },
+  entry: Omit<TransactionFields, 'amount' | 'kind'> & { amount: number; kind: TransactionKind },
   currency: CurrencyCode,
 ): TransactionDraft => ({
   accountId: entry.accountId,
@@ -61,6 +69,7 @@ export const draftFromTransaction = (
   amount: fromMinorUnits(Math.abs(entry.amount), currency),
   date: entry.date,
   description: entry.description,
+  balanceAdjustment: entry.kind === 'balance_adjustment',
   categoryId: entry.categoryId ?? '',
 })
 
@@ -107,6 +116,7 @@ export const validateDraft = (draft: TransactionDraft, currency: CurrencyCode): 
       date: draft.date,
       amount: draft.direction === 'out' ? -amount : amount,
       description,
+      kind: draft.balanceAdjustment ? 'balance_adjustment' : 'standard',
       categoryId: draft.categoryId === '' ? null : draft.categoryId,
     },
   }

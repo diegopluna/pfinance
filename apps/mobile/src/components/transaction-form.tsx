@@ -3,6 +3,7 @@ import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import {
   Button,
+  Checkbox,
   Chip,
   Dialog,
   FieldError,
@@ -13,7 +14,7 @@ import {
 } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX, type ReactNode } from 'react'
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { apiFor } from '@/api/client'
 import { failureMessage } from '@/api/use-query'
@@ -37,7 +38,9 @@ import {
 // transactions screen in place of the list, so an edited entry never has to
 // survive a route change. The sign never appears in the amount field: the
 // Money out / Money in choice carries it (ledger/draft.ts), and the stored
-// amount is integer minor units end to end (ADR 0006).
+// amount is integer minor units end to end (ADR 0006). A checkbox marks the
+// Balance Adjustment flavor (issue #81): it moves the Balance but is never
+// counted as spending or income.
 
 type TransactionEntry = InferResponseType<
   ApiClient['api']['transactions']['$get'],
@@ -99,9 +102,8 @@ export function TransactionForm({
   onClose,
 }: {
   apiUrl: string
-  // null = create; an existing non-Transfer row = edit. A PATCH never sends
-  // kind, so an edited Balance Adjustment keeps its kind (issue #81 owns
-  // that surface).
+  // null = create; an existing non-Transfer row = edit (a leg opens the
+  // TransferForm instead — the pair can never drift).
   entry: TransactionEntry | null
   accounts: AccountEntry[]
   categories: CategoryEntry[]
@@ -161,10 +163,10 @@ export function TransactionForm({
     setError(null)
     try {
       if (entry === null) {
-        // Quick entry only ever logs the ordinary ledger entry; Transfers
-        // and Balance Adjustments write through issue #81's surfaces.
+        // The draft composes the kind (standard or balance_adjustment);
+        // Transfers write through /api/transfers (transfer-form.tsx).
         await call(
-          apiFor(apiUrl).api.transactions.$post({ json: { ...parsed.value, kind: 'standard' } }),
+          apiFor(apiUrl).api.transactions.$post({ json: parsed.value }),
           'Could not save the transaction.',
         )
       } else {
@@ -268,6 +270,25 @@ export function TransactionForm({
                     keyboardType="decimal-pad"
                   />
                 </TextField>
+                {/* One press target for the whole row; the Checkbox inside
+                    is purely visual so the two never fight over the tap. */}
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: draft.balanceAdjustment }}
+                  accessibilityLabel="Balance adjustment"
+                  onPress={() => set('balanceAdjustment', !draft.balanceAdjustment)}
+                >
+                  <View className="flex-row items-start gap-3" pointerEvents="none">
+                    <Checkbox isSelected={draft.balanceAdjustment} />
+                    <View className="flex-1 gap-1">
+                      <Label>Balance adjustment</Label>
+                      <Typography.Paragraph type="body-sm" color="muted">
+                        Corrects drift between the balance and reality — never counted as spending
+                        or income.
+                      </Typography.Paragraph>
+                    </View>
+                  </View>
+                </Pressable>
                 <FieldBlock label="Date">
                   <ChoiceChips
                     choices={[
