@@ -1,10 +1,11 @@
-import { ApiError, call } from '@pfinance/api-client'
+import { call } from '@pfinance/api-client'
 import { getCurrency, isSupportedCurrency } from '@pfinance/currency'
 import { Redirect, router } from 'expo-router'
 import { Button, Spinner, Typography } from 'heroui-native'
 import { useEffect, useState, type JSX } from 'react'
 import { View } from 'react-native'
 import { apiFor } from '@/api/client'
+import { failureMessage } from '@/api/use-query'
 import { Screen } from '@/components/screen'
 import { storedServerUrl } from '@/connect/store'
 
@@ -39,14 +40,11 @@ export default function HomeScreen(): JSX.Element {
       },
       (failure: unknown) => {
         if (cancelled) return
-        // 401 means the session is gone — expired (ADR 0005) or revoked from
-        // another device. The Server connection is intact; ask for
-        // credentials again rather than restarting the connect flow.
-        if (failure instanceof ApiError && failure.status === 401) {
-          router.replace('/sign-in')
-          return
-        }
-        setError(failure instanceof Error ? failure.message : 'Could not load your Household.')
+        // 401 means the session is gone (ADR 0005) — failureMessage
+        // redirects to sign-in and yields null; the Server connection is
+        // intact, so anything else is just this screen's error line.
+        const message = failureMessage(failure)
+        if (message !== null) setError(message)
       },
     )
     return () => {

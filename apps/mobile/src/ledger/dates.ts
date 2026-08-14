@@ -52,7 +52,9 @@ export const todayCalendarString = (): string => {
   return `${pad(now.getFullYear(), 4)}-${pad(now.getMonth() + 1, 2)}-${pad(now.getDate(), 2)}`
 }
 
-const daysInMonth = (year: number, month: number): number => {
+// The real calendar's month lengths, shared with the filter presets
+// (filters.ts) — one copy of the leap rule per app.
+export const daysInMonth = (year: number, month: number): number => {
   const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
   return [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 31
 }

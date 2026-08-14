@@ -1,7 +1,6 @@
-import { call, ApiError, type ApiClient } from '@pfinance/api-client'
+import { call, type ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { router } from 'expo-router'
 import {
   Button,
   Chip,
@@ -17,6 +16,7 @@ import { useState, type JSX, type ReactNode } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { apiFor } from '@/api/client'
+import { failureMessage } from '@/api/use-query'
 import {
   formatCalendarDate,
   isCalendarDate,
@@ -25,18 +25,18 @@ import {
 } from '@/ledger/dates'
 import {
   amountExample,
-  draftFromEntry,
+  draftFromTransaction,
   emptyDraft,
   validateDraft,
-  type EntryDraft,
-} from '@/ledger/entry'
+  type TransactionDraft,
+} from '@/ledger/draft'
 
 // The quick-entry form (issue #80): create, edit, and delete a Transaction
 // in a few taps, with a missing Category creatable by name on the spot
 // (name-only — Category management stays on the web). Rendered by the
 // transactions screen in place of the list, so an edited entry never has to
 // survive a route change. The sign never appears in the amount field: the
-// Money out / Money in choice carries it (ledger/entry.ts), and the stored
+// Money out / Money in choice carries it (ledger/draft.ts), and the stored
 // amount is integer minor units end to end (ADR 0006).
 
 type TransactionEntry = InferResponseType<
@@ -87,16 +87,6 @@ function FieldBlock({ label, children }: { label: string; children: ReactNode })
   )
 }
 
-// The 401 → sign-in redirect every authenticated surface shares (the
-// use-query stance): the session is gone, not the Server connection.
-const failureMessage = (failure: unknown): string | null => {
-  if (failure instanceof ApiError && failure.status === 401) {
-    router.replace('/sign-in')
-    return null
-  }
-  return failure instanceof Error ? failure.message : 'Request failed'
-}
-
 export function TransactionForm({
   apiUrl,
   entry,
@@ -104,8 +94,7 @@ export function TransactionForm({
   categories,
   currency,
   dateFormat,
-  onSaved,
-  onDeleted,
+  onDone,
   onCategoryCreated,
   onClose,
 }: {
@@ -118,14 +107,14 @@ export function TransactionForm({
   categories: CategoryEntry[]
   currency: CurrencyCode
   dateFormat: DateFormat
-  onSaved: () => void
-  onDeleted: () => void
+  // The write landed — save or delete alike: close and refresh the list.
+  onDone: () => void
   onCategoryCreated: () => void
   onClose: () => void
 }): JSX.Element {
   const today = todayCalendarString()
-  const [draft, setDraft] = useState<EntryDraft>(() => {
-    if (entry !== null) return draftFromEntry(entry, currency)
+  const [draft, setDraft] = useState<TransactionDraft>(() => {
+    if (entry !== null) return draftFromTransaction(entry, currency)
     const fresh = emptyDraft(today)
     // One active Account needs no choice — quick entry starts ready.
     const active = accounts.filter((account) => account.archivedAt === null)
@@ -141,7 +130,7 @@ export function TransactionForm({
   const [newCategoryName, setNewCategoryName] = useState('')
   const [createdCategories, setCreatedCategories] = useState<CategoryEntry[]>([])
 
-  const set = <K extends keyof EntryDraft>(key: K, value: EntryDraft[K]) =>
+  const set = <K extends keyof TransactionDraft>(key: K, value: TransactionDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }))
 
   // Open Accounts only for new entries; editing a row on an archived Account
@@ -187,7 +176,7 @@ export function TransactionForm({
           'Could not save the transaction.',
         )
       }
-      onSaved()
+      onDone()
     } catch (failure) {
       setBusy(false)
       setError(failureMessage(failure))
@@ -203,7 +192,7 @@ export function TransactionForm({
         apiFor(apiUrl).api.transactions[':id'].$delete({ param: { id: entry.id } }),
         'Could not delete the transaction.',
       )
-      onDeleted()
+      onDone()
     } catch (failure) {
       setBusy(false)
       setError(failureMessage(failure))

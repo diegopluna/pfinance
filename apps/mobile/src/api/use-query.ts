@@ -22,6 +22,19 @@ export interface ApiQuery<T> {
   retry: () => void
 }
 
+// The one failure treatment every authenticated request shares — reads and
+// writes (issue #80's form) alike: a 401 redirects to sign-in and yields
+// null (nothing to render — the session is gone, expired per ADR 0005 or
+// revoked, while the Server connection is intact); anything else is the
+// message for the screen's error line.
+export const failureMessage = (failure: unknown): string | null => {
+  if (failure instanceof ApiError && failure.status === 401) {
+    router.replace('/sign-in')
+    return null
+  }
+  return failure instanceof Error ? failure.message : 'Request failed'
+}
+
 export function useApiQuery<T>(load: (() => Promise<T>) | null): ApiQuery<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -41,11 +54,9 @@ export function useApiQuery<T>(load: (() => Promise<T>) | null): ApiQuery<T> {
       },
       (failure: unknown) => {
         if (cancelled) return
-        if (failure instanceof ApiError && failure.status === 401) {
-          router.replace('/sign-in')
-          return
-        }
-        setError(failure instanceof Error ? failure.message : 'Request failed')
+        const message = failureMessage(failure)
+        if (message === null) return
+        setError(message)
         setLoading(false)
       },
     )

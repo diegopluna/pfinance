@@ -1,5 +1,5 @@
 import { expect, test } from 'vite-plus/test'
-import { draftFromEntry, emptyDraft, validateDraft } from '../src/ledger/entry.ts'
+import { draftFromTransaction, emptyDraft, validateDraft } from '../src/ledger/draft.ts'
 
 // --- The quick-entry form's state and its wire mapping (issue #80) ---
 // The form never asks for a sign: direction is a Money out / Money in
@@ -106,8 +106,8 @@ test('editing decomposes a stored amount back into direction and decimal', () =>
     description: 'Groceries',
     categoryId: 'cat-9',
   }
-  expect(draftFromEntry(entry, 'USD')).toEqual(draft)
-  expect(draftFromEntry({ ...entry, amount: 250000 }, 'USD')).toEqual({
+  expect(draftFromTransaction(entry, 'USD')).toEqual(draft)
+  expect(draftFromTransaction({ ...entry, amount: 250000 }, 'USD')).toEqual({
     ...draft,
     direction: 'in',
     amount: '2500.00',
@@ -122,7 +122,7 @@ test('editing an Uncategorized row yields the blank Category', () => {
     description: 'Groceries',
     categoryId: null,
   }
-  expect(draftFromEntry(entry, 'USD').categoryId).toBe('')
+  expect(draftFromTransaction(entry, 'USD').categoryId).toBe('')
 })
 
 test('a draft round-trips: entry → draft → the same wire fields', () => {
@@ -133,7 +133,7 @@ test('a draft round-trips: entry → draft → the same wire fields', () => {
     description: 'Groceries',
     categoryId: null,
   }
-  expect(validateDraft(draftFromEntry(entry, 'USD'), 'USD')).toEqual({
+  expect(validateDraft(draftFromTransaction(entry, 'USD'), 'USD')).toEqual({
     ok: true,
     value: entry,
   })

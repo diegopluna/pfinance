@@ -232,11 +232,7 @@ export default function TransactionsScreen(): JSX.Element {
         categories={categories.data.categories}
         currency={currency}
         dateFormat={dateFormat}
-        onSaved={() => {
-          setForm(null)
-          transactions.retry()
-        }}
-        onDeleted={() => {
+        onDone={() => {
           setForm(null)
           transactions.retry()
         }}

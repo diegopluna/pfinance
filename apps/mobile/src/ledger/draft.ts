@@ -10,7 +10,7 @@ import { isCalendarDate } from './dates'
 
 export type Direction = 'out' | 'in'
 
-export interface EntryDraft {
+export interface TransactionDraft {
   accountId: string
   direction: Direction
   // Unsigned decimal text in the Household Currency; the sign lives in the
@@ -27,7 +27,7 @@ export interface EntryDraft {
 // standard, and a PATCH that omits it preserves the row's own — so the form
 // can edit a Balance Adjustment without ever handling kinds (issue #81's
 // surface).
-export interface EntryFields {
+export interface TransactionFields {
   accountId: string
   date: string
   amount: number
@@ -35,11 +35,11 @@ export interface EntryFields {
   categoryId: string | null
 }
 
-export type EntryValidation = { ok: true; value: EntryFields } | { ok: false; error: string }
+export type DraftValidation = { ok: true; value: TransactionFields } | { ok: false; error: string }
 
 // A fresh entry is an expense dated today: the register case (user story
 // 12) is money out, right now.
-export const emptyDraft = (today: string): EntryDraft => ({
+export const emptyDraft = (today: string): TransactionDraft => ({
   accountId: '',
   direction: 'out',
   amount: '',
@@ -52,10 +52,10 @@ export const emptyDraft = (today: string): EntryDraft => ({
 // Zero decomposes as money in — an amount the form itself never produces
 // (validation refuses zero), so the arbitrary side only shows in rows
 // created elsewhere.
-export const draftFromEntry = (
-  entry: Omit<EntryFields, 'amount'> & { amount: number },
+export const draftFromTransaction = (
+  entry: Omit<TransactionFields, 'amount'> & { amount: number },
   currency: CurrencyCode,
-): EntryDraft => ({
+): TransactionDraft => ({
   accountId: entry.accountId,
   direction: entry.amount < 0 ? 'out' : 'in',
   amount: fromMinorUnits(Math.abs(entry.amount), currency),
@@ -89,7 +89,7 @@ const parseAmount = (text: string, currency: CurrencyCode): number | null => {
 // The first problem in the user's terms, or the whole wire shape — the
 // server's Parsed stance (apps/server/src/transactions.ts), client-side so
 // quick entry fails before the network does.
-export const validateDraft = (draft: EntryDraft, currency: CurrencyCode): EntryValidation => {
+export const validateDraft = (draft: TransactionDraft, currency: CurrencyCode): DraftValidation => {
   if (draft.accountId === '') return { ok: false, error: 'Choose an account.' }
   const description = draft.description.trim()
   if (description === '') return { ok: false, error: 'Describe the transaction.' }
