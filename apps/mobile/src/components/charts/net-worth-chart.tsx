@@ -3,6 +3,7 @@ import { useThemeColor } from 'heroui-native'
 import { useState, type JSX } from 'react'
 import { useColorScheme, View } from 'react-native'
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg'
+import { CHART_LABEL_FONT } from '@/charts/font'
 import { lineLayout, monthLabelAnchor, monthTickIndices } from '@/charts/layout'
 import { monthLabel } from '@/charts/months'
 import { chartPalette } from '@/charts/palette'
@@ -14,6 +15,11 @@ import { chartPalette } from '@/charts/palette'
 // geometry comes from charts/layout.ts; this component only draws. Exact
 // amounts live in the screen's headline — the chart is the shape, its axis
 // ticks compact by design.
+//
+// Zero, when the domain contains it, is drawn as the rail's rule rather
+// than as one more gridline: it is the same line every list on every other
+// screen measures against, and a household below it should be able to see
+// that at a glance.
 
 const CHART_HEIGHT = 200
 const LABEL_BAND = 18
@@ -60,8 +66,9 @@ export function NetWorthChart({
               y1={tick.y}
               x2={width}
               y2={tick.y}
-              stroke={separator}
+              stroke={tick.value === 0 ? muted : separator}
               strokeWidth={1}
+              opacity={tick.value === 0 ? 0.5 : 1}
             />
           ))}
           {layout.ticks.map((tick) => (
@@ -72,6 +79,7 @@ export function NetWorthChart({
               // it instead — above would clip on the frame edge.
               y={tick.y < 12 ? tick.y + 12 : tick.y - 4}
               fontSize={10}
+              fontFamily={CHART_LABEL_FONT}
               fill={muted}
             >
               {compactAmount(tick.value, currency)}
@@ -106,6 +114,7 @@ export function NetWorthChart({
                 x={point.x}
                 y={CHART_HEIGHT + LABEL_BAND - 4}
                 fontSize={10}
+                fontFamily={CHART_LABEL_FONT}
                 fill={muted}
                 textAnchor={monthLabelAnchor(point.x, width)}
               >

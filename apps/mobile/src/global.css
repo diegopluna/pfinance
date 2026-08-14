@@ -6,3 +6,148 @@
 /* End-user path: heroui-native lives in the project's node_modules, one
    level up from this src/global.css file. */
 @source '../node_modules/heroui-native/lib';
+
+/* ── Type ────────────────────────────────────────────────────────────────
+   Spline Sans for prose, Spline Sans Mono for every figure and every
+   structural label. The mono is this app's display voice: a ledger is a
+   column of aligned digits, and a monospaced face aligns them by
+   construction — `font-variant-numeric: tabular-nums` is a feature flag a
+   loaded TTF may not carry, while a mono has nothing to opt into.
+
+   heroui-native reads `--font-normal` … `--font-bold` for its own component
+   CSS, and Tailwind resolves the `--font-*` namespace before `--font-weight-*`,
+   so the existing `font-medium` / `font-semibold` classes keep meaning what
+   they read as — they just resolve to the weight's own font file, which is
+   what static TTFs need (React Native does not synthesize weights).
+   The families are registered by src/app/_layout.tsx; these names must match
+   the keys it passes to useFonts exactly. */
+@theme {
+  --font-normal: 'SplineSans_400Regular';
+  --font-medium: 'SplineSans_500Medium';
+  --font-semibold: 'SplineSans_600SemiBold';
+  --font-bold: 'SplineSans_700Bold';
+  --font-mono: 'SplineSansMono_400Regular';
+  --font-mono-medium: 'SplineSansMono_500Medium';
+  --font-mono-semibold: 'SplineSansMono_600SemiBold';
+}
+
+/* ── Color ───────────────────────────────────────────────────────────────
+   No new hues. The neutrals are the web's shadcn tokens
+   (packages/ui/src/styles/globals.css) so the two clients of one Household
+   read as one product, and every colored value is a decision the design
+   project already made (docs/design/DECISIONS.md):
+
+     accent   --s1  #2a78d6 / #3987e5   the money-in blue, and the app's one accent
+     success  --good #006300 / #0ca30c  a gain
+     danger   --crit #d03b3b            an error
+     warning  --s4  #eda100 / #c98500
+
+   Money out (--s2 #eb6834) is deliberately not a UI token: it means one
+   thing, an outflow, and it is only ever drawn by the rail and the charts
+   from src/charts/palette.ts.
+
+   heroui-native declares these inside `@layer theme`, so this block matches
+   that structure to override at equal specificity. */
+@layer theme {
+  :root {
+    @variant light {
+      --background: oklch(1 0 0);
+      --foreground: oklch(0.145 0 0);
+
+      --surface: oklch(1 0 0);
+      --surface-foreground: oklch(0.145 0 0);
+      --surface-secondary: oklch(0.97 0 0);
+      --surface-secondary-foreground: oklch(0.145 0 0);
+      --surface-tertiary: oklch(0.922 0 0);
+      --surface-tertiary-foreground: oklch(0.145 0 0);
+
+      --overlay: oklch(1 0 0);
+      --overlay-foreground: oklch(0.145 0 0);
+      --backdrop: oklch(0 0 0 / 40%);
+
+      --muted: oklch(0.556 0 0);
+
+      --default: oklch(0.97 0 0);
+      --default-foreground: oklch(0.205 0 0);
+
+      --accent: oklch(0.575 0.163 255.532);
+      --accent-foreground: oklch(0.985 0 0);
+
+      --success: oklch(0.433 0.147 142.495);
+      --success-foreground: oklch(0.985 0 0);
+      --warning: oklch(0.764 0.161 75.116);
+      --warning-foreground: oklch(0.145 0 0);
+      --danger: oklch(0.575 0.186 25.234);
+      --danger-foreground: oklch(0.985 0 0);
+
+      --segment: oklch(1 0 0);
+      --segment-foreground: oklch(0.145 0 0);
+
+      /* One hairline value for borders and separators alike: the whole app
+         is drawn with rules rather than cards, so a second weight of line
+         would read as a second meaning. */
+      --border: oklch(0.922 0 0);
+      --separator: oklch(0.922 0 0);
+      --focus: oklch(0.575 0.163 255.532);
+      --link: oklch(0.575 0.163 255.532);
+
+      /* Fields are outlined, not floated: on a white page a shadow reads as
+         a card, and this design has no cards. */
+      --field-background: oklch(1 0 0);
+      --field-foreground: oklch(0.145 0 0);
+      --field-placeholder: oklch(0.556 0 0);
+      --field-border: oklch(0.922 0 0);
+      --field-border-width: 1px;
+      --surface-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+      --overlay-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+      --field-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    }
+
+    @variant dark {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+
+      --surface: oklch(0.205 0 0);
+      --surface-foreground: oklch(0.985 0 0);
+      --surface-secondary: oklch(0.269 0 0);
+      --surface-secondary-foreground: oklch(0.985 0 0);
+      --surface-tertiary: oklch(0.269 0 0);
+      --surface-tertiary-foreground: oklch(0.985 0 0);
+
+      --overlay: oklch(0.205 0 0);
+      --overlay-foreground: oklch(0.985 0 0);
+      --backdrop: oklch(0 0 0 / 60%);
+
+      --muted: oklch(0.708 0 0);
+
+      --default: oklch(0.269 0 0);
+      --default-foreground: oklch(0.985 0 0);
+
+      --accent: oklch(0.622 0.161 255.053);
+      --accent-foreground: oklch(0.985 0 0);
+
+      --success: oklch(0.621 0.207 142.564);
+      --success-foreground: oklch(0.145 0 0);
+      --warning: oklch(0.67 0.143 73.227);
+      --warning-foreground: oklch(0.145 0 0);
+      /* The mirror records no dark --crit; the web already resolved that gap
+         in globals.css, so both clients diverge from it identically. */
+      --danger: oklch(0.704 0.191 22.216);
+      --danger-foreground: oklch(0.985 0 0);
+
+      --segment: oklch(0.269 0 0);
+      --segment-foreground: oklch(0.985 0 0);
+
+      --border: oklch(1 0 0 / 10%);
+      --separator: oklch(1 0 0 / 10%);
+      --focus: oklch(0.622 0.161 255.053);
+      --link: oklch(0.622 0.161 255.053);
+
+      --field-background: oklch(0.205 0 0);
+      --field-foreground: oklch(0.985 0 0);
+      --field-placeholder: oklch(0.708 0 0);
+      --field-border: oklch(1 0 0 / 15%);
+      --field-border-width: 1px;
+    }
+  }
+}

@@ -2,17 +2,20 @@ import { call, type ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { Redirect, useLocalSearchParams } from 'expo-router'
-import { Button, Chip, SearchField, Typography } from 'heroui-native'
+import { Button, Chip, SearchField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { FlatList, Pressable, ScrollView, View } from 'react-native'
 import { apiFor } from '@/api/client'
 import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
+import { railBars, type RailBar } from '@/charts/rail'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { Rail, RailBand } from '@/components/rail'
 import { TransactionForm } from '@/components/transaction-form'
 import { TransferForm } from '@/components/transfer-form'
+import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
@@ -89,6 +92,8 @@ function TransactionRow({
   dateFormat,
   accountNames,
   categoryNames,
+  bar,
+  index,
   onPress,
 }: {
   entry: TransactionEntry
@@ -96,6 +101,8 @@ function TransactionRow({
   dateFormat: DateFormat
   accountNames: Map<string, string>
   categoryNames: Map<string, string>
+  bar: RailBar
+  index: number
   onPress: () => void
 }): JSX.Element {
   const badge = kindBadge(
@@ -111,24 +118,23 @@ function TransactionRow({
       : categoryLabel(entry.kind, categoryNames.get(entry.categoryId) ?? 'Unknown category')
   return (
     <Pressable onPress={onPress}>
-      <View className="flex-row items-start justify-between gap-3 border-b border-separator py-3">
+      <View className="flex-row items-start justify-between gap-3 py-3">
         <View className="flex-1 gap-1">
-          <Typography.Paragraph numberOfLines={1} className="font-medium">
-            {entry.description}
-          </Typography.Paragraph>
-          <Typography.Paragraph type="body-sm" color="muted">
+          <Body numberOfLines={1}>{entry.description}</Body>
+          <Body size="sm" tone="muted" numberOfLines={1}>
             {formatCalendarDate(entry.date, dateFormat)} ·{' '}
             {accountNames.get(entry.accountId) ?? 'Unknown account'} · {category}
-          </Typography.Paragraph>
+          </Body>
           {badge !== null && (
-            <View className="flex-row">
-              <Chip size="sm" variant="soft" color="default">
-                <Chip.Label>{badge}</Chip.Label>
-              </Chip>
+            <View className="flex-row pt-0.5">
+              <Badge>{badge}</Badge>
             </View>
           )}
         </View>
         <Amount amount={ledgerAmount(entry.kind, entry.amount, currency)} />
+        {/* The row's own underline: how much, which way, against the same
+            rule every other row is measured on. */}
+        <RailBand bar={bar} index={index} />
       </View>
     </Pressable>
   )
@@ -261,9 +267,21 @@ export default function TransactionsScreen(): JSX.Element {
     )
   }
 
+  const entries = transactions.data?.transactions ?? []
+  // One scale for the visible ledger: the bars answer "how does this
+  // compare to the rest of what I'm looking at", so they rescale with the
+  // filters rather than against some absolute the screen never shows.
+  const bars = railBars(
+    entries.map((entry) => ({
+      amount: entry.amount,
+      neutral: entry.kind === 'transfer' || entry.kind === 'balance_adjustment',
+    })),
+  )
+
   return (
     <ListScreen
       title="Transactions"
+      eyebrow="Ledger"
       action={
         <View className="flex-row gap-2">
           {/* A Transfer needs two Accounts to move between. */}
@@ -273,7 +291,7 @@ export default function TransactionsScreen(): JSX.Element {
               variant="outline"
               onPress={() => setForm({ kind: 'transfer', entry: null })}
             >
-              New transfer
+              Transfer
             </Button>
           )}
           <Button size="sm" onPress={() => setForm({ kind: 'transaction', entry: null })}>
@@ -282,76 +300,86 @@ export default function TransactionsScreen(): JSX.Element {
         </View>
       }
     >
-      <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
-        <SearchField.Group>
-          <SearchField.SearchIcon />
-          <SearchField.Input placeholder="Search descriptions" />
-          <SearchField.ClearButton />
-        </SearchField.Group>
-      </SearchField>
-      <ChipRow
-        choices={[
-          { value: 'expense', label: 'Expenses' },
-          { value: 'income', label: 'Income' },
-        ]}
-        value={filters.view}
-        onChange={(view) =>
-          setFilters((f) => ({ ...f, view: view === 'expense' || view === 'income' ? view : '' }))
-        }
-      />
-      <ChipRow
-        choices={PERIOD_CHOICES}
-        value={filters.period}
-        onChange={(period) =>
-          setFilters((f) => ({ ...f, period: isPeriodPreset(period) ? period : '' }))
-        }
-      />
-      {accountChoices.length > 1 && (
+      <View className="gap-2.5">
+        <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="Search descriptions" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
         <ChipRow
-          choices={accountChoices}
-          value={filters.accountId}
-          onChange={(accountId) => setFilters((f) => ({ ...f, accountId }))}
+          choices={[
+            { value: 'expense', label: 'Expenses' },
+            { value: 'income', label: 'Income' },
+          ]}
+          value={filters.view}
+          onChange={(view) =>
+            setFilters((f) => ({ ...f, view: view === 'expense' || view === 'income' ? view : '' }))
+          }
         />
-      )}
-      <ChipRow
-        choices={categoryChoices}
-        value={filters.categoryId}
-        onChange={(categoryId) => setFilters((f) => ({ ...f, categoryId }))}
-      />
+        <ChipRow
+          choices={PERIOD_CHOICES}
+          value={filters.period}
+          onChange={(period) =>
+            setFilters((f) => ({ ...f, period: isPeriodPreset(period) ? period : '' }))
+          }
+        />
+        {accountChoices.length > 1 && (
+          <ChipRow
+            choices={accountChoices}
+            value={filters.accountId}
+            onChange={(accountId) => setFilters((f) => ({ ...f, accountId }))}
+          />
+        )}
+        <ChipRow
+          choices={categoryChoices}
+          value={filters.categoryId}
+          onChange={(categoryId) => setFilters((f) => ({ ...f, categoryId }))}
+        />
+      </View>
       {error !== null || !loaded || transactions.data === null ? (
         <ListStatus error={error} retry={retry} />
-      ) : transactions.data.transactions.length === 0 ? (
+      ) : entries.length === 0 ? (
         <ListStatus
           error={null}
           retry={retry}
           empty={
             filtering
-              ? 'No transactions match these filters.'
-              : 'No transactions yet — the ledger fills up from the web app.'
+              ? 'No transactions match these filters. Clear one to widen the ledger.'
+              : 'Log your first transaction and the ledger starts here.'
           }
         />
       ) : (
-        <FlatList
-          data={transactions.data.transactions}
-          keyExtractor={(entry) => entry.id}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TransactionRow
-              entry={item}
-              currency={currency}
-              dateFormat={dateFormat}
-              accountNames={accountNames}
-              categoryNames={categoryNames}
-              onPress={() =>
-                setForm(
-                  item.transferId !== null
-                    ? { kind: 'transfer', entry: { ...item, transferId: item.transferId } }
-                    : { kind: 'transaction', entry: item },
-                )
-              }
-            />
-          )}
-        />
+        <Rail className="flex-1">
+          <FlatList
+            data={entries}
+            keyExtractor={(entry) => entry.id}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item, index }) => {
+              const bar = bars[index]
+              return bar === undefined ? null : (
+                <TransactionRow
+                  entry={item}
+                  currency={currency}
+                  dateFormat={dateFormat}
+                  accountNames={accountNames}
+                  categoryNames={categoryNames}
+                  bar={bar}
+                  index={index}
+                  onPress={() =>
+                    setForm(
+                      item.transferId !== null
+                        ? { kind: 'transfer', entry: { ...item, transferId: item.transferId } }
+                        : { kind: 'transaction', entry: item },
+                    )
+                  }
+                />
+              )
+            }}
+          />
+        </Rail>
       )}
     </ListScreen>
   )

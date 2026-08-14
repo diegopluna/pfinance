@@ -1,8 +1,9 @@
-// Chart geometry for the mobile dashboards (issue #79): pure math from
-// server-derived series to SVG coordinates, so the components only draw.
-// The web renders these charts through recharts; native has no equivalent
-// dependency, so the scales and paths live here — free of react-native
-// imports, covered by the workspace's node test runner.
+// Chart geometry for the Net Worth area (issue #79): pure math from the
+// server-derived series to SVG coordinates, so the component only draws.
+// The web renders it through recharts; native has no equivalent dependency,
+// so the scale and paths live here — free of react-native imports, covered
+// by the workspace's node test runner. The other two dashboards need no
+// SVG at all: they are laid out with the rail (src/charts/rail.ts).
 
 // A nice round gridline step from the 1/2/5 ladder.
 const niceStep = (raw: number): number => {
@@ -92,75 +93,7 @@ export const monthTickIndices = (count: number, maxLabels: number): number[] => 
   return indices.slice(-maxLabels)
 }
 
-// A month label near either frame edge anchors inward so it never clips —
-// one rule for both time-series charts. The margins approximate a rendered
-// "Aug 2026" at the axis font size.
+// A month label near either frame edge anchors inward so it never clips.
+// The margins approximate a rendered "Aug 2026" at the axis font size.
 export const monthLabelAnchor = (x: number, width: number): 'start' | 'middle' | 'end' =>
   x < 32 ? 'start' : x > width - 40 ? 'end' : 'middle'
-
-export interface BarRect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-export interface PairedBarsLayout {
-  ticks: { value: number; y: number }[]
-  bars: { x: number; income: BarRect; expense: BarRect }[]
-}
-
-// The web bars round at the data end and stay square on the baseline
-// (radius [4,4,0,0]); a plain Rect rounds all four corners, so the bar is a
-// path — quadratic corners, radius clamped to the bar's own size. A
-// zero-height bar draws nothing rather than a stray hairline.
-export const topRoundedBarPath = (rect: BarRect, radius: number): string => {
-  if (rect.height <= 0) return ''
-  const r = round(Math.min(radius, rect.height, rect.width / 2))
-  const { x, y, width, height } = rect
-  const bottom = round(y + height)
-  return (
-    `M${x} ${bottom}V${round(y + r)}Q${x} ${y} ${round(x + r)} ${y}` +
-    `H${round(x + width - r)}Q${round(x + width)} ${y} ${round(x + width)} ${round(y + r)}` +
-    `V${bottom}Z`
-  )
-}
-
-// The web pairing: a fixed 12px cap so short windows don't balloon into
-// slabs, thinning only when a month's band can't fit the pair.
-const BAR_WIDTH = 12
-const BAR_GAP = 2
-
-// Income and expense are magnitudes (the server already resolved the sign
-// into the view), so bars grow from a zero baseline; each month owns an
-// equal band with income left of center, expense right. A quiet side keeps
-// its zero-height entry — the pair never collapses into a lone bar. An
-// all-zero window (possible when the ledger's only entries sit outside it)
-// falls back to a one-major-unit axis rather than dividing by zero.
-export const pairedBarsLayout = (
-  months: { income: number; expense: number }[],
-  frame: Frame,
-): PairedBarsLayout => {
-  const max = Math.max(0, ...months.map((month) => Math.max(month.income, month.expense)))
-  const ticks = valueTicks(0, max === 0 ? 100 : max, 3)
-  const y = yScale(ticks, frame.height)
-  const band = frame.width / Math.max(1, months.length)
-  const barWidth = round(Math.min(BAR_WIDTH, band * 0.35))
-  const rect = (center: number, side: 'income' | 'expense', value: number): BarRect => ({
-    x: round(side === 'income' ? center - BAR_GAP / 2 - barWidth : center + BAR_GAP / 2),
-    y: y(value),
-    width: barWidth,
-    height: round(frame.height - y(value)),
-  })
-  return {
-    ticks: ticks.map((value) => ({ value, y: y(value) })),
-    bars: months.map((month, index) => {
-      const center = round(band * index + band / 2)
-      return {
-        x: center,
-        income: rect(center, 'income', month.income),
-        expense: rect(center, 'expense', month.expense),
-      }
-    }),
-  }
-}

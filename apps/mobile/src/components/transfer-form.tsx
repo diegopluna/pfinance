@@ -1,7 +1,7 @@
 import { call, type ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { Button, Dialog, FieldError, Input, Label, TextField, Typography } from 'heroui-native'
+import { Button, Dialog, FieldError, Input, Label, TextField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { apiFor } from '@/api/client'
 import { failureMessage } from '@/api/use-query'
 import { ChoiceChips, FieldBlock } from '@/components/form-fields'
+import { Body, Eyebrow, Title } from '@/components/type'
 import {
   formatCalendarDate,
   isCalendarDate,
@@ -142,18 +143,19 @@ export function TransferForm({
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View className="flex-1 gap-4 px-6 pt-2">
-            <View className="flex-row items-center justify-between">
-              <Typography.Heading type="h2">
-                {entry === null ? 'New transfer' : 'Edit transfer'}
-              </Typography.Heading>
+          <View className="flex-1 gap-4 px-5 pt-1">
+            <View className="flex-row items-center justify-between gap-3">
+              <View className="flex-1">
+                <Eyebrow>Between accounts</Eyebrow>
+                <Title>{entry === null ? 'New transfer' : 'Edit transfer'}</Title>
+              </View>
               <Button variant="ghost" size="sm" isDisabled={busy} onPress={onClose}>
                 Cancel
               </Button>
             </View>
-            <Typography.Paragraph type="body-sm" color="muted">
+            <Body size="sm" tone="muted">
               Moves money between two of your accounts — never counted as spending or income.
-            </Typography.Paragraph>
+            </Body>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <View className="gap-5 pb-8">
                 <FieldBlock label="From account">
@@ -199,9 +201,9 @@ export function TransferForm({
                     <FieldError>Enter a calendar date like 2026-01-15.</FieldError>
                   </TextField>
                   {dateValid && (
-                    <Typography.Paragraph type="body-sm" color="muted">
+                    <Body size="sm" tone="muted">
                       {formatCalendarDate(draft.date, dateFormat)}
-                    </Typography.Paragraph>
+                    </Body>
                   )}
                 </FieldBlock>
                 <TextField>
@@ -215,9 +217,9 @@ export function TransferForm({
                   />
                 </TextField>
                 {error !== null && (
-                  <Typography.Paragraph type="body-sm" className="text-danger">
+                  <Body size="sm" tone="danger">
                     {error}
-                  </Typography.Paragraph>
+                  </Body>
                 )}
                 <Button isDisabled={busy} onPress={() => void save()}>
                   {entry === null ? 'Log transfer' : 'Save changes'}

@@ -1,9 +1,10 @@
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
-import { Button, FieldError, Input, Label, TextField, Typography } from 'heroui-native'
+import { Button, FieldError, Input, Label, TextField } from 'heroui-native'
 import { useState, type JSX } from 'react'
-import { View } from 'react-native'
+import { Text, View } from 'react-native'
 import { authClientFor } from '@/auth/client'
 import { Screen } from '@/components/screen'
+import { Body, Title } from '@/components/type'
 import { rememberServerUrl, storedServerUrl } from '@/connect/store'
 
 // Real sign-in (issue #77): the same email+password as the web, against the
@@ -50,14 +51,14 @@ export default function SignInScreen(): JSX.Element {
 
   return (
     <Screen>
-      <View className="gap-2">
-        <Typography.Heading type="h2">Sign in</Typography.Heading>
-        <Typography.Paragraph color="muted">
-          Use the same email and password as on the web.
-        </Typography.Paragraph>
-        <Typography.Paragraph type="body-sm" color="muted">
+      <View className="gap-2.5">
+        <Title size="lg">Sign in</Title>
+        <Body tone="muted">Use the same email and password as on the web.</Body>
+        {/* Which Server is being signed into is part of the question: the
+            address is a key, so it is set in the figure voice. */}
+        <Text className="font-mono text-[13px] text-muted" numberOfLines={1}>
           {apiUrl}
-        </Typography.Paragraph>
+        </Text>
       </View>
 
       <View className="gap-4">

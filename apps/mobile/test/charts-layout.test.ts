@@ -1,12 +1,5 @@
 import { expect, test } from 'vite-plus/test'
-import {
-  monthLabelAnchor,
-  lineLayout,
-  monthTickIndices,
-  pairedBarsLayout,
-  topRoundedBarPath,
-  valueTicks,
-} from '../src/charts/layout.ts'
+import { monthLabelAnchor, lineLayout, monthTickIndices, valueTicks } from '../src/charts/layout.ts'
 
 // --- Value-axis ticks (issue #79) ---
 // Nice round gridline values covering the data's range in minor units —
@@ -52,48 +45,10 @@ test('lineLayout centers a single-month series', () => {
   expect(layout.points).toEqual([{ x: 50, y: 50 }])
 })
 
-// --- Income vs expense paired bars (issue #19's months, drawn natively) ---
-// Both totals are magnitudes off a zero baseline; each month owns an equal
-// band with the income bar left of center, expense right — the web pairing.
-// Worked on hand-checkable frames.
-
-test('pairedBarsLayout sizes both bars off the zero baseline', () => {
-  const layout = pairedBarsLayout([{ income: 100000, expense: 50000 }], {
-    width: 100,
-    height: 100,
-  })
-  expect(layout.ticks.map((tick) => tick.value)).toEqual([0, 50000, 100000])
-  expect(layout.bars).toEqual([
-    {
-      x: 50,
-      income: { x: 37, y: 0, width: 12, height: 100 },
-      expense: { x: 51, y: 50, width: 12, height: 50 },
-    },
-  ])
-})
-
-test('pairedBarsLayout gives each month an equal band', () => {
-  const layout = pairedBarsLayout(
-    [
-      { income: 100000, expense: 0 },
-      { income: 0, expense: 100000 },
-    ],
-    { width: 200, height: 100 },
-  )
-  expect(layout.bars.map((bar) => bar.x)).toEqual([50, 150])
-  // A quiet side still gets a bar entry — zero height, sitting on the
-  // baseline — so the pair never collapses into a lone bar.
-  expect(layout.bars[0]?.expense).toEqual({ x: 51, y: 100, width: 12, height: 0 })
-})
-
-test('pairedBarsLayout survives an all-zero window with a default band', () => {
-  const layout = pairedBarsLayout([{ income: 0, expense: 0 }], { width: 100, height: 100 })
-  expect(layout.ticks.map((tick) => tick.value)).toEqual([0, 50, 100])
-})
-
-// --- Month-label selection ---
-// A phone fits few axis labels, so a subset is chosen by stepping back from
-// the latest month — the newest label always renders, the oldest may not.
+// --- Month axis labels ---
+// A phone fits few of them, so the series labels a subset — stepping back
+// from the latest month, because the newest label is the one being asked
+// about.
 
 test('monthTickIndices labels every month when they fit', () => {
   expect(monthTickIndices(3, 4)).toEqual([0, 1, 2])
@@ -107,32 +62,6 @@ test('monthTickIndices anchors to the latest month when thinning', () => {
 test('monthTickIndices handles an empty series', () => {
   expect(monthTickIndices(0, 4)).toEqual([])
 })
-
-// --- Top-rounded bar paths ---
-// The web bars round at the data end and stay square on the baseline
-// (radius [4,4,0,0]); a plain Rect rounds all four corners, so the bar is a
-// path. Worked example: corners as quadratic curves, radius clamped to the
-// bar's own size, and a zero-height bar draws nothing.
-
-test('topRoundedBarPath rounds only the data end', () => {
-  expect(topRoundedBarPath({ x: 0, y: 0, width: 12, height: 20 }, 4)).toBe(
-    'M0 20V4Q0 0 4 0H8Q12 0 12 4V20Z',
-  )
-})
-
-test('topRoundedBarPath clamps the radius to a short bar', () => {
-  expect(topRoundedBarPath({ x: 0, y: 18, width: 12, height: 2 }, 4)).toBe(
-    'M0 20V20Q0 18 2 18H10Q12 18 12 20V20Z',
-  )
-})
-
-test('topRoundedBarPath draws nothing for a zero-height bar', () => {
-  expect(topRoundedBarPath({ x: 0, y: 100, width: 12, height: 0 }, 4)).toBe('')
-})
-
-// --- Month-label anchoring ---
-// A label near either frame edge anchors inward so it never clips; the
-// same rule serves both time-series charts.
 
 test('monthLabelAnchor anchors edge labels inward', () => {
   expect(monthLabelAnchor(0, 320)).toBe('start')

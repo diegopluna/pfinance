@@ -1,17 +1,22 @@
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
-import { Typography } from 'heroui-native'
 import type { JSX } from 'react'
 import { useColorScheme, View } from 'react-native'
 import { chartPalette } from '@/charts/palette'
 import { spendingRows, type SpendingSliceInput } from '@/charts/spending'
-import { Amount } from '@/components/amount'
+import { Figure } from '@/components/amount'
+import { Body } from '@/components/type'
 
 // Spending by Category for one month (issue #79), drawn natively as
 // horizontal bars — the form for comparing magnitudes across labeled
 // categories, the mobile cut of the web chart (apps/web/src/components/
 // spending-by-category-chart.tsx). Plain Views, no SVG: a fraction-wide bar
-// under each label row scales with the screen on its own. Rows arrive
-// server-summed and largest-first (charts/spending.ts adds only
+// under each label row scales with the screen on its own.
+//
+// These bars deliberately do not use the rail. The rail means a sign, and
+// every slice here is spending — one direction, one sign, magnitudes only.
+// Giving them a zero rule would claim a comparison the data doesn't make.
+//
+// Rows arrive server-summed and largest-first (charts/spending.ts adds only
 // presentation); every row carries its exact amount through the shared
 // currency package (ADR 0006), so nothing here is compact-only.
 
@@ -26,16 +31,16 @@ export function SpendingBars({
   return (
     <View accessibilityRole="list">
       {spendingRows(slices).map((row) => (
-        <View key={row.key} className="gap-1.5 py-2">
-          <View className="flex-row items-center justify-between gap-3">
-            <Typography.Paragraph numberOfLines={1} className="shrink font-medium">
+        <View key={row.key} className="gap-2 py-2.5">
+          <View className="flex-row items-baseline justify-between gap-3">
+            <Body numberOfLines={1} className="shrink">
               {row.label}
-            </Typography.Paragraph>
-            <Amount amount={{ text: formatAmount(row.total, currency), tone: 'plain' }} />
+            </Body>
+            <Figure>{formatAmount(row.total, currency)}</Figure>
           </View>
-          <View className="h-2 overflow-hidden rounded-full bg-surface-secondary">
+          <View className="h-[6px] overflow-hidden rounded-full bg-surface-secondary">
             <View
-              className="h-2 rounded-full"
+              className="h-[6px] rounded-full"
               style={{
                 width: `${row.fraction * 100}%`,
                 backgroundColor:
