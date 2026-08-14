@@ -1,9 +1,10 @@
 import { Redirect, router } from 'expo-router'
-import { Button, Description, Input, Label, TextField, Typography } from 'heroui-native'
+import { Button, Description, Input, Label, TextField } from 'heroui-native'
 import { useState, type JSX } from 'react'
 import { View } from 'react-native'
 import { sessionCookie } from '@/auth/client'
 import { Screen } from '@/components/screen'
+import { Body, Title } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 import { launchTarget } from '@/shell/route'
 
@@ -37,11 +38,11 @@ export default function ConnectScreen(): JSX.Element {
 
   return (
     <Screen>
-      <View className="gap-2">
-        <Typography.Heading type="h2">Connect to your Server</Typography.Heading>
-        <Typography.Paragraph color="muted">
+      <View className="gap-2.5">
+        <Title size="lg">Connect to your Server</Title>
+        <Body tone="muted">
           pfinance is self-hosted: this app talks to your own Server and nobody else&apos;s.
-        </Typography.Paragraph>
+        </Body>
       </View>
 
       <TextField>
@@ -67,9 +68,9 @@ export default function ConnectScreen(): JSX.Element {
         <Button variant="outline" onPress={() => router.push('/scan')}>
           Scan QR code
         </Button>
-        <Typography.Paragraph type="body-sm" color="muted" align="center">
+        <Body size="sm" tone="muted" className="text-center">
           The QR code is in the web app, under Settings → Mobile app.
-        </Typography.Paragraph>
+        </Body>
       </View>
     </Screen>
   )

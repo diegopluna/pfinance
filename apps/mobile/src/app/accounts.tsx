@@ -2,22 +2,25 @@ import { call, type ApiClient } from '@pfinance/api-client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { Redirect } from 'expo-router'
-import { Chip, Typography } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useCallback, type JSX } from 'react'
 import { FlatList, View } from 'react-native'
 import { apiFor } from '@/api/client'
 import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
-import { Amount } from '@/components/amount'
+import { railBars, type RailBar } from '@/charts/rail'
+import { Figure } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { Rail, RailBand } from '@/components/rail'
+import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 
 // The Account list with Balances (issue #78): every Balance is derived
 // server-side — opening balance plus the ledger sum (ADR 0001) — and
 // rendered through the shared currency package (ADR 0006), never computed
-// here. Liabilities carry the LIABILITY badge so debt reads as debt at a
-// glance; their sign is user-carried, never flipped by kind.
+// here. Each Balance also hangs off the rail, so a household's debt leans
+// one way and its savings the other: liabilities are badged, and their sign
+// is user-carried, never flipped by kind.
 
 type AccountEntry = InferResponseType<ApiClient['api']['accounts']['$get'], 200>['accounts'][number]
 
@@ -26,28 +29,29 @@ const typeLabels = new Map<string, string>(ACCOUNT_TYPES.map(({ type, label }) =
 function AccountRow({
   entry,
   currency,
+  bar,
+  index,
 }: {
   entry: AccountEntry
   currency: CurrencyCode
+  bar: RailBar
+  index: number
 }): JSX.Element {
   return (
-    <View className="flex-row items-center justify-between gap-3 border-b border-separator py-3">
-      <View className="flex-1 gap-0.5">
+    <View className="flex-row items-center justify-between gap-3 py-3.5">
+      <View className="flex-1 gap-1">
         <View className="flex-row items-center gap-2">
-          <Typography.Paragraph numberOfLines={1} className="shrink font-medium">
+          <Body numberOfLines={1} className="shrink">
             {entry.name}
-          </Typography.Paragraph>
-          {entry.kind === 'liability' && (
-            <Chip size="sm" variant="soft" color="default">
-              <Chip.Label>Liability</Chip.Label>
-            </Chip>
-          )}
+          </Body>
+          {entry.kind === 'liability' && <Badge>Liability</Badge>}
         </View>
-        <Typography.Paragraph type="body-sm" color="muted">
+        <Body size="sm" tone="muted">
           {typeLabels.get(entry.type) ?? entry.type}
-        </Typography.Paragraph>
+        </Body>
       </View>
-      <Amount amount={{ text: formatAmount(entry.balance, currency), tone: 'plain' }} />
+      <Figure size="lg">{formatAmount(entry.balance, currency)}</Figure>
+      <RailBand bar={bar} index={index} />
     </View>
   )
 }
@@ -74,23 +78,35 @@ export default function AccountsScreen(): JSX.Element {
     if (accounts.error !== null) accounts.retry()
   }
   const loaded = me.data !== null && accounts.data !== null
+  const entries = accounts.data?.accounts ?? []
+  // One scale for the whole list, so two balances of the same size draw the
+  // same length however far apart they sit.
+  const bars = railBars(entries.map((entry) => ({ amount: entry.balance, neutral: false })))
 
   return (
-    <ListScreen title="Accounts">
+    <ListScreen title="Accounts" eyebrow="Balances">
       {error !== null || !loaded || accounts.data === null ? (
         <ListStatus error={error} retry={retry} />
-      ) : accounts.data.accounts.length === 0 ? (
+      ) : entries.length === 0 ? (
         <ListStatus
           error={null}
           retry={retry}
-          empty="No accounts yet — create one on the web app to start the ledger."
+          empty="Create an account on the web app and its balance appears here."
         />
       ) : (
-        <FlatList
-          data={accounts.data.accounts}
-          keyExtractor={(entry) => entry.id}
-          renderItem={({ item }) => <AccountRow entry={item} currency={currency} />}
-        />
+        <Rail className="flex-1">
+          <FlatList
+            data={entries}
+            keyExtractor={(entry) => entry.id}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item, index }) => {
+              const bar = bars[index]
+              return bar === undefined ? null : (
+                <AccountRow entry={item} currency={currency} bar={bar} index={index} />
+              )
+            }}
+          />
+        </Rail>
       )}
     </ListScreen>
   )

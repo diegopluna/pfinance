@@ -1,35 +1,50 @@
 import { router } from 'expo-router'
-import { Button, Spinner, Typography } from 'heroui-native'
+import { Button, Spinner } from 'heroui-native'
 import type { JSX, ReactNode } from 'react'
-import { View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Chevron } from '@/components/chevron'
+import { Body, Eyebrow, Title } from '@/components/type'
 
-// The screen shell for the list screens (issue #78): top-aligned so a
-// FlatList owns the remaining height, unlike Screen's centered column. Same
-// SafeAreaView caveat as screen.tsx — className is silently dropped on it,
-// so the theme background lives on the outer core View. The optional action
-// slot sits beside Back for a screen's one primary verb (issue #80's New).
+// The screen shell for everything behind sign-in: top-aligned so a list can
+// own the remaining height. Same SafeAreaView caveat as screen.tsx —
+// className is silently dropped on it, so the theme background lives on the
+// outer core View.
+//
+// The chrome is one line: back, name, and the screen's one primary verb.
+// Nothing is boxed. A phone screen is already a card, so drawing another
+// one around its contents only narrows the ledger.
 export function ListScreen({
   title,
+  eyebrow,
   action,
   children,
 }: {
   title: string
+  /** What this screen is a view of, when the title alone leaves it open. */
+  eyebrow?: string
   action?: ReactNode
   children: ReactNode
 }): JSX.Element {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView style={{ flex: 1 }}>
-        <View className="flex-1 gap-4 px-6 pt-2">
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h2">{title}</Typography.Heading>
-            <View className="flex-row items-center gap-2">
-              {action}
-              <Button variant="ghost" size="sm" onPress={() => router.back()}>
-                Back
-              </Button>
+        <View className="flex-1 gap-4 px-5 pt-1">
+          <View className="flex-row items-center gap-3">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              hitSlop={12}
+              onPress={() => router.back()}
+              className="-ml-1 h-9 w-9 items-center justify-center"
+            >
+              <Chevron direction="left" size={18} />
+            </Pressable>
+            <View className="flex-1">
+              {eyebrow !== undefined && <Eyebrow>{eyebrow}</Eyebrow>}
+              <Title>{title}</Title>
             </View>
+            {action}
           </View>
           {children}
         </View>
@@ -52,10 +67,9 @@ export function ListStatus({
 }): JSX.Element {
   if (error !== null) {
     return (
-      <View className="items-center gap-3 py-12">
-        <Typography.Paragraph color="muted" align="center">
-          {error}
-        </Typography.Paragraph>
+      <View className="items-start gap-4 py-10">
+        <Eyebrow tone="foreground">Request failed</Eyebrow>
+        <Body tone="muted">{error}</Body>
         <Button variant="outline" onPress={retry}>
           Try again
         </Button>
@@ -64,15 +78,16 @@ export function ListStatus({
   }
   if (empty !== undefined) {
     return (
-      <View className="items-center py-12">
-        <Typography.Paragraph color="muted" align="center">
-          {empty}
-        </Typography.Paragraph>
+      <View className="gap-3 py-10">
+        {/* An empty screen states the rule that empties it, in the same
+            voice the full screen would use. */}
+        <Eyebrow>Nothing here yet</Eyebrow>
+        <Body tone="muted">{empty}</Body>
       </View>
     )
   }
   return (
-    <View className="items-center py-12">
+    <View className="items-start py-10">
       <Spinner size="lg" />
     </View>
   )

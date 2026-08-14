@@ -58,7 +58,7 @@ Two things to carry over carefully:
 Real holes, not oversights on the mirror's part — resolve them in the design project, not by guessing:
 
 - No dark values for `--s7` (income) or `--crit` (error). The only dark variant in the mirror is `1d`, which is the `1a` layout and uses neither.
-- No mobile or tablet layouts. Every frame is 1280px wide.
+- No mobile or tablet layouts. Every frame is 1280px wide. The mobile app was built to `MOBILE.md` in the meantime — proposed decisions, ours, waiting to be taken up by the design project.
 - No focus, hover, disabled, or loading states; the prototypes are static.
 - No empty states for any screen.
 - No formal token file in the project — the values above were read out of prototype CSS.

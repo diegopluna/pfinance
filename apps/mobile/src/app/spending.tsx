@@ -1,14 +1,17 @@
 import { call } from '@pfinance/api-client'
+import { formatAmount } from '@pfinance/currency'
 import { Redirect } from 'expo-router'
-import { Button, Typography } from 'heroui-native'
 import { useCallback, useState, type JSX } from 'react'
-import { ScrollView, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 import { apiFor } from '@/api/client'
 import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
 import { addMonths, currentUtcMonth, monthLabel } from '@/charts/months'
+import { Figure } from '@/components/amount'
 import { SpendingBars } from '@/components/charts/spending-bars'
+import { Chevron } from '@/components/chevron'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { Body, Eyebrow } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 
 // The Spending dashboard (issue #79): one calendar month of the Expense
@@ -44,54 +47,78 @@ export default function SpendingScreen(): JSX.Element {
     if (spending.error !== null) spending.retry()
   }
   const loaded = me.data !== null && spending.data !== null
+  const slices = spending.data?.slices ?? []
+  const total = slices.reduce((sum, slice) => sum + slice.total, 0)
 
   return (
-    <ListScreen title="Spending">
-      <View className="flex-row items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          accessibilityLabel="Previous month"
-          onPress={() => setMonth((current) => addMonths(current, -1))}
-        >
-          ‹
-        </Button>
-        {/* accessibilityLiveRegion: the month change a stepper tap causes
-            is otherwise silent to a screen reader. */}
-        <Typography.Paragraph
-          className="font-medium"
-          style={{ fontVariant: ['tabular-nums'] }}
-          accessibilityLiveRegion="polite"
-        >
-          {monthLabel(month, 'full')}
-        </Typography.Paragraph>
-        <Button
-          variant="ghost"
-          size="sm"
-          accessibilityLabel="Next month"
-          onPress={() => setMonth((current) => addMonths(current, 1))}
-        >
-          ›
-        </Button>
-      </View>
+    <ListScreen title="Spending" eyebrow="By category">
+      <Stepper month={month} onStep={(delta) => setMonth((current) => addMonths(current, delta))} />
       {error !== null || !loaded || spending.data === null ? (
         <ListStatus error={error} retry={retry} />
-      ) : spending.data.slices.length === 0 ? (
+      ) : slices.length === 0 ? (
         <ListStatus
           error={null}
           retry={retry}
-          empty={`No spending recorded in ${monthLabel(month, 'full')}.`}
+          empty={`Nothing was spent in ${monthLabel(month, 'full')}.`}
         />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <SpendingBars slices={spending.data.slices} currency={currency} />
+          {/* The total is the sum of the bars: without it every row is a
+              share of something the screen never states. */}
+          <View className="flex-row items-baseline justify-between gap-3 pb-2">
+            <Eyebrow>Total</Eyebrow>
+            <Figure size="lg">{formatAmount(total, currency)}</Figure>
+          </View>
+          <SpendingBars slices={slices} currency={currency} />
           {/* By definition (DECISIONS.md): every derived-spending surface
               carries this footnote visibly. */}
-          <Typography.Paragraph type="body-sm" color="muted" className="mt-4">
+          <Body size="sm" tone="muted" className="pt-5 pb-4">
             Excludes transfers and adjustments
-          </Typography.Paragraph>
+          </Body>
         </ScrollView>
       )}
     </ListScreen>
+  )
+}
+
+// The month in hand, with a step either way. accessibilityLiveRegion: the
+// month change a stepper tap causes is otherwise silent to a screen reader.
+function Stepper({
+  month,
+  onStep,
+}: {
+  month: string
+  onStep: (delta: number) => void
+}): JSX.Element {
+  return (
+    <View className="flex-row items-center justify-between border-separator border-y py-2.5">
+      <Step direction="left" label="Previous month" onPress={() => onStep(-1)} />
+      <Eyebrow tone="foreground" accessibilityLiveRegion="polite">
+        {monthLabel(month, 'full')}
+      </Eyebrow>
+      <Step direction="right" label="Next month" onPress={() => onStep(1)} />
+    </View>
+  )
+}
+
+function Step({
+  direction,
+  label,
+  onPress,
+}: {
+  direction: 'left' | 'right'
+  label: string
+  onPress: () => void
+}): JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={14}
+      onPress={onPress}
+      className="h-8 w-8 items-center justify-center"
+    >
+      <Chevron direction={direction} size={16} />
+    </Pressable>
   )
 }

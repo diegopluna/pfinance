@@ -1,10 +1,11 @@
 import { probeConnection, type ConnectionState } from '@pfinance/api-client'
 import * as Linking from 'expo-linking'
 import { router, useLocalSearchParams } from 'expo-router'
-import { Button, Spinner, Typography } from 'heroui-native'
+import { Button, Spinner } from 'heroui-native'
 import { useEffect, useState, type JSX } from 'react'
-import { View } from 'react-native'
+import { Text, View } from 'react-native'
 import { Screen } from '@/components/screen'
+import { Body, Title } from '@/components/type'
 import { connectStateContent, supportedApiVersions } from '@/connect/content'
 
 // A Server that accepts the TCP connection but never answers would otherwise
@@ -57,11 +58,9 @@ export default function StatusScreen(): JSX.Element {
 function Probing({ input }: { input: string }): JSX.Element {
   return (
     <>
-      <View className="items-center gap-4">
+      <View className="gap-4">
         <Spinner size="lg" />
-        <Typography.Paragraph color="muted" align="center">
-          Checking {input}…
-        </Typography.Paragraph>
+        <Body tone="muted">Checking {input}…</Body>
       </View>
       <Button variant="ghost" onPress={() => router.back()}>
         Cancel
@@ -83,18 +82,18 @@ function StateScreen({
 
   return (
     <>
-      <View className="gap-2">
-        <Typography.Heading type="h2">{content.title}</Typography.Heading>
-        <Typography.Paragraph color="muted">{content.body}</Typography.Paragraph>
+      <View className="gap-2.5">
+        <Title size="lg">{content.title}</Title>
+        <Body tone="muted">{content.body}</Body>
         {content.detail !== undefined && (
-          <Typography.Paragraph type="body-sm" color="muted">
+          <Body size="sm" tone="muted">
             {content.detail}
-          </Typography.Paragraph>
+          </Body>
         )}
         {'apiUrl' in result && (
-          <Typography.Paragraph type="body-sm" color="muted">
+          <Text className="font-mono text-[13px] text-muted" numberOfLines={1}>
             {result.apiUrl}
-          </Typography.Paragraph>
+          </Text>
         )}
       </View>
 
