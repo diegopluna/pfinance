@@ -1,16 +1,17 @@
 import { call, type ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { Redirect } from 'expo-router'
-import { Chip, SearchField, Typography } from 'heroui-native'
+import { Redirect, useLocalSearchParams } from 'expo-router'
+import { Button, Chip, SearchField, Typography } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
-import { useCallback, useState, type JSX } from 'react'
-import { FlatList, ScrollView, View } from 'react-native'
+import { useCallback, useEffect, useState, type JSX } from 'react'
+import { FlatList, Pressable, ScrollView, View } from 'react-native'
 import { apiFor } from '@/api/client'
 import { useHousehold } from '@/api/use-household'
 import { useApiQuery } from '@/api/use-query'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { TransactionForm } from '@/components/transaction-form'
 import { storedServerUrl } from '@/connect/store'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
@@ -27,7 +28,9 @@ import {
 // the Expense/Income derived views, whole-month period presets over the
 // from/to bounds, and description search. Amounts render through the ledger
 // display rules (ledger/display.ts): a Transfer leg or Balance Adjustment
-// is visibly badged and never reads as an ordinary entry.
+// is visibly badged and never reads as an ordinary entry. Quick entry
+// (issue #80) lives here too: New and tapping a row open the form in place
+// of the list, so the edited entry never has to survive a route change.
 
 type TransactionEntry = InferResponseType<
   ApiClient['api']['transactions']['$get'],
@@ -83,12 +86,16 @@ function TransactionRow({
   dateFormat,
   accountNames,
   categoryNames,
+  onPress,
 }: {
   entry: TransactionEntry
   currency: CurrencyCode
   dateFormat: DateFormat
   accountNames: Map<string, string>
   categoryNames: Map<string, string>
+  // Absent for a Transfer leg: the pair can never drift, so legs are edited
+  // through their Transfer (issue #81's surface, the web today).
+  onPress?: () => void
 }): JSX.Element {
   const badge = kindBadge(
     entry.kind,
@@ -102,25 +109,27 @@ function TransactionRow({
       ? categoryLabel(entry.kind, null)
       : categoryLabel(entry.kind, categoryNames.get(entry.categoryId) ?? 'Unknown category')
   return (
-    <View className="flex-row items-start justify-between gap-3 border-b border-separator py-3">
-      <View className="flex-1 gap-1">
-        <Typography.Paragraph numberOfLines={1} className="font-medium">
-          {entry.description}
-        </Typography.Paragraph>
-        <Typography.Paragraph type="body-sm" color="muted">
-          {formatCalendarDate(entry.date, dateFormat)} ·{' '}
-          {accountNames.get(entry.accountId) ?? 'Unknown account'} · {category}
-        </Typography.Paragraph>
-        {badge !== null && (
-          <View className="flex-row">
-            <Chip size="sm" variant="soft" color="default">
-              <Chip.Label>{badge}</Chip.Label>
-            </Chip>
-          </View>
-        )}
+    <Pressable onPress={onPress} disabled={onPress === undefined}>
+      <View className="flex-row items-start justify-between gap-3 border-b border-separator py-3">
+        <View className="flex-1 gap-1">
+          <Typography.Paragraph numberOfLines={1} className="font-medium">
+            {entry.description}
+          </Typography.Paragraph>
+          <Typography.Paragraph type="body-sm" color="muted">
+            {formatCalendarDate(entry.date, dateFormat)} ·{' '}
+            {accountNames.get(entry.accountId) ?? 'Unknown account'} · {category}
+          </Typography.Paragraph>
+          {badge !== null && (
+            <View className="flex-row">
+              <Chip size="sm" variant="soft" color="default">
+                <Chip.Label>{badge}</Chip.Label>
+              </Chip>
+            </View>
+          )}
+        </View>
+        <Amount amount={ledgerAmount(entry.kind, entry.amount, currency)} />
       </View>
-      <Amount amount={ledgerAmount(entry.kind, entry.amount, currency)} />
-    </View>
+    </Pressable>
   )
 }
 
@@ -136,6 +145,14 @@ const isPeriodPreset = (value: string): value is PeriodPreset =>
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
+  // The quick-entry form's target: null = closed, { entry: null } = create,
+  // { entry } = edit. ?new=true (home's "New transaction") opens create on
+  // arrival — the param is the trigger, so closing the form doesn't reopen.
+  const [form, setForm] = useState<{ entry: TransactionEntry | null } | null>(null)
+  const { new: openNew } = useLocalSearchParams<{ new?: string }>()
+  useEffect(() => {
+    if (openNew === 'true') setForm({ entry: null })
+  }, [openNew])
 
   const { me, currency, dateFormat } = useHousehold(apiUrl)
   // Archived Accounts and Categories still name existing rows, so both
@@ -203,8 +220,37 @@ export default function TransactionsScreen(): JSX.Element {
   ]
   const filtering = Object.keys(transactionQuery(filters, todayCalendarString())).length > 0
 
+  // The form waits for the vocabulary AND the Household: composing minor
+  // units under the USD fallback's exponent would store a wrong amount for
+  // a zero- or three-exponent Currency (ADR 0006).
+  if (form !== null && me.data !== null && accounts.data !== null && categories.data !== null) {
+    return (
+      <TransactionForm
+        apiUrl={apiUrl}
+        entry={form.entry}
+        accounts={accounts.data.accounts}
+        categories={categories.data.categories}
+        currency={currency}
+        dateFormat={dateFormat}
+        onDone={() => {
+          setForm(null)
+          transactions.retry()
+        }}
+        onCategoryCreated={() => categories.retry()}
+        onClose={() => setForm(null)}
+      />
+    )
+  }
+
   return (
-    <ListScreen title="Transactions">
+    <ListScreen
+      title="Transactions"
+      action={
+        <Button size="sm" onPress={() => setForm({ entry: null })}>
+          New
+        </Button>
+      }
+    >
       <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
         <SearchField.Group>
           <SearchField.SearchIcon />
@@ -265,6 +311,7 @@ export default function TransactionsScreen(): JSX.Element {
               dateFormat={dateFormat}
               accountNames={accountNames}
               categoryNames={categoryNames}
+              onPress={item.kind === 'transfer' ? undefined : () => setForm({ entry: item })}
             />
           )}
         />

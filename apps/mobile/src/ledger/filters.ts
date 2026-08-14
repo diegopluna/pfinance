@@ -1,3 +1,5 @@
+import { daysInMonth } from './dates'
+
 // The mobile Transaction list's filter state and its mapping onto the
 // server's query strings (issue #78). '' means "not filtering" for every
 // field. Free of react-native imports so the workspace's node test runner
@@ -40,11 +42,6 @@ export interface TransactionQuery {
   from?: string
   to?: string
   q?: string
-}
-
-const daysInMonth = (year: number, month: number): number => {
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
-  return [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 31
 }
 
 const pad = (value: number, length: number) => value.toString().padStart(length, '0')

@@ -51,3 +51,38 @@ export const todayCalendarString = (): string => {
   const now = new Date()
   return `${pad(now.getFullYear(), 4)}-${pad(now.getMonth() + 1, 2)}-${pad(now.getDate(), 2)}`
 }
+
+// The real calendar's month lengths, shared with the filter presets
+// (filters.ts) — one copy of the leap rule per app.
+export const daysInMonth = (year: number, month: number): number => {
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+  return [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 31
+}
+
+// Structural and against the real calendar (rejects 2026-02-30), mirroring
+// the server's validator (apps/server/src/transactions.ts) so the entry form
+// (issue #80) refuses exactly what the API would refuse — without ever
+// constructing a Date, so no timezone can touch it.
+const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+export const isCalendarDate = (value: string): boolean => {
+  const match = CALENDAR_DATE.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12 || day < 1) return false
+  return day <= daysInMonth(year, month)
+}
+
+// The day before a calendar date — the entry form's "Yesterday" — by pure
+// day arithmetic: month and year roll under, February knows its leap years.
+export const previousCalendarDay = (value: string): string => {
+  const year = Number(value.slice(0, 4))
+  const month = Number(value.slice(5, 7))
+  const day = Number(value.slice(8, 10))
+  if (day > 1) return `${pad(year, 4)}-${pad(month, 2)}-${pad(day - 1, 2)}`
+  const previousMonth = month > 1 ? month - 1 : 12
+  const previousYear = month > 1 ? year : year - 1
+  return `${pad(previousYear, 4)}-${pad(previousMonth, 2)}-${pad(daysInMonth(previousYear, previousMonth), 2)}`
+}
