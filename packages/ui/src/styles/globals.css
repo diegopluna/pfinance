@@ -29,6 +29,13 @@
   --destructive: oklch(0.575 0.186 25.234);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
+  /* The edge of a form control, which is not the same job as --border.
+     WCAG 1.4.11 asks the boundary that identifies a UI component to clear
+     3:1 against what it sits on; the hairline measures 1.26:1 on white, and
+     the shadcn field's `shadow-xs` is too faint to carry that on its own.
+     0.65 is 3.23:1. Structure stays a hairline — only controls take this.
+     apps/mobile uses the same value for the same reason (docs/design/MOBILE.md). */
+  --field-border: oklch(0.65 0 0);
   --ring: oklch(0.708 0 0);
   /* Chart slots from docs/design/DECISIONS.md (--s1..--s5): the CVD-validated
      palette that replaces the failed shadcn defaults. Exact sRGB→OKLCH
@@ -76,6 +83,11 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
+  /* Measured against the dark field's own fill (`dark:bg-input/30`, which
+     composites to #151515 over the background), not against the page:
+     10% is 1.15:1 there, 40% is 3.48:1 — and 3.77:1 against the page
+     outside the control, so the edge reads from both sides. */
+  --field-border: oklch(1 0 0 / 40%);
   --ring: oklch(0.556 0 0);
   /* Dark chart slots from the prototype's .pfd block (#3987e5 #d95926
      #199e70 #c98500 #d55181 / #737373), exact conversions. --chart-income
@@ -121,6 +133,7 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field-border: var(--field-border);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);

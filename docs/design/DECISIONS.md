@@ -60,5 +60,6 @@ Real holes, not oversights on the mirror's part — resolve them in the design p
 - No dark values for `--s7` (income) or `--crit` (error). The only dark variant in the mirror is `1d`, which is the `1a` layout and uses neither.
 - No mobile or tablet layouts. Every frame is 1280px wide. The mobile app was built to `MOBILE.md` in the meantime — proposed decisions, ours, waiting to be taken up by the design project.
 - No focus, hover, disabled, or loading states; the prototypes are static.
+- No token for the **edge of a form control**. The mirror has one hairline, and the shipped clients used it for both structure and field borders — which measures 1.26:1 on white, below the 3:1 WCAG 1.4.11 asks of the boundary that identifies a control. Both clients now carry a repo-side `--field-border` (light `oklch(0.65 0 0)`, 3.23:1) that is deliberately darker than `--border`. Structure stays a hairline; only controls take it. Adopt or replace it in the design project.
 - No empty states for any screen.
 - No formal token file in the project — the values above were read out of prototype CSS.
