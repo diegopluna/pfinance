@@ -9,7 +9,6 @@ import { authClientFor } from '@/auth/client'
 import { ListScreen } from '@/components/list-screen'
 import { Body, Eyebrow } from '@/components/type'
 import { forgetServerUrl, storedServerUrl } from '@/connect/store'
-import { useTabBarInset } from '@/shell/tab-bar'
 
 // The settings shell (issue #77): the connection is never a black box — the
 // screen shows which Server the app talks to, which Household that Server
@@ -27,7 +26,6 @@ const currencyLine = (code: string): string =>
 
 export default function SettingsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
-  const tabBarInset = useTabBarInset()
   const me = useMe()
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState(false)
@@ -56,10 +54,7 @@ export default function SettingsScreen(): JSX.Element {
 
   return (
     <ListScreen title="Settings" back={false}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: tabBarInset }}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic">
         <View className="gap-6 pb-4">
           <Section label="Server">
             {/* The address is a key, not prose: it is set in the figure

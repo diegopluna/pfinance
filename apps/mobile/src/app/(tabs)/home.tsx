@@ -19,7 +19,6 @@ import { Rail, RailBand, RULE } from '@/components/rail'
 import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
-import { useTabBarInset } from '@/shell/tab-bar'
 
 // Where sign-in lands, and where every relaunch with a live session opens
 // (issue #77). It used to be a menu of buttons; it is now the standing
@@ -44,7 +43,6 @@ const MONTH_ROWS = 2
 
 export default function HomeScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
-  const tabBarInset = useTabBarInset()
   const { me, currency } = useHousehold()
   const netWorth = useNetWorth()
   const accounts = useAccounts(false)
@@ -90,7 +88,7 @@ export default function HomeScreen(): JSX.Element {
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 28 + tabBarInset }}
+          contentContainerStyle={{ paddingBottom: 28 }}
         >
           <View className="gap-7 px-5 pt-2">
             <View className="flex-row items-center justify-between">
@@ -133,13 +131,18 @@ export default function HomeScreen(): JSX.Element {
           sits straight on the tab bar, which owns the bottom inset and the
           hairline — a second rule 60px above the first would read as two
           footers rather than one place to act. */}
-      {/* The strip stays opaque and sits above the glass rather than
-          under it: a full-width button showing the ledger through itself
-          would be a worse trade than the glass makes on this one screen. */}
-      <View className="bg-background px-5 pt-3 pb-3" style={{ marginBottom: tabBarInset }}>
-        <Button onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}>
-          New transaction
-        </Button>
+      {/* Above the tab bar, and opaque: a full-width button with the
+          ledger showing through it is a worse trade than the glass makes on
+          this one screen. The bottom inset is the bar's own — the native
+          tab bar reports it as safe area. */}
+      <View className="bg-background px-5 pt-3">
+        <SafeAreaView edges={['bottom', 'left', 'right']}>
+          <Button
+            onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}
+          >
+            New transaction
+          </Button>
+        </SafeAreaView>
       </View>
     </View>
   )
