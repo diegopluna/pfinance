@@ -1,22 +1,25 @@
-import { call, type ApiClient } from '@pfinance/api-client'
+import type { ApiClient } from '@pfinance/api-client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { Redirect, router } from 'expo-router'
 import { Button, Spinner } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
-import { useCallback, type JSX, type ReactNode } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import type { JSX, ReactNode } from 'react'
+import { ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { queryFailure } from '@/api/errors'
+import { useAccounts } from '@/api/use-accounts'
+import { useIncomeExpense, useNetWorth } from '@/api/use-dashboards'
+import { useHousehold } from '@/api/use-me'
 import { monthLabel } from '@/charts/months'
 import { railBars } from '@/charts/rail'
 import { Figure } from '@/components/amount'
 import { Chevron } from '@/components/chevron'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
 import { Rail, RailBand, RULE } from '@/components/rail'
+import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 
 // Where sign-in lands, and where every relaunch with a live session opens
 // (issue #77). It used to be a menu of buttons; it is now the standing
@@ -36,49 +39,21 @@ type MonthTotals = InferResponseType<
 >['months'][number]
 
 const ACCOUNTS_SHOWN = 5
+// Income and Expenses: what the Accounts' draw-in queues up behind.
+const MONTH_ROWS = 2
 
 export default function HomeScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
-  const { me, currency } = useHousehold(apiUrl)
-
-  const fetchNetWorth = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api['net-worth'].$get({ query: { through: undefined } }),
-        'Could not load your Net Worth.',
-      ),
-    [apiUrl],
-  )
-  const fetchAccounts = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api.accounts.$get({ query: { includeArchived: 'false' } }),
-        'Could not load your Accounts.',
-      ),
-    [apiUrl],
-  )
-  const fetchIncomeExpense = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api['income-vs-expense'].$get({ query: { through: undefined } }),
-        'Could not load income vs expense.',
-      ),
-    [apiUrl],
-  )
-
-  const skip = apiUrl === null
-  const netWorth = useApiQuery(skip ? null : fetchNetWorth)
-  const accounts = useApiQuery(skip ? null : fetchAccounts)
-  const incomeExpense = useApiQuery(skip ? null : fetchIncomeExpense)
+  const tabBarInset = useTabBarInset()
+  const { me, currency } = useHousehold()
+  const netWorth = useNetWorth()
+  const accounts = useAccounts(false)
+  const incomeExpense = useIncomeExpense()
 
   if (apiUrl === null) return <Redirect href="/" />
 
-  const queries = [me, netWorth, accounts, incomeExpense]
-  const error = queries.find((query) => query.error !== null)?.error ?? null
-  const retry = () => {
-    for (const query of queries) if (query.error !== null) query.retry()
-  }
-  const loaded = queries.every((query) => query.data !== null)
+  const { error, retry } = queryFailure([me, netWorth, accounts, incomeExpense])
+  const loaded = [me, netWorth, accounts, incomeExpense].every((query) => query.data !== undefined)
 
   if (error !== null) {
     return (
@@ -97,7 +72,7 @@ export default function HomeScreen(): JSX.Element {
     )
   }
 
-  if (!loaded || me.data === null) {
+  if (!loaded || me.data === undefined) {
     return (
       <Frame>
         <View className="items-start pt-10">
@@ -115,7 +90,7 @@ export default function HomeScreen(): JSX.Element {
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 28 }}
+          contentContainerStyle={{ paddingBottom: 28 + tabBarInset }}
         >
           <View className="gap-7 px-5 pt-2">
             <View className="flex-row items-center justify-between">
@@ -127,13 +102,13 @@ export default function HomeScreen(): JSX.Element {
 
             {/* The headline is the doorway to its own history: the number
                 is the summary, the chart behind it is the story. */}
-            <Pressable
+            <Touchable
               accessibilityRole="button"
               accessibilityHint="Opens net worth by month"
-              onPress={() => router.push('/net-worth')}
+              onPress={() => router.push('/insights?view=net-worth')}
               className="flex-row items-end justify-between gap-3"
             >
-              {netWorth.data !== null && netWorth.data.series.length > 0 ? (
+              {netWorth.data !== undefined && netWorth.data.series.length > 0 ? (
                 <NetWorthHeadline series={netWorth.data.series} currency={currency} />
               ) : (
                 <View className="gap-1.5">
@@ -144,34 +119,27 @@ export default function HomeScreen(): JSX.Element {
               <View className="pb-2">
                 <Chevron direction="right" />
               </View>
-            </Pressable>
+            </Touchable>
 
             {latest !== undefined && <MonthPair month={latest} currency={currency} />}
 
             {active.length > 0 && <Accounts entries={active} currency={currency} />}
-
-            <View>
-              <Doorway label="Transactions" to="/transactions" />
-              <Doorway label="Spending" to="/spending" />
-              <Doorway label="Income vs expense" to="/income-expense" />
-              <Doorway label="Settings" to="/settings" last />
-            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
 
       {/* Recording a Transaction is the highest-frequency task in the
-          product (issue #70), so it is the one thing that never scrolls. */}
-      <View className="border-separator border-t bg-background">
-        <SafeAreaView edges={['bottom', 'left', 'right']}>
-          <View className="px-5 pt-3 pb-1">
-            <Button
-              onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}
-            >
-              New transaction
-            </Button>
-          </View>
-        </SafeAreaView>
+          product (issue #70), so it is the one thing that never scrolls. It
+          sits straight on the tab bar, which owns the bottom inset and the
+          hairline — a second rule 60px above the first would read as two
+          footers rather than one place to act. */}
+      {/* The strip stays opaque and sits above the glass rather than
+          under it: a full-width button showing the ledger through itself
+          would be a worse trade than the glass makes on this one screen. */}
+      <View className="bg-background px-5 pt-3 pb-3" style={{ marginBottom: tabBarInset }}>
+        <Button onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}>
+          New transaction
+        </Button>
       </View>
     </View>
   )
@@ -182,7 +150,7 @@ export default function HomeScreen(): JSX.Element {
 function Frame({ children }: { children: ReactNode }): JSX.Element {
   return (
     <View className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
         <View className="flex-1 gap-2 px-5 pt-2">{children}</View>
       </SafeAreaView>
     </View>
@@ -211,9 +179,11 @@ function SectionHeader({
   return onPress === undefined ? (
     content
   ) : (
-    <Pressable accessibilityRole="button" accessibilityHint={hint} onPress={onPress}>
+    // hitSlop rather than padding: the target has to clear 24px (44px is
+    // the touch aim) without opening the gap the section rhythm depends on.
+    <Touchable accessibilityRole="button" accessibilityHint={hint} hitSlop={14} onPress={onPress}>
       {content}
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -241,7 +211,7 @@ function MonthPair({
       <SectionHeader
         label="This month"
         meta={monthLabel(month.month, 'full')}
-        onPress={() => router.push('/income-expense')}
+        onPress={() => router.push('/insights?view=income-expense')}
         hint="Opens income versus expense by month"
       />
       <Rail rule={RULE.symmetric}>
@@ -293,33 +263,15 @@ function Accounts({
                   {entry.name}
                 </Body>
                 <Figure>{formatAmount(entry.balance, currency)}</Figure>
-                <RailBand bar={bar} index={index} animate />
+                {/* Continues the sequence the month pair started rather
+                    than restarting it, so the screen draws itself once
+                    from the top instead of in two places at once. */}
+                <RailBand bar={bar} index={index + MONTH_ROWS} animate />
               </View>
             )
           )
         })}
       </Rail>
     </View>
-  )
-}
-
-function Doorway({
-  label,
-  to,
-  last = false,
-}: {
-  label: string
-  to: '/transactions' | '/spending' | '/income-expense' | '/settings'
-  last?: boolean
-}): JSX.Element {
-  return (
-    <Pressable
-      accessibilityRole="link"
-      onPress={() => router.push(to)}
-      className={`flex-row items-center justify-between py-3.5 ${last ? '' : 'border-separator border-b'}`}
-    >
-      <Text className="font-mono text-[15px] text-foreground">{label}</Text>
-      <Chevron direction="right" size={14} />
-    </Pressable>
   )
 }

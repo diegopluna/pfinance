@@ -1,13 +1,13 @@
-import { call, type ApiClient } from '@pfinance/api-client'
+import type { ApiClient } from '@pfinance/api-client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { Redirect } from 'expo-router'
 import type { InferResponseType } from 'hono/client'
-import { useCallback, type JSX } from 'react'
+import type { JSX } from 'react'
 import { FlatList, View } from 'react-native'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { queryFailure } from '@/api/errors'
+import { useAccounts } from '@/api/use-accounts'
+import { useHousehold } from '@/api/use-me'
 import { railBars, type RailBar } from '@/charts/rail'
 import { Figure } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
@@ -59,25 +59,13 @@ function AccountRow({
 export default function AccountsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
 
-  const { me, currency } = useHousehold(apiUrl)
-  const fetchAccounts = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api.accounts.$get({ query: { includeArchived: 'false' } }),
-        'Could not load your Accounts.',
-      ),
-    [apiUrl],
-  )
-  const accounts = useApiQuery(apiUrl === null ? null : fetchAccounts)
+  const { me, currency } = useHousehold()
+  const accounts = useAccounts(false)
 
   if (apiUrl === null) return <Redirect href="/" />
 
-  const error = me.error ?? accounts.error
-  const retry = () => {
-    if (me.error !== null) me.retry()
-    if (accounts.error !== null) accounts.retry()
-  }
-  const loaded = me.data !== null && accounts.data !== null
+  const { error, retry } = queryFailure([me, accounts])
+  const loaded = me.data !== undefined && accounts.data !== undefined
   const entries = accounts.data?.accounts ?? []
   // One scale for the whole list, so two balances of the same size draw the
   // same length however far apart they sit.
@@ -85,7 +73,7 @@ export default function AccountsScreen(): JSX.Element {
 
   return (
     <ListScreen title="Accounts" eyebrow="Balances">
-      {error !== null || !loaded || accounts.data === null ? (
+      {error !== null || !loaded || accounts.data === undefined ? (
         <ListStatus error={error} retry={retry} />
       ) : entries.length === 0 ? (
         <ListStatus

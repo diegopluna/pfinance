@@ -1,9 +1,20 @@
 import type { JSX, ReactNode } from 'react'
-import { Text, View, type TextProps } from 'react-native'
+import { Text, useWindowDimensions, View, type TextProps } from 'react-native'
 
 // The app's two voices. Prose is Spline Sans; anything that is a figure, a
 // key, or a piece of structure is Spline Sans Mono — a ledger is a column
 // of aligned digits, and the mono is what makes the column true.
+//
+// Sizes come from the `--text-*` scale in src/global.css. Line heights do
+// not: React Native scales `fontSize` with the OS text-size setting but
+// leaves a `lineHeight` given in points exactly where it was, so a fixed
+// leading crushes its own text the moment someone turns type size up. Every
+// line height here is therefore a multiple applied to the current
+// fontScale, which useWindowDimensions re-reads when the setting changes.
+export function useLineHeight(size: number, ratio: number): number {
+  const { fontScale } = useWindowDimensions()
+  return Math.round(size * ratio * fontScale)
+}
 
 // Eyebrows name a region of a screen. They are uppercase and letterspaced
 // so they read as labels at a glance and never compete with a title —
@@ -14,10 +25,11 @@ export function Eyebrow({
   className = '',
   ...props
 }: TextProps & { children: ReactNode; tone?: 'muted' | 'foreground' }): JSX.Element {
+  const lineHeight = useLineHeight(11, 1.3)
   return (
     <Text
-      className={`font-mono-medium text-[11px] uppercase ${tone === 'muted' ? 'text-muted' : 'text-foreground'} ${className}`}
-      style={{ letterSpacing: 1.1 }}
+      className={`font-mono-medium text-eyebrow uppercase ${tone === 'muted' ? 'text-muted' : 'text-foreground'} ${className}`}
+      style={{ letterSpacing: 1.1, lineHeight }}
       {...props}
     >
       {children}
@@ -34,10 +46,11 @@ export function Title({
   className = '',
   ...props
 }: TextProps & { children: ReactNode; size?: 'md' | 'lg' }): JSX.Element {
+  const lineHeight = useLineHeight(size === 'lg' ? 26 : 21, 1.2)
   return (
     <Text
-      className={`font-mono-medium text-foreground ${size === 'lg' ? 'text-[26px] leading-8' : 'text-[21px]'} ${className}`}
-      style={{ letterSpacing: size === 'lg' ? -0.6 : -0.3 }}
+      className={`font-mono-medium text-foreground ${size === 'lg' ? 'text-title-lg' : 'text-title'} ${className}`}
+      style={{ letterSpacing: size === 'lg' ? -0.6 : -0.3, lineHeight }}
       numberOfLines={size === 'lg' ? undefined : 1}
       {...props}
     >
@@ -60,9 +73,11 @@ export function Body({
 }): JSX.Element {
   const color =
     tone === 'muted' ? 'text-muted' : tone === 'danger' ? 'text-danger' : 'text-foreground'
+  const lineHeight = useLineHeight(size === 'sm' ? 13 : 15, size === 'sm' ? 1.54 : 1.6)
   return (
     <Text
-      className={`font-normal ${size === 'sm' ? 'text-[13px] leading-5' : 'text-[15px] leading-6'} ${color} ${className}`}
+      className={`font-normal ${size === 'sm' ? 'text-body-sm' : 'text-body'} ${color} ${className}`}
+      style={{ lineHeight }}
       {...props}
     >
       {children}
@@ -77,7 +92,7 @@ export function Badge({ children }: { children: ReactNode }): JSX.Element {
   return (
     <View className="rounded-sm border border-separator px-1.5 py-px">
       <Text
-        className="font-mono text-[10px] text-muted uppercase"
+        className="font-mono text-caption text-muted uppercase"
         style={{ letterSpacing: 0.8 }}
         numberOfLines={1}
       >

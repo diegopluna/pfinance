@@ -1,3 +1,4 @@
+import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import type { JSX } from 'react'
 import { useColorScheme, View } from 'react-native'
 import { monthLabel } from '@/charts/months'
@@ -22,15 +23,19 @@ import { Eyebrow } from '@/components/type'
 // and the month labels get a column the bars can never run into.
 
 const BAR_HEIGHT = 8
-// Wide enough for a letterspaced "AUG 2026" on one line: the label wrapping
-// would double every row's height, and truncating it would drop the year at
-// exactly the boundary where the year is the point.
-const LABEL_WIDTH = 72
+// The starting width of the month column, not its cap: it fits a
+// letterspaced "AUG 2026" at the default text size, and grows from there
+// rather than truncating. Truncating would drop the year at exactly the
+// boundary where the year is the point, and it is the OS text-size setting
+// that decides how much room the label actually needs.
+const LABEL_MIN_WIDTH = 72
 
 export function IncomeExpenseChart({
   months,
+  currency,
 }: {
   months: { month: string; income: number; expense: number }[]
+  currency: CurrencyCode
 }): JSX.Element {
   const palette = chartPalette(useColorScheme())
   // Income and expense arrive as magnitudes from the server's derived
@@ -52,11 +57,15 @@ export function IncomeExpenseChart({
           return (
             <View
               key={month.month}
+              // A row of two bars is nothing to a screen reader without its
+              // amounts, and `accessible` is what makes the label replace
+              // the month label instead of being dropped beside it.
+              accessible
               className="flex-row items-center py-1.5"
-              accessibilityLabel={`${monthLabel(month.month, 'full')}: income and expense`}
+              accessibilityLabel={`${monthLabel(month.month, 'full')}: income ${formatAmount(month.income, currency)}, expense ${formatAmount(month.expense, currency)}`}
             >
-              <View style={{ width: LABEL_WIDTH }}>
-                <Eyebrow numberOfLines={1}>{monthLabel(month.month, 'tick')}</Eyebrow>
+              <View style={{ minWidth: LABEL_MIN_WIDTH }}>
+                <Eyebrow>{monthLabel(month.month, 'tick')}</Eyebrow>
               </View>
               <View className="flex-1 flex-row justify-end">
                 <Bar bar={out} color={palette.expense} side="out" />

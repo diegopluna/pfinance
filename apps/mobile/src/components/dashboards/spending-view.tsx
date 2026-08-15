@@ -1,18 +1,17 @@
-import { call } from '@pfinance/api-client'
 import { formatAmount } from '@pfinance/currency'
-import { Redirect } from 'expo-router'
-import { useCallback, useState, type JSX } from 'react'
-import { Pressable, ScrollView, View } from 'react-native'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { useState, type JSX } from 'react'
+import { ScrollView, View } from 'react-native'
+import { queryFailure } from '@/api/errors'
+import { useSpending } from '@/api/use-dashboards'
+import { useHousehold } from '@/api/use-me'
 import { addMonths, currentUtcMonth, monthLabel } from '@/charts/months'
 import { Figure } from '@/components/amount'
 import { SpendingBars } from '@/components/charts/spending-bars'
 import { Chevron } from '@/components/chevron'
-import { ListScreen, ListStatus } from '@/components/list-screen'
+import { ListStatus } from '@/components/list-screen'
+import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
-import { storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 
 // The Spending dashboard (issue #79): one calendar month of the Expense
 // view grouped by Category (issue #18), server-summed and largest-first —
@@ -23,37 +22,24 @@ import { storedServerUrl } from '@/connect/store'
 // — the server derives the view; this screen only says so. Uncategorized is
 // a first-class row, never hidden (DECISIONS.md).
 
-export default function SpendingScreen(): JSX.Element {
-  const apiUrl = storedServerUrl()
+export function SpendingView(): JSX.Element {
   const [month, setMonth] = useState(currentUtcMonth)
 
-  const { me, currency } = useHousehold(apiUrl)
-  // The month is part of the callback identity, so stepping refetches.
-  const fetchSpending = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api['spending-by-category'].$get({ query: { month } }),
-        'Could not load your spending.',
-      ),
-    [apiUrl, month],
-  )
-  const spending = useApiQuery(apiUrl === null ? null : fetchSpending)
+  const tabBarInset = useTabBarInset()
+  const { me, currency } = useHousehold()
+  // The month is part of the query key, so stepping refetches and a month
+  // already visited comes straight back from cache.
+  const spending = useSpending(month)
 
-  if (apiUrl === null) return <Redirect href="/" />
-
-  const error = me.error ?? spending.error
-  const retry = () => {
-    if (me.error !== null) me.retry()
-    if (spending.error !== null) spending.retry()
-  }
-  const loaded = me.data !== null && spending.data !== null
+  const { error, retry } = queryFailure([me, spending])
+  const loaded = me.data !== undefined && spending.data !== undefined
   const slices = spending.data?.slices ?? []
   const total = slices.reduce((sum, slice) => sum + slice.total, 0)
 
   return (
-    <ListScreen title="Spending" eyebrow="By category">
+    <>
       <Stepper month={month} onStep={(delta) => setMonth((current) => addMonths(current, delta))} />
-      {error !== null || !loaded || spending.data === null ? (
+      {error !== null || !loaded || spending.data === undefined ? (
         <ListStatus error={error} retry={retry} />
       ) : slices.length === 0 ? (
         <ListStatus
@@ -62,7 +48,10 @@ export default function SpendingScreen(): JSX.Element {
           empty={`Nothing was spent in ${monthLabel(month, 'full')}.`}
         />
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: tabBarInset }}
+        >
           {/* The total is the sum of the bars: without it every row is a
               share of something the screen never states. */}
           <View className="flex-row items-baseline justify-between gap-3 pb-2">
@@ -77,7 +66,7 @@ export default function SpendingScreen(): JSX.Element {
           </Body>
         </ScrollView>
       )}
-    </ListScreen>
+    </>
   )
 }
 
@@ -111,7 +100,7 @@ function Step({
   onPress: () => void
 }): JSX.Element {
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={label}
       hitSlop={14}
@@ -119,6 +108,6 @@ function Step({
       className="h-8 w-8 items-center justify-center"
     >
       <Chevron direction={direction} size={16} />
-    </Pressable>
+    </Touchable>
   )
 }

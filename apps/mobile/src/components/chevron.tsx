@@ -8,6 +8,11 @@ import Svg, { Path } from 'react-native-svg'
 // geometric-shapes codepoints a text face need not carry, and a missing
 // glyph in the one place a fall is announced is not a risk worth taking.
 // Anything else that needs a name gets a word instead.
+// The rendered stroke every glyph in this file is drawn to: 1.5px, the
+// weight that sits beside 400-weight body text.
+const STROKE = 1.5
+const VIEW_BOX = 24
+
 export function Chevron({
   direction,
   size = 16,
@@ -24,7 +29,12 @@ export function Chevron({
       <Path
         d={d}
         stroke={tone === 'muted' ? muted : foreground}
-        strokeWidth={2}
+        // The stroke is stated in viewBox units, so a fixed width renders
+        // thinner the smaller the glyph is drawn — a 14px chevron came out
+        // at 1.17px beside the same text an 18px one met at 1.5px. Solving
+        // for the rendered weight keeps every chevron on the 1.5px that
+        // matches regular body text, whatever size it is used at.
+        strokeWidth={(STROKE * VIEW_BOX) / size}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

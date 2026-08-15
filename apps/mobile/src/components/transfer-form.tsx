@@ -1,13 +1,14 @@
-import { call, type ApiClient } from '@pfinance/api-client'
+import type { ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { Button, Dialog, FieldError, Input, Label, TextField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
+import Animated, { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { apiFor } from '@/api/client'
-import { failureMessage } from '@/api/use-query'
+import { errorMessage } from '@/api/errors'
+import { useTransferMutations } from '@/api/use-transfers'
 import { ChoiceChips, FieldBlock } from '@/components/form-fields'
 import { Body, Eyebrow, Title } from '@/components/type'
 import {
@@ -44,7 +45,6 @@ type AccountEntry = InferResponseType<ApiClient['api']['accounts']['$get'], 200>
 type TransferLeg = TransactionEntry & { transferId: string }
 
 export function TransferForm({
-  apiUrl,
   entry,
   accounts,
   currency,
@@ -52,13 +52,13 @@ export function TransferForm({
   onDone,
   onClose,
 }: {
-  apiUrl: string
   // null = create; a Transfer leg = edit the whole Transfer it belongs to.
   entry: TransferLeg | null
   accounts: AccountEntry[]
   currency: CurrencyCode
   dateFormat: DateFormat
-  // The write landed — save or delete alike: close and refresh the list.
+  // The write landed — save or delete alike. Refreshing is the mutation's
+  // job (api/query-keys.ts); this only has to close.
   onDone: () => void
   onClose: () => void
 }): JSX.Element {
@@ -67,9 +67,14 @@ export function TransferForm({
   // starts from them but drifts as the user edits.
   const stored = entry === null ? null : transferDraftFromLeg(entry, currency)
   const [draft, setDraft] = useState<TransferDraft>(() => stored ?? emptyTransferDraft(today))
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  // Only the draft's own complaint lives in state; a failed request's
+  // message comes off the mutation that failed.
+  const [invalid, setInvalid] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  const { save: saveTransfer, remove: removeTransfer } = useTransferMutations()
+  const busy = saveTransfer.isPending || removeTransfer.isPending
+  const error = invalid ?? errorMessage(saveTransfer.error) ?? errorMessage(removeTransfer.error)
 
   const set = <K extends keyof TransferDraft>(key: K, value: TransferDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }))
@@ -88,156 +93,142 @@ export function TransferForm({
     )
     .map((account) => ({ value: account.id, label: account.name }))
 
-  const save = async () => {
+  const save = () => {
     const parsed = validateTransferDraft(draft, currency)
     if (!parsed.ok) {
-      setError(parsed.error)
+      setInvalid(parsed.error)
       return
     }
-    setBusy(true)
-    setError(null)
-    try {
-      if (entry === null) {
-        await call(
-          apiFor(apiUrl).api.transfers.$post({ json: parsed.value }),
-          'Could not save the transfer.',
-        )
-      } else {
-        await call(
-          apiFor(apiUrl).api.transfers[':id'].$patch({
-            param: { id: entry.transferId },
-            json: parsed.value,
-          }),
-          'Could not save the transfer.',
-        )
-      }
-      onDone()
-    } catch (failure) {
-      setBusy(false)
-      setError(failureMessage(failure))
-    }
+    setInvalid(null)
+    saveTransfer.mutate(
+      { id: entry?.transferId ?? null, fields: parsed.value },
+      { onSuccess: onDone },
+    )
   }
 
-  const remove = async () => {
+  const remove = () => {
     if (entry === null) return
-    setBusy(true)
-    setError(null)
-    try {
-      await call(
-        apiFor(apiUrl).api.transfers[':id'].$delete({ param: { id: entry.transferId } }),
-        'Could not delete the transfer.',
-      )
-      onDone()
-    } catch (failure) {
-      setBusy(false)
-      setError(failureMessage(failure))
-    }
+    setInvalid(null)
+    removeTransfer.mutate(entry.transferId, { onSuccess: onDone })
   }
 
   const dateValid = isCalendarDate(draft.date)
 
   return (
     <View className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View className="flex-1 gap-4 px-5 pt-1">
-            <View className="flex-row items-center justify-between gap-3">
-              <View className="flex-1">
-                <Eyebrow>Between accounts</Eyebrow>
-                <Title>{entry === null ? 'New transfer' : 'Edit transfer'}</Title>
+      {/* Rendered in place of the Ledger, so the tab bar is still below it
+          and already owns the bottom inset. The crossfade is the one place
+          this app animates besides the home rail: swapping a whole screen
+          for another under the same chrome is a staged change, and a jump
+          cut there reads as a glitch rather than a transition. Exits stay
+          shorter than enters, and the system's reduced-motion setting skips
+          both. */}
+      <Animated.View
+        style={{ flex: 1 }}
+        entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+        exiting={FadeOut.duration(110).reduceMotion(ReduceMotion.System)}
+      >
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View className="flex-1 gap-4 px-5 pt-1">
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1">
+                  <Eyebrow>Between accounts</Eyebrow>
+                  <Title>{entry === null ? 'New transfer' : 'Edit transfer'}</Title>
+                </View>
+                <Button variant="ghost" size="sm" isDisabled={busy} onPress={onClose}>
+                  Cancel
+                </Button>
               </View>
-              <Button variant="ghost" size="sm" isDisabled={busy} onPress={onClose}>
-                Cancel
-              </Button>
-            </View>
-            <Body size="sm" tone="muted">
-              Moves money between two of your accounts — never counted as spending or income.
-            </Body>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <View className="gap-5 pb-8">
-                <FieldBlock label="From account">
-                  <ChoiceChips
-                    choices={accountChoices}
-                    value={draft.fromAccountId}
-                    onChange={(value) => set('fromAccountId', value)}
-                  />
-                </FieldBlock>
-                <FieldBlock label="To account">
-                  <ChoiceChips
-                    choices={accountChoices}
-                    value={draft.toAccountId}
-                    onChange={(value) => set('toAccountId', value)}
-                  />
-                </FieldBlock>
-                <TextField>
-                  <Label>{`Amount (${currency})`}</Label>
-                  <Input
-                    value={draft.amount}
-                    onChangeText={(text) => set('amount', text)}
-                    placeholder={amountExample(currency)}
-                    keyboardType="decimal-pad"
-                  />
-                </TextField>
-                <FieldBlock label="Date">
-                  <ChoiceChips
-                    choices={[
-                      { value: today, label: 'Today' },
-                      { value: previousCalendarDay(today), label: 'Yesterday' },
-                    ]}
-                    value={draft.date}
-                    onChange={(value) => set('date', value)}
-                  />
-                  <TextField isInvalid={draft.date !== '' && !dateValid}>
-                    <Input
-                      value={draft.date}
-                      onChangeText={(text) => set('date', text)}
-                      placeholder="YYYY-MM-DD"
-                      autoCapitalize="none"
-                      autoCorrect={false}
+              <Body size="sm" tone="muted">
+                Moves money between two of your accounts — never counted as spending or income.
+              </Body>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <View className="gap-5 pb-8">
+                  <FieldBlock label="From account">
+                    <ChoiceChips
+                      choices={accountChoices}
+                      value={draft.fromAccountId}
+                      onChange={(value) => set('fromAccountId', value)}
                     />
-                    <FieldError>Enter a calendar date like 2026-01-15.</FieldError>
+                  </FieldBlock>
+                  <FieldBlock label="To account">
+                    <ChoiceChips
+                      choices={accountChoices}
+                      value={draft.toAccountId}
+                      onChange={(value) => set('toAccountId', value)}
+                    />
+                  </FieldBlock>
+                  <TextField>
+                    <Label>{`Amount (${currency})`}</Label>
+                    <Input
+                      value={draft.amount}
+                      onChangeText={(text) => set('amount', text)}
+                      placeholder={amountExample(currency)}
+                      keyboardType="decimal-pad"
+                    />
                   </TextField>
-                  {dateValid && (
-                    <Body size="sm" tone="muted">
-                      {formatCalendarDate(draft.date, dateFormat)}
+                  <FieldBlock label="Date">
+                    <ChoiceChips
+                      choices={[
+                        { value: today, label: 'Today' },
+                        { value: previousCalendarDay(today), label: 'Yesterday' },
+                      ]}
+                      value={draft.date}
+                      onChange={(value) => set('date', value)}
+                    />
+                    <TextField isInvalid={draft.date !== '' && !dateValid}>
+                      <Input
+                        value={draft.date}
+                        onChangeText={(text) => set('date', text)}
+                        placeholder="YYYY-MM-DD"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <FieldError>Enter a calendar date like 2026-01-15.</FieldError>
+                    </TextField>
+                    {dateValid && (
+                      <Body size="sm" tone="muted">
+                        {formatCalendarDate(draft.date, dateFormat)}
+                      </Body>
+                    )}
+                  </FieldBlock>
+                  <TextField>
+                    <Label>Description</Label>
+                    <Input
+                      value={draft.description}
+                      onChangeText={(text) => set('description', text)}
+                      // Blank means the server's own default label.
+                      placeholder="Transfer"
+                      returnKeyType="done"
+                    />
+                  </TextField>
+                  {error !== null && (
+                    <Body size="sm" tone="danger">
+                      {error}
                     </Body>
                   )}
-                </FieldBlock>
-                <TextField>
-                  <Label>Description</Label>
-                  <Input
-                    value={draft.description}
-                    onChangeText={(text) => set('description', text)}
-                    // Blank means the server's own default label.
-                    placeholder="Transfer"
-                    returnKeyType="done"
-                  />
-                </TextField>
-                {error !== null && (
-                  <Body size="sm" tone="danger">
-                    {error}
-                  </Body>
-                )}
-                <Button isDisabled={busy} onPress={() => void save()}>
-                  {entry === null ? 'Log transfer' : 'Save changes'}
-                </Button>
-                {entry !== null && (
-                  <Button
-                    variant="danger-soft"
-                    isDisabled={busy}
-                    onPress={() => setConfirmingDelete(true)}
-                  >
-                    Delete transfer
+                  <Button isDisabled={busy} onPress={() => save()}>
+                    {busy ? 'Saving…' : entry === null ? 'Log transfer' : 'Save changes'}
                   </Button>
-                )}
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+                  {entry !== null && (
+                    <Button
+                      variant="danger-soft"
+                      isDisabled={busy}
+                      onPress={() => setConfirmingDelete(true)}
+                    >
+                      Delete transfer
+                    </Button>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Animated.View>
       {/* Deleting is confirmed in a dialog whose action button repeats the
           consequence — never a bare OK/Cancel (the web's rule). Both legs go
           together: the entity cascade removes the pair atomically. */}
@@ -255,7 +246,7 @@ export function TransferForm({
                 isDisabled={busy}
                 onPress={() => {
                   setConfirmingDelete(false)
-                  void remove()
+                  remove()
                 }}
               >
                 Delete transfer

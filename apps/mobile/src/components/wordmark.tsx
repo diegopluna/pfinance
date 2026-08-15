@@ -12,7 +12,7 @@ export function Wordmark(): JSX.Element {
   return (
     <View className="gap-2">
       <Text
-        className="font-mono-medium text-[15px] text-foreground lowercase"
+        className="font-mono-medium text-body text-foreground lowercase"
         style={{ letterSpacing: 0.5 }}
       >
         pfinance

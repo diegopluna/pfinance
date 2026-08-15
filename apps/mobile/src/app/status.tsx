@@ -91,7 +91,7 @@ function StateScreen({
           </Body>
         )}
         {'apiUrl' in result && (
-          <Text className="font-mono text-[13px] text-muted" numberOfLines={1}>
+          <Text className="font-mono text-body-sm text-muted" numberOfLines={1}>
             {result.apiUrl}
           </Text>
         )}

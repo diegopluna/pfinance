@@ -40,10 +40,22 @@ The mono is the display voice, not a code accent: a ledger is a column of aligne
 
 `--font-normal` … `--font-bold` in `apps/mobile/src/global.css` bind the sans, so heroui-native's own component CSS picks it up, and `font-medium` / `font-semibold` resolve to the weight's own font file (React Native does not synthesize weights on static TTFs).
 
-- Eyebrow: mono 500, 11px, uppercase, `letterSpacing: 1.1`
-- Title: mono 500, 21px (`lg`: 26px on the connect flow, where the title is the whole screen)
-- Hero figure: mono 500, 38px, `letterSpacing: -1.2`
-- Body: sans 400, 15px/24 (`sm`: 13px/20)
+The scale lives in one place — the `--text-*` block in `src/global.css`, named by job rather than size:
+
+| Token | Size | Used by |
+| --- | --- | --- |
+| `--text-caption` | 10px | badges, tab-bar labels |
+| `--text-eyebrow` | 11px | eyebrows, switcher, chart month labels |
+| `--text-body-sm` | 13px | secondary prose, small figures, addresses |
+| `--text-body` | 15px | prose, figures, doorway labels |
+| `--text-figure-lg` | 19px | a section's own total |
+| `--text-title` | 21px | screen titles |
+| `--text-title-lg` | 26px | connect-flow titles |
+| `--text-hero` | 38px | the net-worth headline |
+
+Letterspacing: eyebrow `1.1`, title `-0.3` (`lg` `-0.6`), hero `-1.2`, badge `0.8`.
+
+**Line heights are multiplied by the current font scale, never fixed.** React Native scales `fontSize` with the OS text-size setting but leaves a `lineHeight` given in points exactly where it was, so a fixed leading crushes its own text the moment someone turns type size up. `useLineHeight` in `components/type.tsx` applies the ratio against `useWindowDimensions().fontScale`, which re-reads when the setting changes. Ratios: eyebrow 1.3, title 1.2, body 1.6 (`sm` 1.54), hero 1.16. Everything else inherits the platform's own leading, which already tracks the size.
 
 No numbering anywhere. None of these screens is a sequence.
 
@@ -53,7 +65,7 @@ No new hues. The neutrals are the web's shadcn tokens from `packages/ui/src/styl
 
 | Token     | Source                | Light     | Dark      |
 | --------- | --------------------- | --------- | --------- |
-| accent    | `--s1`                | `#2a78d6` | `#3987e5` |
+| accent    | `--s1`, darkened      | `#2070ce` | `#3987e5` |
 | money in  | `--s1`                | `#2a78d6` | `#3987e5` |
 | money out | `--s2`                | `#eb6834` | `#d95926` |
 | success   | `--good`              | `#006300` | `#0ca30c` |
@@ -62,21 +74,51 @@ No new hues. The neutrals are the web's shadcn tokens from `packages/ui/src/styl
 
 Money out is deliberately **not** a UI token — it means one thing, an outflow, and only the rail and the charts draw it. Income/expense are blue and orange, never green and red: that opposition is the CVD-validated one the charts already use.
 
+**The chrome accent and the data blue are separate values, on purpose.** At `--s1`'s own `#2a78d6` the accent measured 4.42:1 as text on the background and 4.31:1 under heroui's near-white Button label — both below the 4.5:1 that the app's primary action and its tab labels need. The UI token is one step darker (`L 0.575 → 0.55`, chroma and hue untouched): 4.91:1 and 4.79:1. `--s1` itself is unchanged in `src/charts/palette.ts`, where it is a data colour on a plain background and where the CVD validation was actually run.
+
+In dark, `#3987e5` stays (5.44:1 as text) and its *foreground* flips to near-black instead — near-white on that blue is 3.55:1, near-black is 5.44:1. heroui does the same for `--success-foreground` in this theme.
+
+**This split is a decision for the design project, not for this repo to keep owning.** `--s1` was validated as a chart colour; extending it to control surfaces is the mobile app's doing, and so is the failure. Raise it alongside the rest of this file.
+
+## Navigation
+
+A bottom tab bar, four tabs: **Home · Ledger · Insights · Settings**. Everything else is pushed above it by the root stack — the connect flow, the Accounts list, a form — which is what makes those read as somewhere you went rather than somewhere you are.
+
+Four, not five. The three dashboards share the Insights tab behind a switcher (`Net worth · Spending · In vs out`), because a tab bar with three slots that all mean "a chart" isn't doing its job. A switcher rather than one long scroll: each dashboard reads a different window — net worth runs to the first month of the ledger, in-vs-out holds twelve, spending is one calendar month with a stepper — and stacking them would put three time frames under one scrollbar. Accounts stays a push off Home; it's a list you consult, not a place you live.
+
+Tab labels are the app's eyebrow — mono, uppercase, letterspaced — so the bar speaks in the same voice as every section heading above it. A focused tab changes color and nothing else.
+
+**On iOS 26 the bar is Liquid Glass** (`expo-glass-effect`): it leaves the layout flow and floats, and the ledger scrolls underneath it instead of stopping at a hairline. The glass goes *behind* the existing bar rather than the app adopting `unstable-native-tabs` — native tabs would hand the bar to UIKit and trade the whole type and icon system for SF Symbols, which is most of what makes this bar the app's own.
+
+Two conditions, not one: `isLiquidGlassAvailable()` answers "is this build using the Liquid Glass design" and stays true when the user has asked the system to cut the effect back, so `AccessibilityInfo.isReduceTransparencyEnabled()` is checked alongside it. Android, older iOS, and Reduce Transparency all get the original opaque bar with its hairline — the fallback, not a degraded glass.
+
+The float costs an inset: every scroller on a tab root ends `useTabBarInset()` above the screen edge so its last row can clear the bar, and that inset is 0 whenever the bar is opaque and back in the flow. `src/shell/tab-bar.tsx` owns both. Home's pinned action strip stays opaque and sits *above* the glass rather than under it — a full-width button showing the ledger through itself is a worse trade than the glass makes on that one screen.
+
+**Insets follow the bar.** A tab root leaves the bottom inset to the tab bar; a pushed screen covers the bar and owns it. `ListScreen` reads that off its own `back` prop — the back button is exactly what tells the two apart.
+
 ## Layout
 
 - **No cards.** A phone screen is already a card; drawing another one inside it only narrows the ledger. Structure is carried by hairlines (one weight, `--separator`, for borders and separators alike) and by the rail.
+- **One exception to the single hairline: `--field-border`.** With `--field-shadow` zeroed, a field's outline is the only thing identifying it as a control, which WCAG 1.4.11 asks to clear 3:1 against its own fill. The hairline measured 1.26:1; the field border is `oklch(0.65)` / `white 35%` at 3.23:1. Structure is a hairline; the edge of a control is not.
+- **A control never looks like a caption.** The Insights switcher was an underline under three bare labels — the same type as the section eyebrows above it — and read as a caption row. It is a segmented track now: neutral fill, raised thumb, both labels at full contrast (muted on the track measured 4.34:1, under the 4.5:1 an 11px label needs). Concentric radii: an 8px track with 4px padding takes a 4px thumb.
 - Screen padding 20px (`px-5`); connect-flow screens 24px.
-- Chrome is one line: back chevron, eyebrow + title, and the screen's one primary verb.
-- Home is a screen, not a menu: household → net worth (which is also the doorway to its history) → this month as the two bars that moved it → Accounts → the remaining destinations. **New transaction** is pinned above the bottom safe area and never scrolls.
+- Chrome is one line: back chevron (pushed screens only), eyebrow + title, and the screen's one primary verb.
+- Home is a screen, not a menu: household → net worth (which is also the doorway to its history) → this month as the two bars that moved it → Accounts. **New transaction** is pinned directly on the tab bar and never scrolls — no hairline of its own, or the two rules read as two footers instead of one place to act.
 - Connect-flow screens are bottom-weighted, so a five-screen sequence reads as one surface being answered.
 
 ## Glyphs
 
-Two, both drawn in SVG (`apps/mobile/src/components/chevron.tsx`): a chevron and a caret. No icon dependency. `▲`/`▼` are geometric-shapes codepoints a text face need not carry, and a missing glyph in the one place a fall is announced is not a risk worth taking. Everything else that needs a name gets a word.
+Six, all drawn in SVG, no icon dependency: a chevron and a caret (`components/chevron.tsx`), and the four tab icons (`components/tab-icon.tsx`). `▲`/`▼` are geometric-shapes codepoints a text face need not carry, and a missing glyph in the one place a fall is announced is not a risk worth taking. Everything else that needs a name gets a word.
+
+The tab icons are deliberately the **conventional** shapes — house, list, bars, sliders. The first cut drew Ledger and Insights out of the rail itself (rows hanging off a rule, the diverging pair) and both collapsed into a plus sign at 24px. A tab bar is read from the corner of the eye; it is the one place in this app that should look like every other app.
 
 ## Motion
 
 One moment: the home screen's rail bars draw out from the rule on mount, staggered 45ms, 420ms. Nothing else animates — a scrolling ledger that redraws its bars per row is noise. `useReducedMotion()` skips it entirely.
+
+## Motion, second pass
+
+The form no longer replaces the ledger as a jump cut: both forms crossfade in at 160ms and out at 110ms (exits shorter than enters), skipped entirely under the system's reduced-motion setting. That and the home rail's draw-in are the only two animations in the app. Press feedback is deliberately instant — a press is the highest-frequency interaction there is, and an easing ramp on every tap of every row spends attention it cannot earn back.
 
 ## Still open
 

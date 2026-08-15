@@ -1,14 +1,17 @@
-import { call, type ApiClient } from '@pfinance/api-client'
+import type { ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { Button, Checkbox, Dialog, FieldError, Input, Label, TextField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native'
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
+import Animated, { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { apiFor } from '@/api/client'
-import { failureMessage } from '@/api/use-query'
+import { errorMessage } from '@/api/errors'
+import { useCategoryMutations } from '@/api/use-categories'
+import { useTransactionMutations } from '@/api/use-transactions'
 import { ChoiceChips, FieldBlock } from '@/components/form-fields'
+import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow, Title } from '@/components/type'
 import {
   formatCalendarDate,
@@ -45,17 +48,14 @@ type CategoryEntry = InferResponseType<
 >['categories'][number]
 
 export function TransactionForm({
-  apiUrl,
   entry,
   accounts,
   categories,
   currency,
   dateFormat,
   onDone,
-  onCategoryCreated,
   onClose,
 }: {
-  apiUrl: string
   // null = create; an existing non-Transfer row = edit (a leg opens the
   // TransferForm instead — the pair can never drift).
   entry: TransactionEntry | null
@@ -63,9 +63,9 @@ export function TransactionForm({
   categories: CategoryEntry[]
   currency: CurrencyCode
   dateFormat: DateFormat
-  // The write landed — save or delete alike: close and refresh the list.
+  // The write landed — save or delete alike. Refreshing is the mutation's
+  // job (api/query-keys.ts); this only has to close.
   onDone: () => void
-  onCategoryCreated: () => void
   onClose: () => void
 }): JSX.Element {
   const today = todayCalendarString()
@@ -78,13 +78,21 @@ export function TransactionForm({
       ? { ...fresh, accountId: active[0].id }
       : fresh
   })
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  // Only the draft's own complaint lives in state; a failed request's
+  // message comes off the mutation that failed.
+  const [invalid, setInvalid] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  // Inline name-only Category creation: the freshly created rows render
-  // immediately from local state while the parent's list refetches.
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [createdCategories, setCreatedCategories] = useState<CategoryEntry[]>([])
+
+  const { save: saveTransaction, remove: removeTransaction } = useTransactionMutations()
+  const { create: createCategoryMutation } = useCategoryMutations()
+  const busy =
+    saveTransaction.isPending || removeTransaction.isPending || createCategoryMutation.isPending
+  const error =
+    invalid ??
+    errorMessage(saveTransaction.error) ??
+    errorMessage(removeTransaction.error) ??
+    errorMessage(createCategoryMutation.error)
 
   const set = <K extends keyof TransactionDraft>(key: K, value: TransactionDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }))
@@ -100,232 +108,208 @@ export function TransactionForm({
     ...categories
       .filter((category) => category.archivedAt === null || category.id === entry?.categoryId)
       .map((category) => ({ value: category.id, label: category.name })),
-    // Only until the parent's refetch catches up — then the created row
-    // arrives in `categories` and the local copy would be a duplicate.
-    ...createdCategories
-      .filter((created) => !categories.some((category) => category.id === created.id))
-      .map((category) => ({ value: category.id, label: category.name })),
   ]
 
-  const save = async () => {
+  const save = () => {
     const parsed = validateDraft(draft, currency)
     if (!parsed.ok) {
-      setError(parsed.error)
+      setInvalid(parsed.error)
       return
     }
-    setBusy(true)
-    setError(null)
-    try {
-      if (entry === null) {
-        // The draft composes the kind (standard or balance_adjustment);
-        // Transfers write through /api/transfers (transfer-form.tsx).
-        await call(
-          apiFor(apiUrl).api.transactions.$post({ json: parsed.value }),
-          'Could not save the transaction.',
-        )
-      } else {
-        await call(
-          apiFor(apiUrl).api.transactions[':id'].$patch({
-            param: { id: entry.id },
-            json: parsed.value,
-          }),
-          'Could not save the transaction.',
-        )
-      }
-      onDone()
-    } catch (failure) {
-      setBusy(false)
-      setError(failureMessage(failure))
-    }
+    setInvalid(null)
+    // The draft composes the kind (standard or balance_adjustment);
+    // Transfers write through /api/transfers (transfer-form.tsx).
+    saveTransaction.mutate({ id: entry?.id ?? null, fields: parsed.value }, { onSuccess: onDone })
   }
 
-  const remove = async () => {
+  const remove = () => {
     if (entry === null) return
-    setBusy(true)
-    setError(null)
-    try {
-      await call(
-        apiFor(apiUrl).api.transactions[':id'].$delete({ param: { id: entry.id } }),
-        'Could not delete the transaction.',
-      )
-      onDone()
-    } catch (failure) {
-      setBusy(false)
-      setError(failureMessage(failure))
-    }
+    setInvalid(null)
+    removeTransaction.mutate(entry.id, { onSuccess: onDone })
   }
 
-  const createCategory = async () => {
+  // Name-only Category creation, on the spot. The mutation's invalidation
+  // is awaited before onSuccess runs, so the new Category is already among
+  // the chips by the time it is selected — no local copy to bridge the gap.
+  const createCategory = () => {
     const name = newCategoryName.trim()
     if (name === '' || busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      const { category: created } = await call(
-        apiFor(apiUrl).api.categories.$post({ json: { name } }),
-        'Could not create the category.',
-      )
-      setCreatedCategories((current) => [...current, created])
-      set('categoryId', created.id)
-      setNewCategoryName('')
-      onCategoryCreated()
-    } catch (failure) {
-      setError(failureMessage(failure))
-    } finally {
-      setBusy(false)
-    }
+    setInvalid(null)
+    createCategoryMutation.mutate(name, {
+      onSuccess: ({ category: created }) => {
+        set('categoryId', created.id)
+        setNewCategoryName('')
+      },
+    })
   }
 
   const dateValid = isCalendarDate(draft.date)
 
   return (
     <View className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View className="flex-1 gap-4 px-5 pt-1">
-            <View className="flex-row items-center justify-between gap-3">
-              <View className="flex-1">
-                <Eyebrow>Ledger entry</Eyebrow>
-                <Title>{entry === null ? 'New transaction' : 'Edit transaction'}</Title>
+      {/* Rendered in place of the Ledger, so the tab bar is still below it
+          and already owns the bottom inset. The crossfade is the one place
+          this app animates besides the home rail: swapping a whole screen
+          for another under the same chrome is a staged change, and a jump
+          cut there reads as a glitch rather than a transition. Exits stay
+          shorter than enters, and the system's reduced-motion setting skips
+          both. */}
+      <Animated.View
+        style={{ flex: 1 }}
+        entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+        exiting={FadeOut.duration(110).reduceMotion(ReduceMotion.System)}
+      >
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View className="flex-1 gap-4 px-5 pt-1">
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1">
+                  <Eyebrow>Ledger entry</Eyebrow>
+                  <Title>{entry === null ? 'New transaction' : 'Edit transaction'}</Title>
+                </View>
+                <Button variant="ghost" size="sm" isDisabled={busy} onPress={onClose}>
+                  Cancel
+                </Button>
               </View>
-              <Button variant="ghost" size="sm" isDisabled={busy} onPress={onClose}>
-                Cancel
-              </Button>
-            </View>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <View className="gap-5 pb-8">
-                <TextField>
-                  <Label>Description</Label>
-                  <Input
-                    value={draft.description}
-                    onChangeText={(text) => set('description', text)}
-                    placeholder="Groceries"
-                    returnKeyType="next"
-                  />
-                </TextField>
-                <FieldBlock label="Direction">
-                  <ChoiceChips
-                    choices={[
-                      { value: 'out', label: 'Money out' },
-                      { value: 'in', label: 'Money in' },
-                    ]}
-                    value={draft.direction}
-                    onChange={(value) => set('direction', value === 'in' ? 'in' : 'out')}
-                  />
-                </FieldBlock>
-                <TextField>
-                  <Label>{`Amount (${currency})`}</Label>
-                  <Input
-                    value={draft.amount}
-                    onChangeText={(text) => set('amount', text)}
-                    placeholder={amountExample(currency)}
-                    keyboardType="decimal-pad"
-                  />
-                </TextField>
-                {/* One press target for the whole row; the Checkbox inside
-                    is purely visual so the two never fight over the tap. */}
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: draft.balanceAdjustment }}
-                  accessibilityLabel="Balance adjustment"
-                  onPress={() => set('balanceAdjustment', !draft.balanceAdjustment)}
-                >
-                  <View className="flex-row items-start gap-3" pointerEvents="none">
-                    <Checkbox isSelected={draft.balanceAdjustment} />
-                    <View className="flex-1 gap-1">
-                      <Label>Balance adjustment</Label>
-                      <Body size="sm" tone="muted">
-                        Corrects drift between the balance and reality — never counted as spending
-                        or income.
-                      </Body>
-                    </View>
-                  </View>
-                </Pressable>
-                <FieldBlock label="Date">
-                  <ChoiceChips
-                    choices={[
-                      { value: today, label: 'Today' },
-                      { value: previousCalendarDay(today), label: 'Yesterday' },
-                    ]}
-                    value={draft.date}
-                    onChange={(value) => set('date', value)}
-                  />
-                  <TextField isInvalid={draft.date !== '' && !dateValid}>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <View className="gap-5 pb-8">
+                  <TextField>
+                    <Label>Description</Label>
                     <Input
-                      value={draft.date}
-                      onChangeText={(text) => set('date', text)}
-                      placeholder="YYYY-MM-DD"
-                      autoCapitalize="none"
-                      autoCorrect={false}
+                      value={draft.description}
+                      onChangeText={(text) => set('description', text)}
+                      placeholder="Groceries"
+                      returnKeyType="next"
                     />
-                    <FieldError>Enter a calendar date like 2026-01-15.</FieldError>
                   </TextField>
-                  {dateValid && (
-                    <Body size="sm" tone="muted">
-                      {formatCalendarDate(draft.date, dateFormat)}
+                  <FieldBlock label="Direction">
+                    <ChoiceChips
+                      choices={[
+                        { value: 'out', label: 'Money out' },
+                        { value: 'in', label: 'Money in' },
+                      ]}
+                      value={draft.direction}
+                      onChange={(value) => set('direction', value === 'in' ? 'in' : 'out')}
+                    />
+                  </FieldBlock>
+                  <TextField>
+                    <Label>{`Amount (${currency})`}</Label>
+                    <Input
+                      value={draft.amount}
+                      onChangeText={(text) => set('amount', text)}
+                      placeholder={amountExample(currency)}
+                      keyboardType="decimal-pad"
+                    />
+                  </TextField>
+                  {/* One press target for the whole row; the Checkbox inside
+                    is purely visual so the two never fight over the tap. */}
+                  <Touchable
+                    feedback="dim"
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: draft.balanceAdjustment }}
+                    accessibilityLabel="Balance adjustment"
+                    onPress={() => set('balanceAdjustment', !draft.balanceAdjustment)}
+                  >
+                    <View className="flex-row items-start gap-3" pointerEvents="none">
+                      <Checkbox isSelected={draft.balanceAdjustment} />
+                      <View className="flex-1 gap-1">
+                        <Label>Balance adjustment</Label>
+                        <Body size="sm" tone="muted">
+                          Corrects drift between the balance and reality — never counted as spending
+                          or income.
+                        </Body>
+                      </View>
+                    </View>
+                  </Touchable>
+                  <FieldBlock label="Date">
+                    <ChoiceChips
+                      choices={[
+                        { value: today, label: 'Today' },
+                        { value: previousCalendarDay(today), label: 'Yesterday' },
+                      ]}
+                      value={draft.date}
+                      onChange={(value) => set('date', value)}
+                    />
+                    <TextField isInvalid={draft.date !== '' && !dateValid}>
+                      <Input
+                        value={draft.date}
+                        onChangeText={(text) => set('date', text)}
+                        placeholder="YYYY-MM-DD"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <FieldError>Enter a calendar date like 2026-01-15.</FieldError>
+                    </TextField>
+                    {dateValid && (
+                      <Body size="sm" tone="muted">
+                        {formatCalendarDate(draft.date, dateFormat)}
+                      </Body>
+                    )}
+                  </FieldBlock>
+                  <FieldBlock label="Account">
+                    <ChoiceChips
+                      choices={accountChoices}
+                      value={draft.accountId}
+                      onChange={(value) => set('accountId', value)}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label="Category">
+                    <ChoiceChips
+                      choices={categoryChoices}
+                      value={draft.categoryId}
+                      onChange={(value) => set('categoryId', value)}
+                    />
+                    <View className="flex-row items-end gap-2">
+                      <View className="flex-1">
+                        <TextField>
+                          <Input
+                            value={newCategoryName}
+                            onChangeText={setNewCategoryName}
+                            placeholder="New category name"
+                            returnKeyType="done"
+                            onSubmitEditing={() => createCategory()}
+                          />
+                        </TextField>
+                      </View>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        isDisabled={newCategoryName.trim() === '' || busy}
+                        onPress={() => createCategory()}
+                      >
+                        Add
+                      </Button>
+                    </View>
+                  </FieldBlock>
+                  {error !== null && (
+                    <Body size="sm" tone="danger">
+                      {error}
                     </Body>
                   )}
-                </FieldBlock>
-                <FieldBlock label="Account">
-                  <ChoiceChips
-                    choices={accountChoices}
-                    value={draft.accountId}
-                    onChange={(value) => set('accountId', value)}
-                  />
-                </FieldBlock>
-                <FieldBlock label="Category">
-                  <ChoiceChips
-                    choices={categoryChoices}
-                    value={draft.categoryId}
-                    onChange={(value) => set('categoryId', value)}
-                  />
-                  <View className="flex-row items-end gap-2">
-                    <View className="flex-1">
-                      <TextField>
-                        <Input
-                          value={newCategoryName}
-                          onChangeText={setNewCategoryName}
-                          placeholder="New category name"
-                          returnKeyType="done"
-                          onSubmitEditing={() => void createCategory()}
-                        />
-                      </TextField>
-                    </View>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      isDisabled={newCategoryName.trim() === '' || busy}
-                      onPress={() => void createCategory()}
-                    >
-                      Add
-                    </Button>
-                  </View>
-                </FieldBlock>
-                {error !== null && (
-                  <Body size="sm" tone="danger">
-                    {error}
-                  </Body>
-                )}
-                <Button isDisabled={busy} onPress={() => void save()}>
-                  {entry === null ? 'Log transaction' : 'Save changes'}
-                </Button>
-                {entry !== null && (
-                  <Button
-                    variant="danger-soft"
-                    isDisabled={busy}
-                    onPress={() => setConfirmingDelete(true)}
-                  >
-                    Delete transaction
+                  <Button isDisabled={busy} onPress={() => save()}>
+                    {/* The mutation stays pending until the Ledger it
+                      changed has refetched, so the label says so rather
+                      than leaving a dead button under a thumb. */}
+                    {busy ? 'Saving…' : entry === null ? 'Log transaction' : 'Save changes'}
                   </Button>
-                )}
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+                  {entry !== null && (
+                    <Button
+                      variant="danger-soft"
+                      isDisabled={busy}
+                      onPress={() => setConfirmingDelete(true)}
+                    >
+                      Delete transaction
+                    </Button>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Animated.View>
       {/* Deleting is confirmed in a dialog whose action button repeats the
           consequence — never a bare OK/Cancel (the web's rule). */}
       <Dialog isOpen={confirmingDelete} onOpenChange={setConfirmingDelete}>
@@ -342,7 +326,7 @@ export function TransactionForm({
                 isDisabled={busy}
                 onPress={() => {
                   setConfirmingDelete(false)
-                  void remove()
+                  remove()
                 }}
               >
                 Delete transaction
