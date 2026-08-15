@@ -9,7 +9,6 @@ import { Figure } from '@/components/amount'
 import { IncomeExpenseChart } from '@/components/charts/income-expense-chart'
 import { ListStatus } from '@/components/list-screen'
 import { Body, Eyebrow } from '@/components/type'
-import { useTabBarInset } from '@/shell/tab-bar'
 
 // The Income vs Expense dashboard (issue #79): the server-summed recent
 // window (issue #19) on the rail — the "am I saving anything" view. No
@@ -22,7 +21,6 @@ import { useTabBarInset } from '@/shell/tab-bar'
 // this screen only says so.
 
 export function IncomeExpenseView(): JSX.Element {
-  const tabBarInset = useTabBarInset()
   const { me, currency } = useHousehold()
   const incomeExpense = useIncomeExpense()
 
@@ -42,10 +40,7 @@ export function IncomeExpenseView(): JSX.Element {
           empty="This fills in once the ledger has income or expense transactions."
         />
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: tabBarInset }}
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic">
           {latest !== undefined && <LatestMonth month={latest} currency={currency} />}
           <View className="mt-7">
             <IncomeExpenseChart months={months} currency={currency} />

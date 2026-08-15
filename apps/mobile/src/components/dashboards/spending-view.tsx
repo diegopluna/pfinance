@@ -11,7 +11,6 @@ import { Chevron } from '@/components/chevron'
 import { ListStatus } from '@/components/list-screen'
 import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
-import { useTabBarInset } from '@/shell/tab-bar'
 
 // The Spending dashboard (issue #79): one calendar month of the Expense
 // view grouped by Category (issue #18), server-summed and largest-first —
@@ -25,7 +24,6 @@ import { useTabBarInset } from '@/shell/tab-bar'
 export function SpendingView(): JSX.Element {
   const [month, setMonth] = useState(currentUtcMonth)
 
-  const tabBarInset = useTabBarInset()
   const { me, currency } = useHousehold()
   // The month is part of the query key, so stepping refetches and a month
   // already visited comes straight back from cache.
@@ -48,10 +46,7 @@ export function SpendingView(): JSX.Element {
           empty={`Nothing was spent in ${monthLabel(month, 'full')}.`}
         />
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: tabBarInset }}
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic">
           {/* The total is the sum of the bars: without it every row is a
               share of something the screen never states. */}
           <View className="flex-row items-baseline justify-between gap-3 pb-2">
