@@ -1,17 +1,15 @@
-import { call } from '@pfinance/api-client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
-import { Redirect } from 'expo-router'
-import { useCallback, type JSX } from 'react'
+import type { JSX } from 'react'
 import { ScrollView, View } from 'react-native'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { queryFailure } from '@/api/errors'
+import { useIncomeExpense } from '@/api/use-dashboards'
+import { useHousehold } from '@/api/use-me'
 import { monthLabel } from '@/charts/months'
 import { Figure } from '@/components/amount'
 import { IncomeExpenseChart } from '@/components/charts/income-expense-chart'
-import { ListScreen, ListStatus } from '@/components/list-screen'
+import { ListStatus } from '@/components/list-screen'
 import { Body, Eyebrow } from '@/components/type'
-import { storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 
 // The Income vs Expense dashboard (issue #79): the server-summed recent
 // window (issue #19) on the rail — the "am I saving anything" view. No
@@ -23,33 +21,18 @@ import { storedServerUrl } from '@/connect/store'
 // Adjustments are excluded by definition — the server derives the views;
 // this screen only says so.
 
-export default function IncomeExpenseScreen(): JSX.Element {
-  const apiUrl = storedServerUrl()
+export function IncomeExpenseView(): JSX.Element {
+  const tabBarInset = useTabBarInset()
+  const { me, currency } = useHousehold()
+  const incomeExpense = useIncomeExpense()
 
-  const { me, currency } = useHousehold(apiUrl)
-  const fetchIncomeExpense = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api['income-vs-expense'].$get({ query: { through: undefined } }),
-        'Could not load income vs expense.',
-      ),
-    [apiUrl],
-  )
-  const incomeExpense = useApiQuery(apiUrl === null ? null : fetchIncomeExpense)
-
-  if (apiUrl === null) return <Redirect href="/" />
-
-  const error = me.error ?? incomeExpense.error
-  const retry = () => {
-    if (me.error !== null) me.retry()
-    if (incomeExpense.error !== null) incomeExpense.retry()
-  }
-  const loaded = me.data !== null && incomeExpense.data !== null
+  const { error, retry } = queryFailure([me, incomeExpense])
+  const loaded = me.data !== undefined && incomeExpense.data !== undefined
   const months = incomeExpense.data?.months ?? []
   const latest = months.at(-1)
 
   return (
-    <ListScreen title="Income vs expense" eyebrow="Last 12 months">
+    <>
       {error !== null || !loaded ? (
         <ListStatus error={error} retry={retry} />
       ) : months.length === 0 ? (
@@ -59,10 +42,13 @@ export default function IncomeExpenseScreen(): JSX.Element {
           empty="This fills in once the ledger has income or expense transactions."
         />
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: tabBarInset }}
+        >
           {latest !== undefined && <LatestMonth month={latest} currency={currency} />}
           <View className="mt-7">
-            <IncomeExpenseChart months={months} />
+            <IncomeExpenseChart months={months} currency={currency} />
           </View>
           {/* By definition (DECISIONS.md): every derived-spending surface
               carries this footnote visibly. */}
@@ -71,7 +57,7 @@ export default function IncomeExpenseScreen(): JSX.Element {
           </Body>
         </ScrollView>
       )}
-    </ListScreen>
+    </>
   )
 }
 

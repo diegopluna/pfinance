@@ -360,6 +360,9 @@ importers:
       '@pfinance/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.101.4(react@19.2.3)
       better-auth:
         specifier: 'catalog:'
         version: 1.6.27(@cloudflare/workers-types@5.20260801.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260801.1)(@effect/sql-d1@4.0.0-beta.102(effect@4.0.0-beta.102))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-beta.102)(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(valibot@1.2.0(typescript@7.0.2))(zod@4.4.3))(mongodb@6.21.0(@aws-sdk/credential-providers@3.1101.0))(mysql2@3.23.2(@types/node@26.1.2))(pg@8.22.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.1.10)
@@ -373,6 +376,9 @@ importers:
         specifier: ~57.0.2
         version: 57.0.10(expo@57.0.12)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(supports-color@10.2.2)
       expo-font:
+        specifier: ~57.0.1
+        version: 57.0.1(expo@57.0.12)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)
+      expo-glass-effect:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.12)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)
       expo-linking:

@@ -37,6 +37,9 @@ export function NetWorthHeadline({
       <Figure size="hero">{formatAmount(current, currency)}</Figure>
       {delta !== null && previousMonth !== null && (
         <View
+          // Without `accessible` React Native ignores the label and reads
+          // the caret, the figure and "vs Jul" as three separate nodes.
+          accessible
           className="flex-row items-center gap-1.5"
           accessibilityLabel={`${down ? 'Down' : 'Up'} ${formatAmount(Math.abs(delta), currency)}${percentage} versus ${monthLabel(previousMonth, 'month')}`}
         >

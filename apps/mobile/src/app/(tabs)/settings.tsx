@@ -1,13 +1,15 @@
 import { getCurrency, isSupportedCurrency } from '@pfinance/currency'
+import { useQueryClient } from '@tanstack/react-query'
 import { Redirect, router } from 'expo-router'
 import { Button } from 'heroui-native'
 import { useState, type JSX, type ReactNode } from 'react'
 import { ScrollView, Text, View } from 'react-native'
-import { useHousehold } from '@/api/use-household'
+import { useMe } from '@/api/use-me'
 import { authClientFor } from '@/auth/client'
 import { ListScreen } from '@/components/list-screen'
 import { Body, Eyebrow } from '@/components/type'
 import { forgetServerUrl, storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 
 // The settings shell (issue #77): the connection is never a black box — the
 // screen shows which Server the app talks to, which Household that Server
@@ -25,7 +27,9 @@ const currencyLine = (code: string): string =>
 
 export default function SettingsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
-  const { me } = useHousehold(apiUrl)
+  const tabBarInset = useTabBarInset()
+  const me = useMe()
+  const queryClient = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,22 +47,29 @@ export default function SettingsScreen(): JSX.Element {
       return
     }
     await forgetServerUrl()
+    // The cache is this Household's, and the app is about to belong to
+    // another Server or none: keys carry no Server (api/query-keys.ts), so
+    // the way they stay honest is that leaving empties them.
+    queryClient.clear()
     router.dismissTo('/')
   }
 
   return (
-    <ListScreen title="Settings">
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <ListScreen title="Settings" back={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: tabBarInset }}
+      >
         <View className="gap-6 pb-4">
           <Section label="Server">
             {/* The address is a key, not prose: it is set in the figure
                 voice so a typo in it is findable character by character. */}
-            <Text className="font-mono text-[13px] text-foreground" selectable>
+            <Text className="font-mono text-body-sm text-foreground" selectable>
               {apiUrl}
             </Text>
           </Section>
 
-          {me.data !== null && (
+          {me.data !== undefined && (
             <Section label="Household">
               <Body>{me.data.household.name}</Body>
               <Body size="sm" tone="muted">

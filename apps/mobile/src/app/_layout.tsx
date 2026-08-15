@@ -8,13 +8,15 @@ import { SplineSans_400Regular } from '@expo-google-fonts/spline-sans/400Regular
 import { SplineSans_500Medium } from '@expo-google-fonts/spline-sans/500Medium'
 import { SplineSans_600SemiBold } from '@expo-google-fonts/spline-sans/600SemiBold'
 import { SplineSans_700Bold } from '@expo-google-fonts/spline-sans/700Bold'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { HeroUINativeProvider } from 'heroui-native'
-import { useEffect, type JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { createQueryClient, trackAppStateFocus } from '@/api/query-client'
 
 import '../global.css'
 
@@ -38,19 +40,25 @@ export default function RootLayout(): JSX.Element | null {
   // A font that fails to load is not a reason to hold the app hostage —
   // React Native falls back to the system face and every screen still works.
   const ready = fontsLoaded || fontError !== null
+  // One client for the app's lifetime; created in state so a Fast Refresh
+  // re-render can't drop the cache mid-session.
+  const [queryClient] = useState(createQueryClient)
 
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync()
   }, [ready])
+  useEffect(trackAppStateFocus, [])
 
   if (!ready) return null
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <HeroUINativeProvider>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: false }} />
-      </HeroUINativeProvider>
+      <QueryClientProvider client={queryClient}>
+        <HeroUINativeProvider>
+          <StatusBar style="auto" />
+          <Stack screenOptions={{ headerShown: false }} />
+        </HeroUINativeProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   )
 }

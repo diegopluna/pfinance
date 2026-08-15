@@ -7,6 +7,23 @@
    level up from this src/global.css file. */
 @source '../node_modules/heroui-native/lib';
 
+/* ── Scale ───────────────────────────────────────────────────────────────
+   The sizes named by their job, so the scale has one home instead of
+   living as arbitrary values in whichever component reached for it. Sizes
+   only: line height is set per component, because React Native scales
+   fontSize with the OS text-size setting and does not scale a lineHeight
+   given in points (see components/type.tsx). */
+@theme {
+  --text-caption: 10px;
+  --text-eyebrow: 11px;
+  --text-body-sm: 13px;
+  --text-body: 15px;
+  --text-figure-lg: 19px;
+  --text-title: 21px;
+  --text-title-lg: 26px;
+  --text-hero: 38px;
+}
+
 /* ── Type ────────────────────────────────────────────────────────────────
    Spline Sans for prose, Spline Sans Mono for every figure and every
    structural label. The mono is this app's display voice: a ledger is a
@@ -38,6 +55,7 @@
    project already made (docs/design/DECISIONS.md):
 
      accent   --s1  #2a78d6 / #3987e5   the money-in blue, and the app's one accent
+                                          (light is darkened one step — see below)
      success  --good #006300 / #0ca30c  a gain
      danger   --crit #d03b3b            an error
      warning  --s4  #eda100 / #c98500
@@ -70,7 +88,17 @@
       --default: oklch(0.97 0 0);
       --default-foreground: oklch(0.205 0 0);
 
-      --accent: oklch(0.575 0.163 255.532);
+      /* One step darker than --s1's #2a78d6 (L 0.575 → 0.55, C and H
+         untouched). At #2a78d6 the accent measured 4.42:1 as text on the
+         background and 4.31:1 under heroui's near-white Button label — both
+         under the 4.5:1 AA needs for the app's primary action and its tab
+         labels. At L 0.55 they are 4.91:1 and 4.79:1.
+
+         The chart palette is deliberately NOT changed with it: --s1 stays
+         #2a78d6 in src/charts/palette.ts, where it is a data colour on a
+         plain background and where the CVD validation was actually run
+         (docs/design/DECISIONS.md). This token is the chrome sibling. */
+      --accent: oklch(0.55 0.163 255.532);
       --accent-foreground: oklch(0.985 0 0);
 
       --success: oklch(0.433 0.147 142.495);
@@ -85,18 +113,23 @@
 
       /* One hairline value for borders and separators alike: the whole app
          is drawn with rules rather than cards, so a second weight of line
-         would read as a second meaning. */
+         would read as a second meaning. The one exception is --field-border
+         below, where the line is not structure but the edge of a control. */
       --border: oklch(0.922 0 0);
       --separator: oklch(0.922 0 0);
-      --focus: oklch(0.575 0.163 255.532);
-      --link: oklch(0.575 0.163 255.532);
+      --focus: oklch(0.55 0.163 255.532);
+      --link: oklch(0.55 0.163 255.532);
 
       /* Fields are outlined, not floated: on a white page a shadow reads as
-         a card, and this design has no cards. */
+         a card, and this design has no cards. The outline is deliberately
+         darker than --border: with the shadow gone it is the only thing
+         identifying an input, which WCAG 1.4.11 asks to clear 3:1 against
+         its own fill. The hairline at oklch(0.922) measured 1.26:1; this is
+         3.23:1. Structure is a hairline, an interactive edge is not. */
       --field-background: oklch(1 0 0);
       --field-foreground: oklch(0.145 0 0);
       --field-placeholder: oklch(0.556 0 0);
-      --field-border: oklch(0.922 0 0);
+      --field-border: oklch(0.65 0 0);
       --field-border-width: 1px;
       --surface-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
       --overlay-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
@@ -123,8 +156,12 @@
       --default: oklch(0.269 0 0);
       --default-foreground: oklch(0.985 0 0);
 
+      /* Dark keeps the mirror's #3987e5 — 5.44:1 as text on the dark
+         background — and flips its foreground instead: near-white on that
+         blue is 3.55:1, near-black on it is 5.44:1. heroui does the same
+         thing for --success-foreground in this theme. */
       --accent: oklch(0.622 0.161 255.053);
-      --accent-foreground: oklch(0.985 0 0);
+      --accent-foreground: oklch(0.145 0 0);
 
       --success: oklch(0.621 0.207 142.564);
       --success-foreground: oklch(0.145 0 0);
@@ -146,7 +183,8 @@
       --field-background: oklch(0.205 0 0);
       --field-foreground: oklch(0.985 0 0);
       --field-placeholder: oklch(0.708 0 0);
-      --field-border: oklch(1 0 0 / 15%);
+      /* 3.23:1 over the dark field fill; 15% measured 1.57:1. */
+      --field-border: oklch(1 0 0 / 35%);
       --field-border-width: 1px;
     }
   }

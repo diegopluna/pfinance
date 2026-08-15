@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { Button, FieldError, Input, Label, TextField } from 'heroui-native'
 import { useState, type JSX } from 'react'
@@ -19,6 +20,7 @@ export default function SignInScreen(): JSX.Element {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   // Only reachable with a Server in hand (from /status or the launch gate).
   if (apiUrl === null || apiUrl === '') return <Redirect href="/" />
@@ -43,6 +45,10 @@ export default function SignInScreen(): JSX.Element {
       return
     }
     rememberServerUrl(apiUrl)
+    // Whoever was signed in before is not who is signed in now — start the
+    // cache empty rather than showing another Household's numbers for the
+    // frame before the first refetch lands.
+    queryClient.clear()
     // Clear the connect-flow screens from the stack first, so home becomes
     // the root — the back gesture must not resurface the probe.
     if (router.canDismiss()) router.dismissAll()
@@ -56,7 +62,7 @@ export default function SignInScreen(): JSX.Element {
         <Body tone="muted">Use the same email and password as on the web.</Body>
         {/* Which Server is being signed into is part of the question: the
             address is a key, so it is set in the figure voice. */}
-        <Text className="font-mono text-[13px] text-muted" numberOfLines={1}>
+        <Text className="font-mono text-body-sm text-muted" numberOfLines={1}>
           {apiUrl}
         </Text>
       </View>

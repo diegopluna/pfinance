@@ -1,17 +1,16 @@
-import { call, type ApiClient } from '@pfinance/api-client'
-import { Redirect } from 'expo-router'
+import type { ApiClient } from '@pfinance/api-client'
 import type { InferResponseType } from 'hono/client'
-import { useCallback, type JSX } from 'react'
+import type { JSX } from 'react'
 import { ScrollView, View } from 'react-native'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { queryFailure } from '@/api/errors'
+import { useNetWorth } from '@/api/use-dashboards'
+import { useHousehold } from '@/api/use-me'
 import { monthLabel } from '@/charts/months'
 import { NetWorthChart } from '@/components/charts/net-worth-chart'
-import { ListScreen, ListStatus } from '@/components/list-screen'
+import { ListStatus } from '@/components/list-screen'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
 import { Body } from '@/components/type'
-import { storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 
 // The Net Worth dashboard (issue #79), the 1b hero cut for a phone
 // (docs/design/DECISIONS.md): the current value and its month-over-month
@@ -23,32 +22,17 @@ import { storedServerUrl } from '@/connect/store'
 
 type NetWorthSeries = InferResponseType<ApiClient['api']['net-worth']['$get'], 200>['series']
 
-export default function NetWorthScreen(): JSX.Element {
-  const apiUrl = storedServerUrl()
+export function NetWorthView(): JSX.Element {
+  const tabBarInset = useTabBarInset()
+  const { me, currency } = useHousehold()
+  const netWorth = useNetWorth()
 
-  const { me, currency } = useHousehold(apiUrl)
-  const fetchNetWorth = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api['net-worth'].$get({ query: { through: undefined } }),
-        'Could not load your Net Worth.',
-      ),
-    [apiUrl],
-  )
-  const netWorth = useApiQuery(apiUrl === null ? null : fetchNetWorth)
-
-  if (apiUrl === null) return <Redirect href="/" />
-
-  const error = me.error ?? netWorth.error
-  const retry = () => {
-    if (me.error !== null) me.retry()
-    if (netWorth.error !== null) netWorth.retry()
-  }
-  const loaded = me.data !== null && netWorth.data !== null
+  const { error, retry } = queryFailure([me, netWorth])
+  const loaded = me.data !== undefined && netWorth.data !== undefined
 
   return (
-    <ListScreen title="Net worth" eyebrow="Every account, by month">
-      {error !== null || !loaded || netWorth.data === null ? (
+    <>
+      {error !== null || !loaded || netWorth.data === undefined ? (
         <ListStatus error={error} retry={retry} />
       ) : netWorth.data.series.length === 0 ? (
         <ListStatus
@@ -57,7 +41,10 @@ export default function NetWorthScreen(): JSX.Element {
           empty="Add accounts on the web app to start the ledger. Net worth, income, and spending all build on them."
         />
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: tabBarInset }}
+        >
           <NetWorthHeadline series={netWorth.data.series} currency={currency} />
           <View className="mt-6">
             <NetWorthChart series={netWorth.data.series} currency={currency} />
@@ -65,7 +52,7 @@ export default function NetWorthScreen(): JSX.Element {
           <Span series={netWorth.data.series} />
         </ScrollView>
       )}
-    </ListScreen>
+    </>
   )
 }
 

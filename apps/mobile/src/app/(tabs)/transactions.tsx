@@ -1,22 +1,26 @@
-import { call, type ApiClient } from '@pfinance/api-client'
+import type { ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { Redirect, useLocalSearchParams } from 'expo-router'
 import { Button, Chip, SearchField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
-import { useCallback, useEffect, useState, type JSX } from 'react'
-import { FlatList, Pressable, ScrollView, View } from 'react-native'
-import { apiFor } from '@/api/client'
-import { useHousehold } from '@/api/use-household'
-import { useApiQuery } from '@/api/use-query'
+import { useEffect, useState, type JSX } from 'react'
+import { FlatList, ScrollView, View } from 'react-native'
+import { queryFailure } from '@/api/errors'
+import { useAccounts } from '@/api/use-accounts'
+import { useCategories } from '@/api/use-categories'
+import { useHousehold } from '@/api/use-me'
+import { useTransactions } from '@/api/use-transactions'
 import { railBars, type RailBar } from '@/charts/rail'
 import { Amount } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { Rail, RailBand } from '@/components/rail'
 import { TransactionForm } from '@/components/transaction-form'
 import { TransferForm } from '@/components/transfer-form'
+import { Touchable } from '@/components/touchable'
 import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
+import { useTabBarInset } from '@/shell/tab-bar'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
 import {
@@ -117,7 +121,7 @@ function TransactionRow({
       ? categoryLabel(entry.kind, null)
       : categoryLabel(entry.kind, categoryNames.get(entry.categoryId) ?? 'Unknown category')
   return (
-    <Pressable onPress={onPress}>
+    <Touchable feedback="dim" onPress={onPress}>
       <View className="flex-row items-start justify-between gap-3 py-3">
         <View className="flex-1 gap-1">
           <Body numberOfLines={1}>{entry.description}</Body>
@@ -136,7 +140,7 @@ function TransactionRow({
             rule every other row is measured on. */}
         <RailBand bar={bar} index={index} />
       </View>
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -151,6 +155,7 @@ const isPeriodPreset = (value: string): value is PeriodPreset =>
 
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
+  const tabBarInset = useTabBarInset()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
   // The in-place form's target: null = closed, entry: null = create, an
   // existing row = edit. A Transfer leg opens the Transfer form — the pair
@@ -168,42 +173,14 @@ export default function TransactionsScreen(): JSX.Element {
     if (openNew === 'true') setForm({ kind: 'transaction', entry: null })
   }, [openNew])
 
-  const { me, currency, dateFormat } = useHousehold(apiUrl)
+  const { me, currency, dateFormat } = useHousehold()
   // Archived Accounts and Categories still name existing rows, so both
   // lookups load the full vocabulary (the web transactions screen's stance).
-  const fetchAccounts = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api.accounts.$get({ query: { includeArchived: 'true' } }),
-        'Could not load your Accounts.',
-      ),
-    [apiUrl],
-  )
-  const fetchCategories = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api.categories.$get({ query: { includeArchived: 'true' } }),
-        'Could not load your Categories.',
-      ),
-    [apiUrl],
-  )
-  // The filters state object's identity changes exactly when a filter does,
-  // so it is the fetch callback's cache key.
-  const fetchTransactions = useCallback(
-    () =>
-      call(
-        apiFor(apiUrl ?? '').api.transactions.$get({
-          query: transactionQuery(filters, todayCalendarString()),
-        }),
-        'Could not load your Transactions.',
-      ),
-    [apiUrl, filters],
-  )
-
-  const skip = apiUrl === null
-  const accounts = useApiQuery(skip ? null : fetchAccounts)
-  const categories = useApiQuery(skip ? null : fetchCategories)
-  const transactions = useApiQuery(skip ? null : fetchTransactions)
+  const accounts = useAccounts(true)
+  const categories = useCategories(true)
+  // The query the filters compose is the cache key, so each combination
+  // caches separately and the list holds while a new one loads.
+  const transactions = useTransactions(transactionQuery(filters, todayCalendarString()))
 
   if (apiUrl === null) return <Redirect href="/" />
 
@@ -214,12 +191,8 @@ export default function TransactionsScreen(): JSX.Element {
     (categories.data?.categories ?? []).map((entry) => [entry.id, entry.name]),
   )
 
-  const queries = [me, accounts, categories, transactions]
-  const error = queries.find((query) => query.error !== null)?.error ?? null
-  const retry = () => {
-    for (const query of queries) if (query.error !== null) query.retry()
-  }
-  const loaded = queries.every((query) => query.data !== null)
+  const { error, retry } = queryFailure([me, accounts, categories, transactions])
+  const loaded = [me, accounts, categories, transactions].every((query) => query.data !== undefined)
 
   // Active (unarchived) choices only: an archived Account or Category can't
   // be picked as a filter, it just still names its old rows.
@@ -237,32 +210,34 @@ export default function TransactionsScreen(): JSX.Element {
   // The forms wait for the vocabulary AND the Household: composing minor
   // units under the USD fallback's exponent would store a wrong amount for
   // a zero- or three-exponent Currency (ADR 0006).
-  if (form !== null && me.data !== null && accounts.data !== null && categories.data !== null) {
-    const done = () => {
-      setForm(null)
-      transactions.retry()
-    }
+  if (
+    form !== null &&
+    me.data !== undefined &&
+    accounts.data !== undefined &&
+    categories.data !== undefined
+  ) {
+    // Closing is all this has to do: the write's own mutation already
+    // invalidated everything derived from the Ledger (api/query-keys.ts),
+    // so the list behind the form is refetching before it reappears.
+    const done = () => setForm(null)
     return form.kind === 'transfer' ? (
       <TransferForm
-        apiUrl={apiUrl}
         entry={form.entry}
         accounts={accounts.data.accounts}
         currency={currency}
         dateFormat={dateFormat}
         onDone={done}
-        onClose={() => setForm(null)}
+        onClose={done}
       />
     ) : (
       <TransactionForm
-        apiUrl={apiUrl}
         entry={form.entry}
         accounts={accounts.data.accounts}
         categories={categories.data.categories}
         currency={currency}
         dateFormat={dateFormat}
         onDone={done}
-        onCategoryCreated={() => categories.retry()}
-        onClose={() => setForm(null)}
+        onClose={done}
       />
     )
   }
@@ -279,28 +254,27 @@ export default function TransactionsScreen(): JSX.Element {
   )
 
   return (
-    <ListScreen
-      title="Transactions"
-      eyebrow="Ledger"
-      action={
+    // Titled for the tab that opens it. The two writes sit on their own row
+    // rather than in the header: at "New transfer" and "New transaction"
+    // they no longer fit beside a title, and shortening them to "Transfer"
+    // and "New" cost more than the row does — neither said what it made.
+    <ListScreen title="Ledger" back={false}>
+      <View className="gap-2.5">
         <View className="flex-row gap-2">
           {/* A Transfer needs two Accounts to move between. */}
           {accountChoices.length > 1 && (
             <Button
-              size="sm"
+              className="flex-1"
               variant="outline"
               onPress={() => setForm({ kind: 'transfer', entry: null })}
             >
-              Transfer
+              New transfer
             </Button>
           )}
-          <Button size="sm" onPress={() => setForm({ kind: 'transaction', entry: null })}>
-            New
+          <Button className="flex-1" onPress={() => setForm({ kind: 'transaction', entry: null })}>
+            New transaction
           </Button>
         </View>
-      }
-    >
-      <View className="gap-2.5">
         <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
           <SearchField.Group>
             <SearchField.SearchIcon />
@@ -338,12 +312,13 @@ export default function TransactionsScreen(): JSX.Element {
           onChange={(categoryId) => setFilters((f) => ({ ...f, categoryId }))}
         />
       </View>
-      {error !== null || !loaded || transactions.data === null ? (
+      {error !== null || !loaded || transactions.data === undefined ? (
         <ListStatus error={error} retry={retry} />
       ) : entries.length === 0 ? (
         <ListStatus
           error={null}
           retry={retry}
+          emptyTitle={filtering ? 'No matches' : 'Nothing here yet'}
           empty={
             filtering
               ? 'No transactions match these filters. Clear one to widen the ledger.'
@@ -357,6 +332,7 @@ export default function TransactionsScreen(): JSX.Element {
             keyExtractor={(entry) => entry.id}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: tabBarInset }}
             renderItem={({ item, index }) => {
               const bar = bars[index]
               return bar === undefined ? null : (
