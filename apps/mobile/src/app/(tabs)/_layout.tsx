@@ -1,8 +1,6 @@
-import { Tabs } from 'expo-router/js-tabs'
+import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { useThemeColor } from 'heroui-native'
 import type { JSX } from 'react'
-import { TabIcon, type TabName } from '@/components/tab-icon'
-import { TabBarGlass, useGlassTabBar } from '@/shell/tab-bar'
 
 // The four places the app goes once you are signed in. Everything else —
 // the connect flow, the Accounts list, a form — is pushed above this bar by
@@ -14,77 +12,64 @@ import { TabBarGlass, useGlassTabBar } from '@/shell/tab-bar'
 // is not doing its job. Accounts stays a push off the home screen — it is a
 // list you consult, not a place you live.
 //
-// Labels are the app's eyebrow: mono, uppercase, letterspaced (the type
-// scale in docs/design/MOBILE.md), so the bar is in the same voice as every
-// section heading above it.
+// **Native tabs, not the JS navigator.** Liquid Glass is only available
+// here: on iOS 26 the system draws the bar and derives it from whatever
+// scrolls underneath, and no amount of glass placed behind a JS tab bar
+// reproduces that. Adopting the system bar means adopting its iconography
+// too — SF Symbols on iOS, Material on Android — so the four hand-drawn
+// glyphs are gone. That is the honest trade, and it was already the
+// argument in their own file: a tab bar is read from the corner of the eye,
+// and it is the one place in this app that should look like every other
+// app. It also gets the filled-on-selected state the drawn set could not,
+// because only two of those four shapes could carry a fill.
 //
-// On iOS 26 the bar is Liquid Glass and floats: it leaves the layout flow,
-// and the ledger passes underneath it rather than stopping at a hairline.
-// The labels and the hand-drawn icons are unchanged either way — that is
-// why the glass goes behind this bar instead of the app adopting native
-// tabs, which would trade the whole type and icon system for SF Symbols.
-// shell/tab-bar.tsx owns the decision and the inset it costs.
-const TABS: { name: string; title: string; icon: TabName }[] = [
-  { name: 'home', title: 'Home', icon: 'home' },
-  { name: 'transactions', title: 'Ledger', icon: 'ledger' },
-  { name: 'insights', title: 'Insights', icon: 'insights' },
-  { name: 'settings', title: 'Settings', icon: 'settings' },
-]
+// What survives is the type: labelStyle takes a fontFamily, so the labels
+// stay Spline Sans Mono. They lose the eyebrow's uppercasing and tracking —
+// a native label has no text-transform or letterSpacing — so they are
+// sentence case, which is what the platform's own bars use anyway.
+//
+// The bar also owns its content insets now (`disableAutomaticContentInsets`
+// is off by default), so no screen pads for it by hand.
+const TABS = [
+  { name: 'home', title: 'Home', sf: { default: 'house', selected: 'house.fill' }, md: 'home' },
+  { name: 'transactions', title: 'Ledger', sf: 'list.bullet', md: 'list' },
+  {
+    name: 'insights',
+    title: 'Insights',
+    sf: { default: 'chart.bar', selected: 'chart.bar.fill' },
+    md: 'bar_chart',
+  },
+  {
+    name: 'settings',
+    title: 'Settings',
+    sf: { default: 'gearshape', selected: 'gearshape.fill' },
+    md: 'settings',
+  },
+] as const
 
 export default function TabsLayout(): JSX.Element {
-  const [accent, muted, background, separator] = useThemeColor([
-    'accent',
-    'muted',
-    'background',
-    'separator',
-  ])
-
-  const glass = useGlassTabBar()
+  const [accent, muted] = useThemeColor(['accent', 'muted'])
+  const label = { fontFamily: 'SplineSansMono_500Medium', fontSize: 11 }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: accent,
-        tabBarInactiveTintColor: muted,
-        // Glass draws its own edge, so the hairline and the painted
-        // background come off and the bar leaves the layout flow. Opaque
-        // keeps both: the platform's own elevation would draw a second edge
-        // over the hairline, and this app is flat everywhere else — one
-        // line is the whole vocabulary for a boundary.
-        tabBarStyle: glass
-          ? {
-              position: 'absolute',
-              backgroundColor: 'transparent',
-              borderTopWidth: 0,
-              elevation: 0,
-            }
-          : {
-              backgroundColor: background,
-              borderTopColor: separator,
-              borderTopWidth: 1,
-              elevation: 0,
-            },
-        tabBarBackground: glass ? () => <TabBarGlass /> : undefined,
-        tabBarLabelStyle: {
-          fontFamily: 'SplineSansMono_500Medium',
-          fontSize: 10,
-          letterSpacing: 0.8,
-          textTransform: 'uppercase',
-        },
-        tabBarItemStyle: { paddingTop: 6 },
+    <NativeTabs
+      tintColor={accent}
+      iconColor={{ default: muted, selected: accent }}
+      labelStyle={{
+        default: { ...label, color: muted },
+        selected: { ...label, color: accent },
       }}
+      // backgroundColor and blurEffect are deliberately unset: on iOS 26
+      // they do nothing, because the system is drawing Liquid Glass from
+      // the content behind the bar. Below that, and on Android, the
+      // platform's own default bar is the right answer anyway.
     >
       {TABS.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: tab.title,
-            tabBarIcon: ({ color }) => <TabIcon name={tab.icon} color={color} />,
-          }}
-        />
+        <NativeTabs.Trigger key={tab.name} name={tab.name}>
+          <NativeTabs.Trigger.Label>{tab.title}</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={tab.sf} md={tab.md} />
+        </NativeTabs.Trigger>
       ))}
-    </Tabs>
+    </NativeTabs>
   )
 }

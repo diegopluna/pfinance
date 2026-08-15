@@ -10,11 +10,12 @@ import { SplineSans_600SemiBold } from '@expo-google-fonts/spline-sans/600SemiBo
 import { SplineSans_700Bold } from '@expo-google-fonts/spline-sans/700Bold'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { useFonts } from 'expo-font'
-import { Stack } from 'expo-router'
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
-import { HeroUINativeProvider } from 'heroui-native'
-import { useEffect, useState, type JSX } from 'react'
+import { HeroUINativeProvider, useThemeColor } from 'heroui-native'
+import { useEffect, useState, type JSX, type ReactNode } from 'react'
+import { useColorScheme } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { createQueryClient, trackAppStateFocus } from '@/api/query-client'
 
@@ -55,10 +56,28 @@ export default function RootLayout(): JSX.Element | null {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <HeroUINativeProvider>
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }} />
+          <NavigationTheme>
+            <StatusBar style="auto" />
+            <Stack screenOptions={{ headerShown: false }} />
+          </NavigationTheme>
         </HeroUINativeProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
+  )
+}
+
+// The navigator's own theme, handed the app's background. Native tabs
+// (src/app/(tabs)/_layout.tsx) let the system draw the bar and derive it
+// from the content behind it, and without this the frame underneath is
+// react-navigation's default white — which flashes on every tab switch in
+// dark mode. It has to sit inside HeroUINativeProvider to read the token.
+function NavigationTheme({ children }: { children: ReactNode }): JSX.Element {
+  const scheme = useColorScheme()
+  const [background] = useThemeColor(['background'])
+  const base = scheme === 'dark' ? DarkTheme : DefaultTheme
+  return (
+    <ThemeProvider value={{ ...base, colors: { ...base.colors, background } }}>
+      {children}
+    </ThemeProvider>
   )
 }

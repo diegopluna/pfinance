@@ -20,7 +20,6 @@ import { TransferForm } from '@/components/transfer-form'
 import { Touchable } from '@/components/touchable'
 import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
-import { useTabBarInset } from '@/shell/tab-bar'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
 import {
@@ -155,7 +154,6 @@ const isPeriodPreset = (value: string): value is PeriodPreset =>
 
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
-  const tabBarInset = useTabBarInset()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
   // The in-place form's target: null = closed, entry: null = create, an
   // existing row = edit. A Transfer leg opens the Transfer form — the pair
@@ -332,7 +330,7 @@ export default function TransactionsScreen(): JSX.Element {
             keyExtractor={(entry) => entry.id}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: tabBarInset }}
+            contentInsetAdjustmentBehavior="automatic"
             renderItem={({ item, index }) => {
               const bar = bars[index]
               return bar === undefined ? null : (

@@ -88,11 +88,17 @@ Four, not five. The three dashboards share the Insights tab behind a switcher (`
 
 Tab labels are the app's eyebrow — mono, uppercase, letterspaced — so the bar speaks in the same voice as every section heading above it. A focused tab changes color and nothing else.
 
-**On iOS 26 the bar is Liquid Glass** (`expo-glass-effect`): it leaves the layout flow and floats, and the ledger scrolls underneath it instead of stopping at a hairline. The glass goes *behind* the existing bar rather than the app adopting `unstable-native-tabs` — native tabs would hand the bar to UIKit and trade the whole type and icon system for SF Symbols, which is most of what makes this bar the app's own.
+**The bar is native** (`expo-router/unstable-native-tabs`), which on iOS 26 means the system draws it in Liquid Glass and derives it from whatever scrolls underneath.
 
-Two conditions, not one: `isLiquidGlassAvailable()` answers "is this build using the Liquid Glass design" and stays true when the user has asked the system to cut the effect back, so `AccessibilityInfo.isReduceTransparencyEnabled()` is checked alongside it. Android, older iOS, and Reduce Transparency all get the original opaque bar with its hairline — the fallback, not a degraded glass.
+This was first built the other way — a `GlassView` from `expo-glass-effect` placed behind the JS `Tabs` navigator — to keep the drawn icons and the eyebrow labels. It does not work, and the docs are explicit: *"Liquid Glass support is exclusive to Native Tabs. The JavaScript Tabs navigator does not support Liquid Glass styling."* Glass behind a JS bar is a translucent rectangle, not the material.
 
-The float costs an inset: every scroller on a tab root ends `useTabBarInset()` above the screen edge so its last row can clear the bar, and that inset is 0 whenever the bar is opaque and back in the flow. `src/shell/tab-bar.tsx` owns both. Home's pinned action strip stays opaque and sits *above* the glass rather than under it — a full-width button showing the ledger through itself is a worse trade than the glass makes on that one screen.
+Adopting the system bar means adopting its **iconography**: SF Symbols on iOS, Material on Android, replacing the four hand-drawn glyphs. That is the right trade for the same reason those glyphs were conventional in the first place — a tab bar is read from the corner of the eye, and it is the one place in this app that should look like every other app. It also gets the filled-on-selected state the drawn set could not, since only two of those four shapes could carry a fill.
+
+What survives is the **type**: `labelStyle` takes a `fontFamily`, so the labels stay Spline Sans Mono. They lose the eyebrow's uppercasing and tracking — a native label has no `text-transform` or `letterSpacing` — so they are sentence case, which is what the platform's own bars use anyway. `backgroundColor` and `blurEffect` are deliberately unset: on iOS 26 they do nothing.
+
+The bar owns its **content insets** (`disableAutomaticContentInsets` is off by default), so no screen pads for it by hand; scrollers set `contentInsetAdjustmentBehavior="automatic"` and let UIKit inset them. Home's pinned action strip stays opaque and takes the bottom safe area itself — a full-width button with the ledger showing through it is a worse trade than the glass makes on that one screen.
+
+The root layout wraps the app in react-navigation's `ThemeProvider` carrying the `--background` token: without it the frame under the native bar is the navigator's default white, which flashes on every tab switch in dark mode.
 
 **Insets follow the bar.** A tab root leaves the bottom inset to the tab bar; a pushed screen covers the bar and owns it. `ListScreen` reads that off its own `back` prop — the back button is exactly what tells the two apart.
 
@@ -108,9 +114,9 @@ The float costs an inset: every scroller on a tab root ends `useTabBarInset()` a
 
 ## Glyphs
 
-Six, all drawn in SVG, no icon dependency: a chevron and a caret (`components/chevron.tsx`), and the four tab icons (`components/tab-icon.tsx`). `▲`/`▼` are geometric-shapes codepoints a text face need not carry, and a missing glyph in the one place a fall is announced is not a risk worth taking. Everything else that needs a name gets a word.
+Two, both drawn in SVG, no icon dependency: a chevron and a caret (`components/chevron.tsx`). The tab bar is the exception and does not use them — it is native, so its icons are SF Symbols and Material glyphs (see Navigation). `▲`/`▼` are geometric-shapes codepoints a text face need not carry, and a missing glyph in the one place a fall is announced is not a risk worth taking. Everything else that needs a name gets a word.
 
-The tab icons are deliberately the **conventional** shapes — house, list, bars, sliders. The first cut drew Ledger and Insights out of the rail itself (rows hanging off a rule, the diverging pair) and both collapsed into a plus sign at 24px. A tab bar is read from the corner of the eye; it is the one place in this app that should look like every other app.
+The tab icons went through two rounds before landing on the system set. Drawn from the rail itself (rows hanging off a rule, the diverging pair) they collapsed into a plus sign at 24px; redrawn as conventional house/list/bars/sliders they read correctly, and were then given up entirely when the bar went native. The conclusion held each time, it just kept getting stronger: that bar should look like every other app's.
 
 ## Motion
 
