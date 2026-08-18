@@ -7,7 +7,7 @@ import { ScrollView, Text, View } from 'react-native'
 import { useMe } from '@/api/use-me'
 import { authClientFor } from '@/auth/client'
 import { ListScreen } from '@/components/list-screen'
-import { Body, Eyebrow } from '@/components/type'
+import { Body, SectionTitle } from '@/components/type'
 import { forgetServerUrl, storedServerUrl } from '@/connect/store'
 
 // The settings shell (issue #77): the connection is never a black box — the
@@ -19,10 +19,12 @@ import { forgetServerUrl, storedServerUrl } from '@/connect/store'
 // by the connect flow — the app holds one Server at a time, so there is
 // nothing softer to offer.
 
-// "BRL · Brazilian Real" — the code always renders; the display name only
-// for Currencies this build knows (a newer Server may know more).
-const currencyLine = (code: string): string =>
-  isSupportedCurrency(code) ? `${code} · ${getCurrency(code).name}` : code
+// "BRL · Brazilian Real · 2 members" — the code always renders; the display
+// name only for Currencies this build knows (a newer Server may know more),
+// and the member count says the ledger is shared, the way the web shell's
+// identity line does.
+const currencyLine = (code: string, members: number): string =>
+  `${isSupportedCurrency(code) ? `${code} · ${getCurrency(code).name}` : code} · ${members} ${members === 1 ? 'member' : 'members'}`
 
 export default function SettingsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
@@ -57,21 +59,27 @@ export default function SettingsScreen(): JSX.Element {
       <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic">
         <View className="gap-6 pb-4">
           <Section label="Server">
-            {/* The address is a key, not prose: it is set in the figure
-                voice so a typo in it is findable character by character. */}
+            {/* The address is an operational identifier — the one place the
+                mono voice appears — so a typo in it is findable character
+                by character. */}
             <Text className="font-mono text-body-sm text-foreground" selectable>
               {apiUrl}
             </Text>
+            {me.data !== undefined && (
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-[7px] w-[7px] rounded-full bg-success" />
+                <Body size="sm" tone="muted">
+                  Connected · signed in as {me.data.user.email}
+                </Body>
+              </View>
+            )}
           </Section>
 
           {me.data !== undefined && (
             <Section label="Household">
-              <Body>{me.data.household.name}</Body>
+              <Body className="font-medium">{me.data.household.name}</Body>
               <Body size="sm" tone="muted">
-                {currencyLine(me.data.household.currency)}
-              </Body>
-              <Body size="sm" tone="muted">
-                Signed in as {me.data.user.email}
+                {currencyLine(me.data.household.currency, me.data.household.memberCount)}
               </Body>
             </Section>
           )}
@@ -102,7 +110,7 @@ export default function SettingsScreen(): JSX.Element {
 function Section({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
     <View className="gap-1.5">
-      <Eyebrow>{label}</Eyebrow>
+      <SectionTitle>{label}</SectionTitle>
       {children}
     </View>
   )

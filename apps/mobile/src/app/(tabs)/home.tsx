@@ -3,49 +3,51 @@ import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { Redirect, router } from 'expo-router'
 import { Button, Spinner } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
-import type { JSX, ReactNode } from 'react'
+import { useState, type JSX, type ReactNode } from 'react'
 import { ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { queryFailure } from '@/api/errors'
 import { useAccounts } from '@/api/use-accounts'
+import { useCategories } from '@/api/use-categories'
 import { useIncomeExpense, useNetWorth } from '@/api/use-dashboards'
 import { useHousehold } from '@/api/use-me'
 import { monthLabel } from '@/charts/months'
 import { railBars } from '@/charts/rail'
 import { Figure } from '@/components/amount'
+import { TrendWash } from '@/components/charts/trend-wash'
 import { Chevron } from '@/components/chevron'
+import { IconButton } from '@/components/icon-button'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
-import { Rail, RailBand, RULE } from '@/components/rail'
+import { QuickAddSheet } from '@/components/quick-add-sheet'
+import { MagBar } from '@/components/rail'
 import { Touchable } from '@/components/touchable'
-import { Body, Eyebrow } from '@/components/type'
+import { Body, Eyebrow, SectionTitle } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 
 // Where sign-in lands, and where every relaunch with a live session opens
-// (issue #77). It used to be a menu of buttons; it is now the standing
-// answer to the two questions a phone gets asked — where do we stand, and
-// what moved — with the app's one high-frequency verb (issue #80) pinned
-// under it where a thumb already is.
-//
-// Every quantity on it hangs off the rail (src/charts/rail.ts): net worth
-// is the number, this month's income and expenses are the two bars that
-// moved it, and the Accounts are the places it sits. Reading down the
-// screen is reading the same rule at three scales.
+// (issue #77). Three calm moments instead of a printout: the number (net
+// worth and its delta), the landscape (the same series as an unlabeled
+// area wash — atmosphere with truth in it), and two soft plates (this
+// month's Kept line, the three largest Accounts). Everything that left
+// this screen is exactly one tap away: the labeled chart and the month's
+// breakdown live in Insights, the full Account list behind its plate.
+// The one high-frequency verb (issue #80) rides the header as the
+// screen's single prominent button.
 
 type AccountEntry = InferResponseType<ApiClient['api']['accounts']['$get'], 200>['accounts'][number]
-type MonthTotals = InferResponseType<
-  ApiClient['api']['income-vs-expense']['$get'],
-  200
->['months'][number]
 
-const ACCOUNTS_SHOWN = 5
-// Income and Expenses: what the Accounts' draw-in queues up behind.
-const MONTH_ROWS = 2
+// The three largest by magnitude, so a liability stays visible and the
+// glance never shows an all-blue fiction; the count in the plate's header
+// carries the rest.
+const ACCOUNTS_SHOWN = 3
 
 export default function HomeScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
   const { me, currency } = useHousehold()
   const netWorth = useNetWorth()
   const accounts = useAccounts(false)
+  const categories = useCategories(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const incomeExpense = useIncomeExpense()
 
   if (apiUrl === null) return <Redirect href="/" />
@@ -80,6 +82,7 @@ export default function HomeScreen(): JSX.Element {
     )
   }
 
+  const series = netWorth.data?.series ?? []
   const latest = incomeExpense.data?.months.at(-1)
   const active = accounts.data?.accounts ?? []
 
@@ -90,60 +93,71 @@ export default function HomeScreen(): JSX.Element {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 28 }}
         >
-          <View className="gap-7 px-5 pt-2">
-            <View className="flex-row items-center justify-between">
+          <View className="gap-6 px-5 pt-2">
+            <View className="flex-row items-center gap-3">
               <Eyebrow numberOfLines={1} className="flex-1">
                 {me.data.household.name}
               </Eyebrow>
-              <Eyebrow>{me.data.household.currency}</Eyebrow>
+              <IconButton
+                glyph="plus"
+                label="New transaction"
+                prominent
+                onPress={() => setSheetOpen(true)}
+              />
             </View>
 
-            {/* The headline is the doorway to its own history: the number
-                is the summary, the chart behind it is the story. */}
+            {/* The headline is the doorway to its own history: the label
+                row carries the chevron every navigable thing on this
+                screen wears. */}
             <Touchable
               accessibilityRole="button"
               accessibilityHint="Opens net worth by month"
               onPress={() => router.push('/insights?view=net-worth')}
-              className="flex-row items-end justify-between gap-3"
+              className="gap-1.5"
             >
-              {netWorth.data !== undefined && netWorth.data.series.length > 0 ? (
-                <NetWorthHeadline series={netWorth.data.series} currency={currency} />
+              {series.length > 0 ? (
+                <>
+                  <View className="flex-row items-center gap-2">
+                    <Eyebrow>Net worth</Eyebrow>
+                    <View className="flex-1" />
+                    <Chevron direction="right" size={14} />
+                  </View>
+                  <NetWorthHeadline series={series} currency={currency} label={false} />
+                </>
               ) : (
                 <View className="gap-1.5">
                   <Eyebrow>Net worth</Eyebrow>
                   <Body tone="muted">Add an account on the web app and net worth starts here.</Body>
                 </View>
               )}
-              <View className="pb-2">
-                <Chevron direction="right" />
-              </View>
             </Touchable>
+          </View>
 
-            {latest !== undefined && <MonthPair month={latest} currency={currency} />}
+          {/* The landscape: full-bleed, unlabeled, the exact series the
+              dashboard charts — the shape of the story, not the reading
+              of it. */}
+          {series.length > 1 && (
+            <View className="pt-1">
+              <TrendWash series={series} />
+            </View>
+          )}
 
-            {active.length > 0 && <Accounts entries={active} currency={currency} />}
+          <View className="gap-4 px-5 pt-5">
+            {latest !== undefined && <KeptPlate month={latest} currency={currency} />}
+            {active.length > 0 && <AccountsPlate entries={active} currency={currency} />}
           </View>
         </ScrollView>
       </SafeAreaView>
-
-      {/* Recording a Transaction is the highest-frequency task in the
-          product (issue #70), so it is the one thing that never scrolls. It
-          sits straight on the tab bar, which owns the bottom inset and the
-          hairline — a second rule 60px above the first would read as two
-          footers rather than one place to act. */}
-      {/* Above the tab bar, and opaque: a full-width button with the
-          ledger showing through it is a worse trade than the glass makes on
-          this one screen. The bottom inset is the bar's own — the native
-          tab bar reports it as safe area. */}
-      <View className="bg-background px-5 pt-3">
-        <SafeAreaView edges={['bottom', 'left', 'right']}>
-          <Button
-            onPress={() => router.push({ pathname: '/transactions', params: { new: 'true' } })}
-          >
-            New transaction
-          </Button>
-        </SafeAreaView>
-      </View>
+      <QuickAddSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        accounts={active.map((entry) => ({ value: entry.id, label: entry.name }))}
+        categories={(categories.data?.categories ?? []).map((entry) => ({
+          value: entry.id,
+          label: entry.name,
+        }))}
+        currency={currency}
+      />
     </View>
   )
 }
@@ -160,121 +174,76 @@ function Frame({ children }: { children: ReactNode }): JSX.Element {
   )
 }
 
-function SectionHeader({
-  label,
-  meta,
-  onPress,
-  hint,
+// The month said in one line: what the household kept. Income and expenses
+// arrive as magnitudes from the server's derived view; the difference is
+// the number the pair would otherwise make the reader compute. The detail —
+// both sides, twelve months, and the excludes-footnote that qualifies them —
+// lives behind the tap in the In vs out dashboard.
+function KeptPlate({
+  month,
+  currency,
 }: {
-  label: string
-  meta?: string
-  onPress?: () => void
-  hint?: string
+  month: { month: string; income: number; expense: number }
+  currency: CurrencyCode
 }): JSX.Element {
-  const content = (
-    <View className="flex-row items-center gap-2 pb-1">
-      <Eyebrow>{label}</Eyebrow>
-      {meta !== undefined && <Eyebrow>· {meta}</Eyebrow>}
-      <View className="flex-1" />
-      {onPress !== undefined && <Chevron direction="right" size={14} />}
-    </View>
-  )
-  return onPress === undefined ? (
-    content
-  ) : (
-    // hitSlop rather than padding: the target has to clear 24px (44px is
-    // the touch aim) without opening the gap the section rhythm depends on.
-    <Touchable accessibilityRole="button" accessibilityHint={hint} hitSlop={14} onPress={onPress}>
-      {content}
+  const kept = month.income - month.expense
+  return (
+    <Touchable
+      accessibilityRole="button"
+      accessibilityHint="Opens income versus expense by month"
+      onPress={() => router.push('/insights?view=income-expense')}
+      className="flex-row items-center gap-3 rounded-xl bg-surface-secondary px-4 py-3.5"
+    >
+      <Body className="flex-1">Kept in {monthLabel(month.month, 'name')}</Body>
+      <Figure tone={kept < 0 ? 'negative' : 'positive'}>
+        {`${kept > 0 ? '+' : ''}${formatAmount(kept, currency)}`}
+      </Figure>
+      <Chevron direction="right" size={14} />
     </Touchable>
   )
 }
 
-// This month, as the two bars that made it. Income and expense arrive as
-// magnitudes from the server's derived views, so the rail re-signs them —
-// out is out. Both exclude Transfers and Balance Adjustments by definition
-// (docs/design/DECISIONS.md), which is why the footnote is not optional.
-function MonthPair({
-  month,
-  currency,
-}: {
-  month: MonthTotals
-  currency: CurrencyCode
-}): JSX.Element {
-  const bars = railBars([
-    { amount: month.income, neutral: false },
-    { amount: -month.expense, neutral: false },
-  ])
-  const rows = [
-    { label: 'Income', total: month.income, bar: bars[0] },
-    { label: 'Expenses', total: month.expense, bar: bars[1] },
-  ]
-  return (
-    <View>
-      <SectionHeader
-        label="This month"
-        meta={monthLabel(month.month, 'full')}
-        onPress={() => router.push('/insights?view=income-expense')}
-        hint="Opens income versus expense by month"
-      />
-      <Rail rule={RULE.symmetric}>
-        {rows.map(
-          (row, index) =>
-            row.bar !== undefined && (
-              <View key={row.label} className="flex-row items-center justify-between gap-3 py-2.5">
-                <Body>{row.label}</Body>
-                <Figure>{formatAmount(row.total, currency)}</Figure>
-                <RailBand bar={row.bar} rule={RULE.symmetric} index={index} animate />
-              </View>
-            ),
-        )}
-      </Rail>
-      <Body size="sm" tone="muted" className="pt-3">
-        Excludes transfers and adjustments
-      </Body>
-    </View>
-  )
-}
-
-// Where the net worth sits. A liability leans left for the same reason a
-// grocery bill does — its Balance is negative, and no kind flips a sign
-// (ADR 0001).
-function Accounts({
+// Where the net worth sits: the three largest Accounts by magnitude, on
+// one plate. A liability leans left for the same reason a grocery bill
+// does — its Balance is negative, and no kind flips a sign (ADR 0001).
+function AccountsPlate({
   entries,
   currency,
 }: {
   entries: AccountEntry[]
   currency: CurrencyCode
 }): JSX.Element {
-  const shown = entries.slice(0, ACCOUNTS_SHOWN)
+  const shown = [...entries]
+    .sort((left, right) => Math.abs(right.balance) - Math.abs(left.balance))
+    .slice(0, ACCOUNTS_SHOWN)
   const bars = railBars(shown.map((entry) => ({ amount: entry.balance, neutral: false })))
   return (
-    <View>
-      <SectionHeader
-        label="Accounts"
-        meta={String(entries.length)}
-        onPress={() => router.push('/accounts')}
-        hint="Opens every account with its balance"
-      />
-      <Rail>
-        {shown.map((entry, index) => {
-          const bar = bars[index]
-          return (
-            bar !== undefined && (
-              <View key={entry.id} className="flex-row items-center justify-between gap-3 py-2.5">
-                <Body numberOfLines={1} className="flex-1">
-                  {entry.name}
-                </Body>
-                <Figure>{formatAmount(entry.balance, currency)}</Figure>
-                {/* Continues the sequence the month pair started rather
-                    than restarting it, so the screen draws itself once
-                    from the top instead of in two places at once. */}
-                <RailBand bar={bar} index={index + MONTH_ROWS} animate />
-              </View>
-            )
+    <Touchable
+      accessibilityRole="button"
+      accessibilityHint="Opens every account with its balance"
+      onPress={() => router.push('/accounts')}
+      className="rounded-xl bg-surface-secondary px-4 pt-3.5 pb-2"
+    >
+      <View className="flex-row items-center gap-2 pb-1">
+        <SectionTitle>Accounts</SectionTitle>
+        <Eyebrow>{String(entries.length)}</Eyebrow>
+        <View className="flex-1" />
+        <Chevron direction="right" size={14} />
+      </View>
+      {shown.map((entry, index) => {
+        const bar = bars[index]
+        return (
+          bar !== undefined && (
+            <View key={entry.id} className="flex-row items-center justify-between gap-3 py-2.5">
+              <Body numberOfLines={1} className="flex-1">
+                {entry.name}
+              </Body>
+              <Figure>{formatAmount(entry.balance, currency)}</Figure>
+              <MagBar bar={bar} index={index} animate track="background" />
+            </View>
           )
-        })}
-      </Rail>
-    </View>
+        )
+      })}
+    </Touchable>
   )
 }

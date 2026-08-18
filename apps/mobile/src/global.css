@@ -15,21 +15,21 @@
    given in points (see components/type.tsx). */
 @theme {
   --text-caption: 10px;
-  --text-eyebrow: 11px;
+  --text-eyebrow: 12px;
   --text-body-sm: 13px;
   --text-body: 15px;
   --text-figure-lg: 19px;
-  --text-title: 21px;
+  --text-title: 22px;
   --text-title-lg: 26px;
   --text-hero: 38px;
 }
 
 /* ── Type ────────────────────────────────────────────────────────────────
-   Spline Sans for prose, Spline Sans Mono for every figure and every
-   structural label. The mono is this app's display voice: a ledger is a
-   column of aligned digits, and a monospaced face aligns them by
-   construction — `font-variant-numeric: tabular-nums` is a feature flag a
-   loaded TTF may not carry, while a mono has nothing to opt into.
+   Geist for everything, Geist Mono only for operational identifiers (a
+   Server address, a path) — never for money. Figures set in the sans with
+   fontVariant tabular-nums: Geist's static TTFs carry the tnum feature
+   (verified against the shipped files), so ledger columns align without a
+   mono voice. The family stops at 600 — nothing here may ask for bolder.
 
    heroui-native reads `--font-normal` … `--font-bold` for its own component
    CSS, and Tailwind resolves the `--font-*` namespace before `--font-weight-*`,
@@ -37,15 +37,17 @@
    they read as — they just resolve to the weight's own font file, which is
    what static TTFs need (React Native does not synthesize weights).
    The families are registered by src/app/_layout.tsx; these names must match
-   the keys it passes to useFonts exactly. */
+   the keys it passes to useFonts exactly. `--font-bold` maps to 600 on
+   purpose: a component asking for bold gets the heaviest weight Geist has.
+   */
 @theme {
-  --font-normal: 'SplineSans_400Regular';
-  --font-medium: 'SplineSans_500Medium';
-  --font-semibold: 'SplineSans_600SemiBold';
-  --font-bold: 'SplineSans_700Bold';
-  --font-mono: 'SplineSansMono_400Regular';
-  --font-mono-medium: 'SplineSansMono_500Medium';
-  --font-mono-semibold: 'SplineSansMono_600SemiBold';
+  --font-normal: 'Geist_400Regular';
+  --font-medium: 'Geist_500Medium';
+  --font-semibold: 'Geist_600SemiBold';
+  --font-bold: 'Geist_600SemiBold';
+  --font-mono: 'GeistMono_400Regular';
+  --font-mono-medium: 'GeistMono_500Medium';
+  --font-mono-semibold: 'GeistMono_600SemiBold';
 }
 
 /* ── Color ───────────────────────────────────────────────────────────────

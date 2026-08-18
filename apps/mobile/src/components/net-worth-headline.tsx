@@ -16,9 +16,13 @@ import { Body, Eyebrow } from '@/components/type'
 export function NetWorthHeadline({
   series,
   currency,
+  // Home draws the label itself — its label row carries the navigation
+  // chevron — so the headline's own is optional.
+  label = true,
 }: {
   series: NetWorthPoint[]
   currency: CurrencyCode
+  label?: boolean
 }): JSX.Element | null {
   const [success, danger] = useThemeColor(['success', 'danger'])
   const headline = netWorthHeadline(series)
@@ -33,7 +37,7 @@ export function NetWorthHeadline({
 
   return (
     <View className="gap-1.5">
-      <Eyebrow>Net worth</Eyebrow>
+      {label && <Eyebrow>Net worth</Eyebrow>}
       <Figure size="hero">{formatAmount(current, currency)}</Figure>
       {delta !== null && previousMonth !== null && (
         <View

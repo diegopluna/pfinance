@@ -24,7 +24,7 @@ import type { JSX } from 'react'
 // because only two of those four shapes could carry a fill.
 //
 // What survives is the type: labelStyle takes a fontFamily, so the labels
-// stay Spline Sans Mono. They lose the eyebrow's uppercasing and tracking —
+// stay Geist. They lose the eyebrow's uppercasing and tracking —
 // a native label has no text-transform or letterSpacing — so they are
 // sentence case, which is what the platform's own bars use anyway.
 //
@@ -49,7 +49,7 @@ const TABS = [
 
 export default function TabsLayout(): JSX.Element {
   const [accent, muted] = useThemeColor(['accent', 'muted'])
-  const label = { fontFamily: 'SplineSansMono_500Medium', fontSize: 11 }
+  const label = { fontFamily: 'Geist_500Medium', fontSize: 11 }
 
   return (
     <NativeTabs

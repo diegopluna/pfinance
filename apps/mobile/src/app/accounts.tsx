@@ -11,7 +11,7 @@ import { useHousehold } from '@/api/use-me'
 import { railBars, type RailBar } from '@/charts/rail'
 import { Figure } from '@/components/amount'
 import { ListScreen, ListStatus } from '@/components/list-screen'
-import { Rail, RailBand } from '@/components/rail'
+import { MagBar } from '@/components/rail'
 import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 
@@ -51,7 +51,7 @@ function AccountRow({
         </Body>
       </View>
       <Figure size="lg">{formatAmount(entry.balance, currency)}</Figure>
-      <RailBand bar={bar} index={index} />
+      <MagBar bar={bar} index={index} />
     </View>
   )
 }
@@ -82,19 +82,18 @@ export default function AccountsScreen(): JSX.Element {
           empty="Create an account on the web app and its balance appears here."
         />
       ) : (
-        <Rail className="flex-1">
-          <FlatList
-            data={entries}
-            keyExtractor={(entry) => entry.id}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item, index }) => {
-              const bar = bars[index]
-              return bar === undefined ? null : (
-                <AccountRow entry={item} currency={currency} bar={bar} index={index} />
-              )
-            }}
-          />
-        </Rail>
+        <FlatList
+          className="flex-1"
+          data={entries}
+          keyExtractor={(entry) => entry.id}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item, index }) => {
+            const bar = bars[index]
+            return bar === undefined ? null : (
+              <AccountRow entry={item} currency={currency} bar={bar} index={index} />
+            )
+          }}
+        />
       )}
     </ListScreen>
   )

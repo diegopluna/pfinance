@@ -2,7 +2,7 @@ import type { ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { Redirect, useLocalSearchParams } from 'expo-router'
-import { Button, Chip, SearchField } from 'heroui-native'
+import { Chip, SearchField } from 'heroui-native'
 import type { InferResponseType } from 'hono/client'
 import { useEffect, useState, type JSX } from 'react'
 import { FlatList, ScrollView, View } from 'react-native'
@@ -13,8 +13,10 @@ import { useHousehold } from '@/api/use-me'
 import { useTransactions } from '@/api/use-transactions'
 import { railBars, type RailBar } from '@/charts/rail'
 import { Amount } from '@/components/amount'
+import { IconButton } from '@/components/icon-button'
 import { ListScreen, ListStatus } from '@/components/list-screen'
-import { Rail, RailBand } from '@/components/rail'
+import { QuickAddSheet } from '@/components/quick-add-sheet'
+import { MagBar } from '@/components/rail'
 import { TransactionForm } from '@/components/transaction-form'
 import { TransferForm } from '@/components/transfer-form'
 import { Touchable } from '@/components/touchable'
@@ -33,13 +35,13 @@ import {
 // The browsable Ledger (issue #78): the Transaction list with the existing
 // API's filters — Account, Category (Uncategorized included, never hidden),
 // the Expense/Income derived views, whole-month period presets over the
-// from/to bounds, and description search. Amounts render through the ledger
-// display rules (ledger/display.ts): a Transfer leg or Balance Adjustment
-// is visibly badged and never reads as an ordinary entry. Quick entry
-// (issue #80) lives here too: New and tapping a row open the form in place
-// of the list, so the edited entry never has to survive a route change.
-// Transfers (issue #81) get the sibling form the same way: New transfer,
-// and tapping either leg opens the whole pair.
+// from/to bounds, and description search. The list gets the space: search
+// collapses into a header icon, and the secondary filters sit behind one
+// Filter chip beside the period presets. Capture happens in the quick-add
+// sheet (issue #80) behind the header's +; tapping a row still opens the
+// full form in place — the sheet is for capture, the forms are for
+// correction — and a Transfer leg opens the Transfer form, since the pair
+// can never drift (issue #81).
 
 type TransactionEntry = InferResponseType<
   ApiClient['api']['transactions']['$get'],
@@ -121,9 +123,11 @@ function TransactionRow({
       : categoryLabel(entry.kind, categoryNames.get(entry.categoryId) ?? 'Unknown category')
   return (
     <Touchable feedback="dim" onPress={onPress}>
-      <View className="flex-row items-start justify-between gap-3 py-3">
+      <View className="flex-row items-start gap-3 border-separator border-t py-3">
         <View className="flex-1 gap-1">
-          <Body numberOfLines={1}>{entry.description}</Body>
+          <Body numberOfLines={1} className="font-medium">
+            {entry.description}
+          </Body>
           <Body size="sm" tone="muted" numberOfLines={1}>
             {formatCalendarDate(entry.date, dateFormat)} ·{' '}
             {accountNames.get(entry.accountId) ?? 'Unknown account'} · {category}
@@ -135,9 +139,11 @@ function TransactionRow({
           )}
         </View>
         <Amount amount={ledgerAmount(entry.kind, entry.amount, currency)} />
-        {/* The row's own underline: how much, which way, against the same
-            rule every other row is measured on. */}
-        <RailBand bar={bar} index={index} />
+        {/* The row's measurement column: how much, which way, against the
+            same axis every visible row is measured on. */}
+        <View className="pt-2">
+          <MagBar bar={bar} index={index} />
+        </View>
       </View>
     </Touchable>
   )
@@ -155,20 +161,22 @@ const isPeriodPreset = (value: string): value is PeriodPreset =>
 export default function TransactionsScreen(): JSX.Element {
   const apiUrl = storedServerUrl()
   const [filters, setFilters] = useState<TransactionFilters>(noFilters)
-  // The in-place form's target: null = closed, entry: null = create, an
-  // existing row = edit. A Transfer leg opens the Transfer form — the pair
-  // can never drift, so legs are only edited through their Transfer (issue
-  // #81) — and the union pins that a transfer edit always carries its
-  // Transfer's id. ?new=true (home's "New transaction") opens create on
-  // arrival — the param is the trigger, so closing the form doesn't reopen.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [moreFilters, setMoreFilters] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  // The in-place form's target for EDITS: tapping a row opens the full
+  // form; a Transfer leg opens the Transfer form — the pair can never
+  // drift, so legs are only edited through their Transfer (issue #81).
   const [form, setForm] = useState<
-    | { kind: 'transaction'; entry: TransactionEntry | null }
-    | { kind: 'transfer'; entry: (TransactionEntry & { transferId: string }) | null }
+    | { kind: 'transaction'; entry: TransactionEntry }
+    | { kind: 'transfer'; entry: TransactionEntry & { transferId: string } }
     | null
   >(null)
+  // ?new=true (home's +) opens capture on arrival — the param is the
+  // trigger, so closing the sheet doesn't reopen it.
   const { new: openNew } = useLocalSearchParams<{ new?: string }>()
   useEffect(() => {
-    if (openNew === 'true') setForm({ kind: 'transaction', entry: null })
+    if (openNew === 'true') setSheetOpen(true)
   }, [openNew])
 
   const { me, currency, dateFormat } = useHousehold()
@@ -204,8 +212,11 @@ export default function TransactionsScreen(): JSX.Element {
       .map((entry) => ({ value: entry.id, label: entry.name })),
   ]
   const filtering = Object.keys(transactionQuery(filters, todayCalendarString())).length > 0
+  // The Filter chip stays visibly active while any of the filters it hides
+  // is set, so a filtered list can never look unfiltered.
+  const hiddenActive = filters.view !== '' || filters.accountId !== '' || filters.categoryId !== ''
 
-  // The forms wait for the vocabulary AND the Household: composing minor
+  // The form waits for the vocabulary AND the Household: composing minor
   // units under the USD fallback's exponent would store a wrong amount for
   // a zero- or three-exponent Currency (ADR 0006).
   if (
@@ -252,63 +263,84 @@ export default function TransactionsScreen(): JSX.Element {
   )
 
   return (
-    // Titled for the tab that opens it. The two writes sit on their own row
-    // rather than in the header: at "New transfer" and "New transaction"
-    // they no longer fit beside a title, and shortening them to "Transfer"
-    // and "New" cost more than the row does — neither said what it made.
-    <ListScreen title="Ledger" back={false}>
-      <View className="gap-2.5">
-        <View className="flex-row gap-2">
-          {/* A Transfer needs two Accounts to move between. */}
-          {accountChoices.length > 1 && (
-            <Button
-              className="flex-1"
-              variant="outline"
-              onPress={() => setForm({ kind: 'transfer', entry: null })}
-            >
-              New transfer
-            </Button>
-          )}
-          <Button className="flex-1" onPress={() => setForm({ kind: 'transaction', entry: null })}>
-            New transaction
-          </Button>
-        </View>
-        <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder="Search descriptions" />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
-        <ChipRow
-          choices={[
-            { value: 'expense', label: 'Expenses' },
-            { value: 'income', label: 'Income' },
-          ]}
-          value={filters.view}
-          onChange={(view) =>
-            setFilters((f) => ({ ...f, view: view === 'expense' || view === 'income' ? view : '' }))
-          }
-        />
-        <ChipRow
-          choices={PERIOD_CHOICES}
-          value={filters.period}
-          onChange={(period) =>
-            setFilters((f) => ({ ...f, period: isPeriodPreset(period) ? period : '' }))
-          }
-        />
-        {accountChoices.length > 1 && (
-          <ChipRow
-            choices={accountChoices}
-            value={filters.accountId}
-            onChange={(accountId) => setFilters((f) => ({ ...f, accountId }))}
+    <ListScreen
+      title="Ledger"
+      back={false}
+      action={
+        <View className="flex-row items-center gap-2.5">
+          <IconButton
+            glyph="search"
+            label="Search descriptions"
+            onPress={() => {
+              setSearchOpen((open) => {
+                if (open) setFilters((f) => ({ ...f, q: '' }))
+                return !open
+              })
+            }}
           />
+          <IconButton
+            glyph="plus"
+            label="New transaction"
+            prominent
+            onPress={() => setSheetOpen(true)}
+          />
+        </View>
+      }
+    >
+      <View className="gap-2.5">
+        {searchOpen && (
+          <SearchField value={filters.q} onChange={(q) => setFilters((f) => ({ ...f, q }))}>
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Search descriptions" autoFocus />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
         )}
-        <ChipRow
-          choices={categoryChoices}
-          value={filters.categoryId}
-          onChange={(categoryId) => setFilters((f) => ({ ...f, categoryId }))}
-        />
+        <View className="flex-row items-center gap-2">
+          <FilterChip
+            label="Filter"
+            active={moreFilters || hiddenActive}
+            onPress={() => setMoreFilters((open) => !open)}
+          />
+          <View className="h-5 w-px bg-separator" />
+          <ChipRow
+            choices={PERIOD_CHOICES}
+            value={filters.period}
+            onChange={(period) =>
+              setFilters((f) => ({ ...f, period: isPeriodPreset(period) ? period : '' }))
+            }
+          />
+        </View>
+        {(moreFilters || hiddenActive) && (
+          <>
+            <ChipRow
+              choices={[
+                { value: 'expense', label: 'Expenses' },
+                { value: 'income', label: 'Income' },
+              ]}
+              value={filters.view}
+              onChange={(view) =>
+                setFilters((f) => ({
+                  ...f,
+                  view: view === 'expense' || view === 'income' ? view : '',
+                }))
+              }
+            />
+            {accountChoices.length > 1 && (
+              <ChipRow
+                choices={accountChoices}
+                value={filters.accountId}
+                onChange={(accountId) => setFilters((f) => ({ ...f, accountId }))}
+              />
+            )}
+            <ChipRow
+              choices={categoryChoices}
+              value={filters.categoryId}
+              onChange={(categoryId) => setFilters((f) => ({ ...f, categoryId }))}
+            />
+          </>
+        )}
       </View>
       {error !== null || !loaded || transactions.data === undefined ? (
         <ListStatus error={error} retry={retry} />
@@ -324,37 +356,43 @@ export default function TransactionsScreen(): JSX.Element {
           }
         />
       ) : (
-        <Rail className="flex-1">
-          <FlatList
-            data={entries}
-            keyExtractor={(entry) => entry.id}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            contentInsetAdjustmentBehavior="automatic"
-            renderItem={({ item, index }) => {
-              const bar = bars[index]
-              return bar === undefined ? null : (
-                <TransactionRow
-                  entry={item}
-                  currency={currency}
-                  dateFormat={dateFormat}
-                  accountNames={accountNames}
-                  categoryNames={categoryNames}
-                  bar={bar}
-                  index={index}
-                  onPress={() =>
-                    setForm(
-                      item.transferId !== null
-                        ? { kind: 'transfer', entry: { ...item, transferId: item.transferId } }
-                        : { kind: 'transaction', entry: item },
-                    )
-                  }
-                />
-              )
-            }}
-          />
-        </Rail>
+        <FlatList
+          className="flex-1"
+          data={entries}
+          keyExtractor={(entry) => entry.id}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentInsetAdjustmentBehavior="automatic"
+          renderItem={({ item, index }) => {
+            const bar = bars[index]
+            return bar === undefined ? null : (
+              <TransactionRow
+                entry={item}
+                currency={currency}
+                dateFormat={dateFormat}
+                accountNames={accountNames}
+                categoryNames={categoryNames}
+                bar={bar}
+                index={index}
+                onPress={() =>
+                  setForm(
+                    item.transferId !== null
+                      ? { kind: 'transfer', entry: { ...item, transferId: item.transferId } }
+                      : { kind: 'transaction', entry: item },
+                  )
+                }
+              />
+            )
+          }}
+        />
       )}
+      <QuickAddSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        accounts={accountChoices}
+        categories={categoryChoices.filter((choice) => choice.value !== UNCATEGORIZED)}
+        currency={currency}
+      />
     </ListScreen>
   )
 }
