@@ -73,7 +73,7 @@ function LatestMonth({
       <Row label="Expenses" value={formatAmount(month.expense, currency)} />
       <View className="mt-1 border-separator border-t pt-2.5">
         <Row
-          label="Net"
+          label="Kept"
           value={`${net > 0 ? '+' : ''}${formatAmount(net, currency)}`}
           tone={net < 0 ? 'negative' : 'positive'}
           size="lg"

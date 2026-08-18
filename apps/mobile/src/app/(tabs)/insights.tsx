@@ -1,12 +1,10 @@
 import { Redirect, useLocalSearchParams } from 'expo-router'
 import { useState, type JSX } from 'react'
-import { View } from 'react-native'
 import { IncomeExpenseView } from '@/components/dashboards/income-expense-view'
 import { NetWorthView } from '@/components/dashboards/net-worth-view'
 import { SpendingView } from '@/components/dashboards/spending-view'
 import { ListScreen } from '@/components/list-screen'
-import { Touchable } from '@/components/touchable'
-import { Eyebrow } from '@/components/type'
+import { Segmented } from '@/components/segmented'
 import { storedServerUrl } from '@/connect/store'
 
 // The three dashboards (issue #79) behind one tab. They were three
@@ -44,55 +42,10 @@ export default function InsightsScreen(): JSX.Element {
 
   return (
     <ListScreen title="Insights" back={false}>
-      <Switcher view={view} onChange={setView} />
+      <Segmented choices={VIEWS} value={view} onChange={setView} />
       {view === 'net-worth' && <NetWorthView />}
       {view === 'spending' && <SpendingView />}
       {view === 'income-expense' && <IncomeExpenseView />}
     </ListScreen>
-  )
-}
-
-// Three mutually exclusive views of one ledger, so: one row, equal widths,
-// and a segmented track.
-//
-// It was an underline under bare labels first, which put the switcher in
-// exactly the same type as the section eyebrows above it — the only thing
-// saying "press me" was a 3px rule under one of the three. This design
-// avoids filled surfaces everywhere else, but a control that reads as a
-// caption is the wrong place to spend that consistency. The track is
-// neutral, not accent: better-colors keeps the filled-accent treatment for
-// the single primary action.
-//
-// The radii are concentric: an 8px track with 4px of padding needs a 4px
-// thumb, or the inner corners look pinched against the outer ones.
-function Switcher({
-  view,
-  onChange,
-}: {
-  view: Dashboard
-  onChange: (view: Dashboard) => void
-}): JSX.Element {
-  return (
-    <View className="flex-row rounded-lg bg-surface-secondary p-1">
-      {VIEWS.map((entry) => {
-        const open = entry.value === view
-        return (
-          <Touchable
-            key={entry.value}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: open }}
-            onPress={() => onChange(entry.value)}
-            className={`flex-1 items-center rounded-sm py-2 ${open ? 'bg-background' : ''}`}
-          >
-            {/* Both states are full contrast: muted on the track measured
-                4.34:1, under the 4.5:1 an 11px label needs, and the whole
-                point of the track was to stop this row reading as text. The
-                raised thumb carries the selection, the way a platform
-                segmented control does. */}
-            <Eyebrow tone="foreground">{entry.label}</Eyebrow>
-          </Touchable>
-        )
-      })}
-    </View>
   )
 }

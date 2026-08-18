@@ -20,14 +20,15 @@ export const addMonths = (month: string, delta: number): string => {
 // so the label can never land in a neighboring month.
 export const monthLabel = (
   month: string,
-  style: 'tick' | 'full' | 'month',
+  style: 'tick' | 'full' | 'month' | 'name',
   locale?: string,
 ): string => {
   const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
   return new Intl.DateTimeFormat(locale, {
-    month: style === 'full' ? 'long' : 'short',
-    // 'month' is the bare short month ("Jul") — the hero delta's "vs Jul".
-    ...(style === 'month' ? {} : { year: 'numeric' }),
+    month: style === 'full' || style === 'name' ? 'long' : 'short',
+    // 'month' is the bare short month ("Jul") — the hero delta's "vs Jul";
+    // 'name' is the bare long month ("July") — home's "Kept in July".
+    ...(style === 'month' || style === 'name' ? {} : { year: 'numeric' }),
     timeZone: 'UTC',
   }).format(date)
 }
