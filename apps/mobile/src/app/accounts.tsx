@@ -3,15 +3,18 @@ import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { ACCOUNT_TYPES } from '@pfinance/db/account-types'
 import { Redirect } from 'expo-router'
 import type { InferResponseType } from 'hono/client'
-import type { JSX } from 'react'
+import { useState, type JSX } from 'react'
 import { FlatList, View } from 'react-native'
 import { queryFailure } from '@/api/errors'
 import { useAccounts } from '@/api/use-accounts'
 import { useHousehold } from '@/api/use-me'
 import { railBars, type RailBar } from '@/charts/rail'
+import { AdjustBalanceSheet } from '@/components/adjust-balance-sheet'
 import { Figure } from '@/components/amount'
+import { Chevron } from '@/components/chevron'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { MagBar } from '@/components/rail'
+import { Touchable } from '@/components/touchable'
 import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
 
@@ -31,14 +34,22 @@ function AccountRow({
   currency,
   bar,
   index,
+  onPress,
 }: {
   entry: AccountEntry
   currency: CurrencyCode
   bar: RailBar
   index: number
+  onPress: () => void
 }): JSX.Element {
   return (
-    <View className="flex-row items-center justify-between gap-3 py-3.5">
+    <Touchable
+      feedback="dim"
+      accessibilityRole="button"
+      accessibilityHint="Opens balance adjustment"
+      onPress={onPress}
+      className="flex-row items-center justify-between gap-3 py-3.5"
+    >
       <View className="flex-1 gap-1">
         <View className="flex-row items-center gap-2">
           <Body numberOfLines={1} className="shrink">
@@ -52,7 +63,8 @@ function AccountRow({
       </View>
       <Figure size="lg">{formatAmount(entry.balance, currency)}</Figure>
       <MagBar bar={bar} index={index} />
-    </View>
+      <Chevron direction="right" size={14} />
+    </Touchable>
   )
 }
 
@@ -61,6 +73,7 @@ export default function AccountsScreen(): JSX.Element {
 
   const { me, currency } = useHousehold()
   const accounts = useAccounts(false)
+  const [adjusting, setAdjusting] = useState<AccountEntry | null>(null)
 
   if (apiUrl === null) return <Redirect href="/" />
 
@@ -90,11 +103,22 @@ export default function AccountsScreen(): JSX.Element {
           renderItem={({ item, index }) => {
             const bar = bars[index]
             return bar === undefined ? null : (
-              <AccountRow entry={item} currency={currency} bar={bar} index={index} />
+              <AccountRow
+                entry={item}
+                currency={currency}
+                bar={bar}
+                index={index}
+                onPress={() => setAdjusting(item)}
+              />
             )
           }}
         />
       )}
+      <AdjustBalanceSheet
+        account={adjusting}
+        onClose={() => setAdjusting(null)}
+        currency={currency}
+      />
     </ListScreen>
   )
 }
