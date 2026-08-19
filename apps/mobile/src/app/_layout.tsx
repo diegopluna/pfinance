@@ -5,7 +5,7 @@ import { Geist_400Regular } from '@expo-google-fonts/geist/400Regular'
 import { Geist_500Medium } from '@expo-google-fonts/geist/500Medium'
 import { Geist_600SemiBold } from '@expo-google-fonts/geist/600SemiBold'
 import { GeistMono_400Regular } from '@expo-google-fonts/geist-mono/400Regular'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { useFonts } from 'expo-font'
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
@@ -14,7 +14,7 @@ import { HeroUINativeProvider, useThemeColor } from 'heroui-native'
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { useColorScheme } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { createQueryClient, trackAppStateFocus } from '@/api/query-client'
+import { createQueryClient, persistOptions, trackAppStateFocus } from '@/api/query-client'
 
 import '../global.css'
 
@@ -48,14 +48,17 @@ export default function RootLayout(): JSX.Element | null {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
+      {/* Persistence restores the last-known ledger before the network
+          answers — offline reads, issue #83; mutations never persist
+          (api/query-client.ts). */}
+      <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
         <HeroUINativeProvider>
           <NavigationTheme>
             <StatusBar style="auto" />
             <Stack screenOptions={{ headerShown: false }} />
           </NavigationTheme>
         </HeroUINativeProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </GestureHandlerRootView>
   )
 }

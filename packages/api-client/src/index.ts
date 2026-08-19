@@ -27,6 +27,19 @@ export class ApiError extends Error {
   }
 }
 
+// The request never reached the Server at all — offline, DNS, a dead
+// address. Its message is the designed voice for every client's write
+// failure (ADR 0007: writes require a connection and fail visibly), and
+// its type is how read surfaces recognize "render the cache instead".
+export class ConnectionError extends Error {
+  constructor() {
+    super('Needs a connection — the Server was unreachable.')
+    this.name = 'ConnectionError'
+  }
+}
+
+export const isConnectionFailure = (error: unknown): boolean => error instanceof ConnectionError
+
 // The owner-only screens relay the server's 403 instead of half-rendering.
 export const isForbidden = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 403
@@ -47,7 +60,14 @@ export const call = async <R extends ClientResponse<unknown>>(
   request: Promise<R>,
   fallback = 'Request failed',
 ): Promise<SuccessBody<R>> => {
-  const response = await request
+  let response: R
+  try {
+    response = await request
+  } catch {
+    // fetch rejects (TypeError) only when no response exists — the network
+    // layer's raw wording never reaches a screen.
+    throw new ConnectionError()
+  }
   if (!response.ok) {
     // 4xx bodies carry { error }; anything else (worker crash, HTML from a
     // proxy) falls back to the caller's message.

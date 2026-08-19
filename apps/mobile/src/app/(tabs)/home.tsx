@@ -7,6 +7,7 @@ import { useState, type JSX, type ReactNode } from 'react'
 import { ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { queryFailure } from '@/api/errors'
+import { oldestUpdatedAt } from '@/api/staleness'
 import { useAccounts } from '@/api/use-accounts'
 import { useCategories } from '@/api/use-categories'
 import { useIncomeExpense, useNetWorth } from '@/api/use-dashboards'
@@ -18,6 +19,7 @@ import { TrendWash } from '@/components/charts/trend-wash'
 import { Chevron } from '@/components/chevron'
 import { IconButton } from '@/components/icon-button'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
+import { OfflineBanner } from '@/components/offline-banner'
 import { QuickAddSheet } from '@/components/quick-add-sheet'
 import { MagBar } from '@/components/rail'
 import { Touchable } from '@/components/touchable'
@@ -55,7 +57,7 @@ export default function HomeScreen(): JSX.Element {
   const { error, retry } = queryFailure([me, netWorth, accounts, incomeExpense])
   const loaded = [me, netWorth, accounts, incomeExpense].every((query) => query.data !== undefined)
 
-  if (error !== null) {
+  if (error !== null && !loaded) {
     return (
       <Frame>
         <View className="gap-3 pt-8">
@@ -105,6 +107,13 @@ export default function HomeScreen(): JSX.Element {
                 onPress={() => setSheetOpen(true)}
               />
             </View>
+
+            {error !== null && (
+              <OfflineBanner
+                updatedAt={oldestUpdatedAt([me, netWorth, accounts, incomeExpense])}
+                retry={retry}
+              />
+            )}
 
             {/* The headline is the doorway to its own history: the label
                 row carries the chevron every navigable thing on this

@@ -8,6 +8,7 @@ import { useMe } from '@/api/use-me'
 import { authClientFor } from '@/auth/client'
 import { ListScreen } from '@/components/list-screen'
 import { Body, SectionTitle } from '@/components/type'
+import { queryPersister } from '@/api/query-client'
 import { forgetServerUrl, storedServerUrl } from '@/connect/store'
 
 // The settings shell (issue #77): the connection is never a black box — the
@@ -51,6 +52,7 @@ export default function SettingsScreen(): JSX.Element {
     // another Server or none: keys carry no Server (api/query-keys.ts), so
     // the way they stay honest is that leaving empties them.
     queryClient.clear()
+    await queryPersister.removeClient()
     router.dismissTo('/')
   }
 

@@ -7,6 +7,7 @@ import type { InferResponseType } from 'hono/client'
 import { useEffect, useState, type JSX } from 'react'
 import { FlatList, ScrollView, View } from 'react-native'
 import { queryFailure } from '@/api/errors'
+import { oldestUpdatedAt } from '@/api/staleness'
 import { useAccounts } from '@/api/use-accounts'
 import { useCategories } from '@/api/use-categories'
 import { useHousehold } from '@/api/use-me'
@@ -17,6 +18,7 @@ import { Chevron } from '@/components/chevron'
 import { CleanupSheet } from '@/components/cleanup-sheet'
 import { IconButton } from '@/components/icon-button'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { OfflineBanner } from '@/components/offline-banner'
 import { QuickAddSheet } from '@/components/quick-add-sheet'
 import { MagBar } from '@/components/rail'
 import { TransactionForm } from '@/components/transaction-form'
@@ -354,6 +356,12 @@ export default function TransactionsScreen(): JSX.Element {
           </>
         )}
       </View>
+      {error !== null && loaded && (
+        <OfflineBanner
+          updatedAt={oldestUpdatedAt([me, accounts, categories, transactions])}
+          retry={retry}
+        />
+      )}
       {pending.length > 0 && (
         <Touchable
           feedback="dim"
@@ -369,8 +377,8 @@ export default function TransactionsScreen(): JSX.Element {
           <Chevron direction="right" size={14} />
         </Touchable>
       )}
-      {error !== null || !loaded || transactions.data === undefined ? (
-        <ListStatus error={error} retry={retry} />
+      {!loaded || transactions.data === undefined ? (
+        <ListStatus error={loaded ? null : error} retry={retry} />
       ) : entries.length === 0 ? (
         <ListStatus
           error={null}
