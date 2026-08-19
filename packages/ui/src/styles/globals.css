@@ -1,11 +1,31 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+/* Geist, self-hosted through the bundler — a self-hosted finance app never
+   phones a font CDN. Variable wght files; the family runs 100–900 but this
+   design uses 400–600, the range the mobile app settled on. Geist Mono is
+   for operational identifiers (the Server address); figures stay in the
+   sans — Geist carries tnum, so tabular-nums aligns the columns. */
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
 @source '../';
 @source '../../../../apps';
 
 @custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
 
 :root {
   /* 0.5rem lands the derived scale exactly on the Claude Design prototype

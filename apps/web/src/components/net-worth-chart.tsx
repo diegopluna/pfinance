@@ -1,4 +1,4 @@
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, XAxis } from 'recharts'
 import type { InferResponseType } from 'hono/client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import {
@@ -8,7 +8,6 @@ import {
   type ChartConfig,
 } from '@pfinance/ui/components/chart'
 import { api } from '@/lib/api'
-import { compactAmount } from '@/lib/format'
 import { monthLabel } from '@/lib/month'
 
 // The monthly Net Worth area (issue #17) — the 1b hero chart (docs/design/
@@ -40,16 +39,24 @@ export function NetWorthChart({
     <div>
       <ChartContainer
         config={chartConfig}
-        className="aspect-auto h-52 w-full [&_.recharts-cartesian-axis-tick_text]:tabular-nums"
+        className="aspect-auto h-44 w-full [&_.recharts-cartesian-axis-tick_text]:tabular-nums"
       >
         {/* accessibilityLayer: arrow keys walk the months with the same
             tooltip the pointer gets. */}
         <AreaChart
           data={series}
-          margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+          margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
           accessibilityLayer
         >
-          <CartesianGrid vertical={false} />
+          <defs>
+            {/* The wash: slot 1 fading to nothing, the calm-hero treatment
+                the mobile home draws — same series, same color, hover kept
+                because pointing is how the web reads history. */}
+            <linearGradient id="net-worth-wash" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-netWorth)" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="var(--color-netWorth)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
           <XAxis
             dataKey="month"
             tickFormatter={(month: string) => monthLabel(month, 'tick')}
@@ -57,16 +64,6 @@ export function NetWorthChart({
             axisLine={false}
             minTickGap={32}
             tickMargin={8}
-          />
-          <YAxis
-            // Net worth is not a quantity growing from zero — a household
-            // deep in a mortgage lives below it — so the domain follows the
-            // data instead of forcing a zero baseline.
-            domain={['auto', 'auto']}
-            tickFormatter={(value: number) => compactAmount(value, currency)}
-            tickLine={false}
-            axisLine={false}
-            width={70}
           />
           {/* The crosshair cursor snaps to the nearest month, so nobody aims
               at a 2px line; ChartContainer keeps it hairline-recessive. */}
@@ -121,8 +118,7 @@ export function NetWorthChart({
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            // The mirror's --area token: slot 1 at low alpha, per theme.
-            fill="var(--chart-area)"
+            fill="url(#net-worth-wash)"
             fillOpacity={1}
             // Only the endpoint is marked — an 8px dot ringed in the card
             // surface — so today's position reads without labeling every
