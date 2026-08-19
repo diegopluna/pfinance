@@ -3,13 +3,12 @@ import { Button, useThemeColor } from 'heroui-native'
 import { useState, type JSX } from 'react'
 import { Modal, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import Svg, { Path } from 'react-native-svg'
 import { useTransactionMutations } from '@/api/use-transactions'
 import { useTransferMutations } from '@/api/use-transfers'
 import { Figure } from '@/components/amount'
 import { ChoiceChips } from '@/components/form-fields'
+import { Keypad } from '@/components/keypad'
 import { Segmented } from '@/components/segmented'
-import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
 import { previousCalendarDay, todayCalendarString } from '@/ledger/dates'
 import { validateDraft } from '@/ledger/draft'
@@ -70,7 +69,7 @@ export function QuickAddSheet({
   const [toAccountId, setToAccountId] = useState('')
   const [day, setDay] = useState<'today' | 'yesterday'>('today')
   const [error, setError] = useState<string | null>(null)
-  const [mutedColor, foreground] = useThemeColor(['muted', 'foreground'])
+  const [mutedColor] = useThemeColor(['muted'])
 
   const transactions = useTransactionMutations()
   const transfers = useTransferMutations()
@@ -228,12 +227,11 @@ export function QuickAddSheet({
             <View className="flex-1" />
 
             <Keypad
-              color={foreground}
               onDigit={(digit) => {
                 setMinor((current) => pressDigit(current, digit))
                 setError(null)
               }}
-              onDoubleZero={() => setMinor(pressDoubleZero)}
+              onCorner={() => setMinor(pressDoubleZero)}
               onDelete={() => setMinor(pressDelete)}
             />
 
@@ -244,71 +242,5 @@ export function QuickAddSheet({
         </SafeAreaView>
       </View>
     </Modal>
-  )
-}
-
-const KEY_ROWS: readonly (readonly (number | 'double-zero' | 'delete')[])[] = [
-  [1, 2, 3],
-  [4, 5, 6],
-  [7, 8, 9],
-  ['double-zero', 0, 'delete'],
-]
-
-function Keypad({
-  color,
-  onDigit,
-  onDoubleZero,
-  onDelete,
-}: {
-  color: string
-  onDigit: (digit: number) => void
-  onDoubleZero: () => void
-  onDelete: () => void
-}): JSX.Element {
-  return (
-    <View className="gap-0.5">
-      {KEY_ROWS.map((row) => (
-        <View key={String(row)} className="flex-row gap-0.5">
-          {row.map((key) => (
-            <Touchable
-              key={String(key)}
-              feedback="dim"
-              accessibilityRole="button"
-              accessibilityLabel={
-                key === 'delete' ? 'Delete last digit' : key === 'double-zero' ? '00' : String(key)
-              }
-              onPress={() =>
-                key === 'delete'
-                  ? onDelete()
-                  : key === 'double-zero'
-                    ? onDoubleZero()
-                    : onDigit(key)
-              }
-              className="h-12 flex-1 items-center justify-center rounded-lg"
-            >
-              {key === 'delete' ? (
-                <Svg
-                  width={22}
-                  height={22}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={(1.8 * 24) / 22}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <Path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z" />
-                  <Path d="M18 9l-6 6M12 9l6 6" />
-                </Svg>
-              ) : (
-                <Figure size="lg" tone="plain">
-                  {key === 'double-zero' ? '00' : String(key)}
-                </Figure>
-              )}
-            </Touchable>
-          ))}
-        </View>
-      ))}
-    </View>
   )
 }
