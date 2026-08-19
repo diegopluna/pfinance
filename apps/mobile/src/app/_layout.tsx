@@ -15,6 +15,7 @@ import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { useColorScheme } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { createQueryClient, persistOptions, trackAppStateFocus } from '@/api/query-client'
+import { AppLockGate } from '@/components/app-lock-gate'
 
 import '../global.css'
 
@@ -55,7 +56,11 @@ export default function RootLayout(): JSX.Element | null {
         <HeroUINativeProvider>
           <NavigationTheme>
             <StatusBar style="auto" />
-            <Stack screenOptions={{ headerShown: false }} />
+            {/* The optional app lock (issue #84) covers everything the
+                navigator renders, cached data included. */}
+            <AppLockGate>
+              <Stack screenOptions={{ headerShown: false }} />
+            </AppLockGate>
           </NavigationTheme>
         </HeroUINativeProvider>
       </PersistQueryClientProvider>
