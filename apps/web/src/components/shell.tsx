@@ -1,4 +1,13 @@
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import {
+  HouseIcon,
+  ListIcon,
+  SettingsIcon,
+  TagIcon,
+  UploadIcon,
+  UsersIcon,
+  WalletIcon,
+} from 'lucide-react'
 import { Button } from '@pfinance/ui/components/button'
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import {
@@ -44,9 +53,12 @@ export function Shell() {
       </a>
       <Sidebar>
         <SidebarHeader>
-          <div className="flex items-center gap-2.5 px-2 py-1 text-[15px] font-semibold tracking-tight">
-            <span className="size-5 rounded-md bg-sidebar-foreground" />
-            pfinance
+          <div className="flex flex-col gap-1 px-2 py-1">
+            <span className="text-[15px] font-semibold tracking-tight">pfinance</span>
+            <span aria-hidden className="flex h-[3px] w-18">
+              <span className="w-1/2 bg-(--chart-2)" />
+              <span className="w-1/2 bg-(--chart-1)" />
+            </span>
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -55,6 +67,7 @@ export function Shell() {
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton isActive={pathname === '/'} render={<Link to="/" />}>
+                    <HouseIcon aria-hidden />
                     Dashboard
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -65,6 +78,7 @@ export function Shell() {
                     isActive={pathname.startsWith('/accounts')}
                     render={<Link to="/accounts" />}
                   >
+                    <WalletIcon aria-hidden />
                     Accounts
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -73,6 +87,7 @@ export function Shell() {
                     isActive={pathname.startsWith('/transactions')}
                     render={<Link to="/transactions" />}
                   >
+                    <ListIcon aria-hidden />
                     Transactions
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -81,6 +96,7 @@ export function Shell() {
                     isActive={pathname.startsWith('/imports')}
                     render={<Link to="/imports" />}
                   >
+                    <UploadIcon aria-hidden />
                     Imports
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -89,6 +105,7 @@ export function Shell() {
                     isActive={pathname.startsWith('/categories')}
                     render={<Link to="/categories" />}
                   >
+                    <TagIcon aria-hidden />
                     Categories
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -98,6 +115,7 @@ export function Shell() {
                       isActive={pathname.startsWith('/members')}
                       render={<Link to="/members" />}
                     >
+                      <UsersIcon aria-hidden />
                       Members
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -109,6 +127,7 @@ export function Shell() {
                     isActive={pathname.startsWith('/settings')}
                     render={<Link to="/settings" />}
                   >
+                    <SettingsIcon aria-hidden />
                     Settings
                   </SidebarMenuButton>
                 </SidebarMenuItem>

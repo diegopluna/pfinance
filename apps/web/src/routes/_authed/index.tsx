@@ -8,13 +8,14 @@ import { Button, buttonVariants } from '@pfinance/ui/components/button'
 import { Card, CardContent } from '@pfinance/ui/components/card'
 import { api } from '@/lib/api'
 import { IncomeVsExpenseChart } from '@/components/income-vs-expense-chart'
+import { MagBar } from '@/components/mag-bar'
 import { NetWorthChart } from '@/components/net-worth-chart'
-import { SpendingByCategoryChart } from '@/components/spending-by-category-chart'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useIncomeExpense } from '@/hooks/use-income-expense'
 import { useMe } from '@/hooks/use-me'
 import { useNetWorth } from '@/hooks/use-net-worth'
 import { useSpending } from '@/hooks/use-spending'
+import { railBars } from '@/lib/rail'
 import { addMonths, currentUtcMonth, monthLabel } from '@/lib/month'
 
 export const Route = createFileRoute('/_authed/')({
@@ -185,50 +186,59 @@ function AccountsCard({
   const accounts = query.data?.accounts ?? []
   return (
     <section aria-labelledby="accounts-heading">
-      <Card size="sm">
-        <CardContent className="flex flex-col">
-          <h2 id="accounts-heading" className="text-[13px] font-semibold tracking-tight">
-            Accounts
-          </h2>
-          {query.isError || meError ? (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              Couldn&apos;t load accounts.
-            </p>
-          ) : query.isPending || currency === undefined ? (
-            <p role="status" className="mt-2 text-sm text-muted-foreground">
-              Loading…
-            </p>
-          ) : accounts.length === 0 ? (
-            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-              No accounts yet — the hero above has the first step.
-            </p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-border">
-              {accounts.map((entry) => (
-                <AccountRow key={entry.id} entry={entry} currency={currency} />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+        <h2 id="accounts-heading" className="text-[13px] font-semibold tracking-tight">
+          Accounts
+        </h2>
+        {query.isError || meError ? (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            Couldn&apos;t load accounts.
+          </p>
+        ) : query.isPending || currency === undefined ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : accounts.length === 0 ? (
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            No accounts yet — the hero above has the first step.
+          </p>
+        ) : (
+          <AccountRows accounts={accounts} currency={currency} />
+        )}
+      </div>
     </section>
   )
 }
 
-function AccountRow({ entry, currency }: { entry: AccountEntry; currency: CurrencyCode }) {
+// One scale for the whole plate (lib/rail.ts): a liability leans left for
+// the same reason a grocery bill does — its Balance is negative, and no
+// kind flips a sign (ADR 0001).
+function AccountRows({ accounts, currency }: { accounts: AccountEntry[]; currency: CurrencyCode }) {
+  const bars = railBars(accounts.map((entry) => ({ amount: entry.balance, neutral: false })))
   return (
-    <li className="flex items-center justify-between gap-2 py-2 first:pt-1 last:pb-0">
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-[13px] font-medium">{entry.name}</span>
-        <span className="truncate text-[11px] text-muted-foreground">
-          {typeLabels.get(entry.type) ?? entry.type}
-          {needsLiabilityMarker(entry.type) && ' · liability'}
-        </span>
-      </span>
-      <span className="text-[13.5px] font-semibold tabular-nums">
-        {formatAmount(entry.balance, currency)}
-      </span>
-    </li>
+    <ul className="flex flex-col">
+      {accounts.map((entry, index) => {
+        const bar = bars[index]
+        return (
+          <li
+            key={entry.id}
+            className="flex items-center justify-between gap-3 py-2 first:pt-1 last:pb-0"
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] font-medium">{entry.name}</span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                {typeLabels.get(entry.type) ?? entry.type}
+                {needsLiabilityMarker(entry.type) && ' · liability'}
+              </span>
+            </span>
+            <span className="text-[13.5px] font-semibold tabular-nums">
+              {formatAmount(entry.balance, currency)}
+            </span>
+            {bar !== undefined && <MagBar bar={bar} track="background" />}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -239,41 +249,125 @@ function AccountRow({ entry, currency }: { entry: AccountEntry; currency: Curren
 function IncomeExpenseCard({ currency }: { currency: CurrencyCode | undefined }) {
   const query = useIncomeExpense()
   const months = query.data?.months ?? []
+  const latest = months.at(-1)
   return (
     <section aria-labelledby="income-expense-heading">
-      <Card size="sm">
-        <CardContent className="flex flex-col">
-          <h2 id="income-expense-heading" className="text-[13px] font-semibold tracking-tight">
-            Income vs expense
-          </h2>
-          {query.isError ? (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              Couldn&apos;t load income vs expense.
-            </p>
-          ) : query.isPending || currency === undefined ? (
-            <p role="status" className="mt-2 text-sm text-muted-foreground">
-              Loading…
-            </p>
-          ) : months.length === 0 ? (
-            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-              The chart starts with the ledger — it appears once there are income or expense
-              transactions.
-            </p>
-          ) : (
-            <>
-              <div className="mt-2">
-                <IncomeVsExpenseChart months={months} currency={currency} />
+      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+        <h2 id="income-expense-heading" className="text-[13px] font-semibold tracking-tight">
+          In vs out
+        </h2>
+        {query.isError ? (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            Couldn&apos;t load income vs expense.
+          </p>
+        ) : query.isPending || currency === undefined ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : months.length === 0 ? (
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            The chart starts with the ledger — it appears once there are income or expense
+            transactions.
+          </p>
+        ) : (
+          <>
+            <div className="mt-2">
+              <IncomeVsExpenseChart months={months} currency={currency} />
+            </div>
+            {latest !== undefined && (
+              <div className="mt-2 flex flex-col">
+                <PairRow label="Money in" value={formatAmount(latest.income, currency)} />
+                <PairRow label="Money out" value={formatAmount(latest.expense, currency)} />
+                <div className="mt-1 border-border border-t pt-1.5">
+                  <PairRow
+                    label="Kept"
+                    value={`${latest.income - latest.expense > 0 ? '+' : ''}${formatAmount(latest.income - latest.expense, currency)}`}
+                    tone={latest.income - latest.expense < 0 ? 'negative' : 'positive'}
+                  />
+                </div>
               </div>
-              {/* By definition (DECISIONS.md): every derived-spending card
+            )}
+            {/* By definition (DECISIONS.md): every derived-spending card
                   carries this footnote visibly. */}
-              <p className="mt-2.5 text-[11px] text-muted-foreground">
-                Excludes transfers and adjustments
-              </p>
-            </>
-          )}
-        </CardContent>
-      </Card>
+            <p className="mt-2.5 text-[11px] text-muted-foreground">
+              Excludes transfers and adjustments
+            </p>
+          </>
+        )}
+      </div>
     </section>
+  )
+}
+
+type SpendingSlice = InferResponseType<
+  (typeof api.api)['spending-by-category']['$get'],
+  200
+>['slices'][number]
+
+const SLOTS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+]
+
+// Rank-ordered slot rows on tracks: colored slots walk spending rank
+// (docs/design/DECISIONS.md); Uncategorized is always the neutral grey,
+// never one of the five and never hidden. Identity stays in the row
+// label, never in color alone.
+function SpendingRows({ slices, currency }: { slices: SpendingSlice[]; currency: CurrencyCode }) {
+  const max = Math.max(...slices.map((slice) => slice.total), 1)
+  let slotIndex = 0
+  return (
+    <ul className="mt-1 flex flex-col">
+      {slices.map((slice) => {
+        const fill =
+          slice.categoryId === null
+            ? 'var(--chart-uncategorized)'
+            : SLOTS[slotIndex++ % SLOTS.length]
+        return (
+          <li key={slice.categoryId ?? 'uncategorized'} className="flex flex-col py-1.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[13px] font-medium">
+                {slice.name ?? 'Uncategorized'}
+              </span>
+              <span className="text-[13.5px] font-semibold tabular-nums">
+                {formatAmount(slice.total, currency)}
+              </span>
+            </div>
+            <div className="relative mt-1.5 h-1 rounded-full bg-background">
+              <div
+                aria-hidden
+                className="absolute inset-y-0 left-0 rounded-full"
+                style={{ width: `${(slice.total / max) * 100}%`, background: fill }}
+              />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function PairRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone?: 'positive' | 'negative'
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <span className="text-[12.5px] text-muted-foreground">{label}</span>
+      <span
+        className={`text-[13.5px] font-semibold tabular-nums ${tone === 'negative' ? 'text-destructive' : tone === 'positive' ? 'text-positive' : ''}`}
+      >
+        {value}
+      </span>
+    </div>
   )
 }
 
@@ -287,60 +381,67 @@ function SpendingCard({ currency }: { currency: CurrencyCode | undefined }) {
   const slices = query.data?.slices ?? []
   return (
     <section aria-labelledby="spending-heading">
-      <Card size="sm">
-        <CardContent className="flex flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 id="spending-heading" className="text-[13px] font-semibold tracking-tight">
-              Spending
-            </h2>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Previous month"
-                onClick={() => setMonth((current) => addMonths(current, -1))}
-              >
-                <ChevronLeftIcon aria-hidden />
-              </Button>
-              {/* aria-live: the month change a stepper click causes is
+      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="spending-heading" className="text-[13px] font-semibold tracking-tight">
+            Spending
+          </h2>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Previous month"
+              onClick={() => setMonth((current) => addMonths(current, -1))}
+            >
+              <ChevronLeftIcon aria-hidden />
+            </Button>
+            {/* aria-live: the month change a stepper click causes is
                   otherwise silent to a screen reader. */}
-              <span aria-live="polite" className="min-w-24 text-center text-xs tabular-nums">
-                {monthLabel(month, 'tick')}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Next month"
-                onClick={() => setMonth((current) => addMonths(current, 1))}
-              >
-                <ChevronRightIcon aria-hidden />
-              </Button>
-            </div>
+            <span aria-live="polite" className="min-w-24 text-center text-xs tabular-nums">
+              {monthLabel(month, 'tick')}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Next month"
+              onClick={() => setMonth((current) => addMonths(current, 1))}
+            >
+              <ChevronRightIcon aria-hidden />
+            </Button>
           </div>
-          {query.isError ? (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              Couldn&apos;t load spending.
+        </div>
+        {query.isError ? (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            Couldn&apos;t load spending.
+          </p>
+        ) : query.isPending || currency === undefined ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : slices.length === 0 ? (
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            No spending recorded in {monthLabel(month, 'full')}.
+          </p>
+        ) : (
+          <>
+            {/* The total is the sum of the bars: without it every row is
+                  a share of something the card never states. */}
+            <div className="mt-2 flex items-baseline justify-between gap-3">
+              <span className="text-[12.5px] text-muted-foreground">Total</span>
+              <span className="text-[15px] font-semibold tabular-nums">
+                {formatAmount(
+                  slices.reduce((sum, slice) => sum + slice.total, 0),
+                  currency,
+                )}
+              </span>
+            </div>
+            <SpendingRows slices={slices} currency={currency} />
+            <p className="mt-2.5 text-[11px] text-muted-foreground">
+              Excludes transfers and adjustments
             </p>
-          ) : query.isPending || currency === undefined ? (
-            <p role="status" className="mt-2 text-sm text-muted-foreground">
-              Loading…
-            </p>
-          ) : slices.length === 0 ? (
-            <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-              No spending recorded in {monthLabel(month, 'full')}.
-            </p>
-          ) : (
-            <>
-              <div className="mt-2">
-                <SpendingByCategoryChart slices={slices} currency={currency} />
-              </div>
-              <p className="mt-2.5 text-[11px] text-muted-foreground">
-                Excludes transfers and adjustments
-              </p>
-            </>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </div>
     </section>
   )
 }

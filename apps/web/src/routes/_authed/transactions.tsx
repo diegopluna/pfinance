@@ -50,8 +50,11 @@ import {
   TableRow,
 } from '@pfinance/ui/components/table'
 import { CalendarDatePicker } from '@/components/date-picker'
+import { MagBar } from '@/components/mag-bar'
 import { useDateFormat } from '@/hooks/use-date-format'
 import { formatCalendarDate } from '@/lib/dates'
+import { addMonths, currentUtcMonth } from '@/lib/month'
+import { railBars } from '@/lib/rail'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
 import { useAccounts } from '@/hooks/use-accounts'
@@ -267,6 +270,12 @@ function TransactionsScreen() {
         onClose={() => setTransferDialogOpen(false)}
       />
 
+      <PeriodChips
+        from={filters.from}
+        to={filters.to}
+        onPick={(bounds) => setFilters((current) => ({ ...current, ...bounds }))}
+      />
+
       {/* Filter bar: Account, inclusive date range, and description search
           compose; Clear resets the whole bar at once. */}
       <div className="flex flex-wrap items-end gap-2">
@@ -442,6 +451,55 @@ function TransactionsScreen() {
   )
 }
 
+const PERIOD_PRESETS = [
+  { key: 'this-month', label: 'This month', back: 0, span: 1 },
+  { key: 'last-month', label: 'Last month', back: 1, span: 1 },
+  { key: 'last-3-months', label: 'Last 3 months', back: 2, span: 3 },
+] as const
+
+const monthStart = (month: string) => `${month}-01`
+// Date.UTC(year, monthNumber, 0) is the last day of monthNumber — the one
+// place a Date appears, and it is built from the viewer's own calendar
+// (the preset), never from ledger data.
+const monthEnd = (month: string) =>
+  `${month}-${String(
+    new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate(),
+  ).padStart(2, '0')}`
+
+function PeriodChips({
+  from,
+  to,
+  onPick,
+}: {
+  from: string
+  to: string
+  onPick: (bounds: { from: string; to: string }) => void
+}) {
+  const current = currentUtcMonth()
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {PERIOD_PRESETS.map((preset) => {
+        const start = monthStart(addMonths(current, -preset.back))
+        const end = monthEnd(
+          preset.back === 0 ? current : addMonths(current, -preset.back + preset.span - 1),
+        )
+        const active = from === start && to === end
+        return (
+          <Button
+            key={preset.key}
+            size="sm"
+            variant={active ? 'default' : 'outline'}
+            aria-pressed={active}
+            onClick={() => onPick(active ? { from: '', to: '' } : { from: start, to: end })}
+          >
+            {preset.label}
+          </Button>
+        )
+      })}
+    </div>
+  )
+}
+
 // The ledger as a shadcn data table over TanStack Table (core row model
 // only: ordering and filtering are the server's). The full result renders in
 // one pass for now — when the ledger grows past that, virtualize the rows
@@ -464,6 +522,16 @@ function TransactionsTable({
   onDelete: (entry: TransactionEntry) => void
 }) {
   const dateFormat = useDateFormat()
+  // One scale for the visible ledger (lib/rail.ts): the bars answer "how
+  // does this compare to the rest of what I'm looking at", so they rescale
+  // with the filters rather than against an absolute the screen never
+  // shows. A Transfer leg or Balance Adjustment marks the axis instead.
+  const bars = railBars(
+    transactions.map((entry) => ({
+      amount: entry.amount,
+      neutral: entry.kind === 'transfer' || entry.kind === 'balance_adjustment',
+    })),
+  )
   const columns: ColumnDef<TransactionEntry>[] = [
     {
       accessorKey: 'date',
@@ -548,6 +616,18 @@ function TransactionsTable({
             }`}
           >
             {shown > 0 && kind !== 'transfer' ? `+${formatted}` : formatted}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'rail',
+      header: () => <span className="sr-only">Size relative to the visible ledger</span>,
+      cell: ({ row }) => {
+        const bar = bars[row.index]
+        return bar === undefined ? null : (
+          <span className="flex justify-end pl-2">
+            <MagBar bar={bar} />
           </span>
         )
       },
