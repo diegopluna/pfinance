@@ -13,6 +13,8 @@ import { useHousehold } from '@/api/use-me'
 import { useTransactions } from '@/api/use-transactions'
 import { railBars, type RailBar } from '@/charts/rail'
 import { Amount } from '@/components/amount'
+import { Chevron } from '@/components/chevron'
+import { CleanupSheet } from '@/components/cleanup-sheet'
 import { IconButton } from '@/components/icon-button'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { QuickAddSheet } from '@/components/quick-add-sheet'
@@ -22,6 +24,7 @@ import { TransferForm } from '@/components/transfer-form'
 import { Touchable } from '@/components/touchable'
 import { Badge, Body } from '@/components/type'
 import { storedServerUrl } from '@/connect/store'
+import { cleanupQueue, type CleanupEntry } from '@/ledger/cleanup'
 import { formatCalendarDate, todayCalendarString } from '@/ledger/dates'
 import { categoryLabel, kindBadge, ledgerAmount } from '@/ledger/display'
 import {
@@ -164,6 +167,9 @@ export default function TransactionsScreen(): JSX.Element {
   const [searchOpen, setSearchOpen] = useState(false)
   const [moreFilters, setMoreFilters] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  // The cleanup queue (issue #82), snapshotted when the sheet opens so
+  // background refetches never reshuffle it mid-triage; null = closed.
+  const [cleanup, setCleanup] = useState<CleanupEntry[] | null>(null)
   // The in-place form's target for EDITS: tapping a row opens the full
   // form; a Transfer leg opens the Transfer form — the pair can never
   // drift, so legs are only edited through their Transfer (issue #81).
@@ -187,6 +193,11 @@ export default function TransactionsScreen(): JSX.Element {
   // The query the filters compose is the cache key, so each combination
   // caches separately and the list holds while a new one loads.
   const transactions = useTransactions(transactionQuery(filters, todayCalendarString()))
+  // Every uncategorized row, unbounded by the visible filters — the couch
+  // pile is the whole ledger's, not this month's (issue #82).
+  const uncategorized = useTransactions(
+    transactionQuery({ ...noFilters, categoryId: UNCATEGORIZED }, todayCalendarString()),
+  )
 
   if (apiUrl === null) return <Redirect href="/" />
 
@@ -252,6 +263,7 @@ export default function TransactionsScreen(): JSX.Element {
   }
 
   const entries = transactions.data?.transactions ?? []
+  const pending = cleanupQueue(uncategorized.data?.transactions ?? [])
   // One scale for the visible ledger: the bars answer "how does this
   // compare to the rest of what I'm looking at", so they rescale with the
   // filters rather than against some absolute the screen never shows.
@@ -342,6 +354,21 @@ export default function TransactionsScreen(): JSX.Element {
           </>
         )}
       </View>
+      {pending.length > 0 && (
+        <Touchable
+          feedback="dim"
+          accessibilityRole="button"
+          accessibilityLabel={`Clean up ${pending.length} uncategorized transactions`}
+          onPress={() => setCleanup(pending)}
+          className="flex-row items-center gap-3 rounded-xl bg-surface-secondary px-4 py-3"
+        >
+          <Body className="flex-1">Clean up</Body>
+          <Body size="sm" tone="muted">
+            {pending.length} uncategorized
+          </Body>
+          <Chevron direction="right" size={14} />
+        </Touchable>
+      )}
       {error !== null || !loaded || transactions.data === undefined ? (
         <ListStatus error={error} retry={retry} />
       ) : entries.length === 0 ? (
@@ -392,6 +419,15 @@ export default function TransactionsScreen(): JSX.Element {
         accounts={accountChoices}
         categories={categoryChoices.filter((choice) => choice.value !== UNCATEGORIZED)}
         currency={currency}
+      />
+      <CleanupSheet
+        open={cleanup !== null}
+        onClose={() => setCleanup(null)}
+        queue={cleanup ?? []}
+        accountNames={accountNames}
+        categories={categoryChoices.filter((choice) => choice.value !== UNCATEGORIZED)}
+        currency={currency}
+        dateFormat={dateFormat}
       />
     </ListScreen>
   )
