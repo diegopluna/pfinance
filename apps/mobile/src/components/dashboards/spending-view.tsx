@@ -2,6 +2,7 @@ import { formatAmount } from '@pfinance/currency'
 import { useState, type JSX } from 'react'
 import { ScrollView, View } from 'react-native'
 import { queryFailure } from '@/api/errors'
+import { oldestUpdatedAt } from '@/api/staleness'
 import { useSpending } from '@/api/use-dashboards'
 import { useHousehold } from '@/api/use-me'
 import { addMonths, currentUtcMonth, monthLabel } from '@/charts/months'
@@ -9,6 +10,7 @@ import { Figure } from '@/components/amount'
 import { SpendingBars } from '@/components/charts/spending-bars'
 import { Chevron } from '@/components/chevron'
 import { ListStatus } from '@/components/list-screen'
+import { OfflineBanner } from '@/components/offline-banner'
 import { Touchable } from '@/components/touchable'
 import { Body, Eyebrow } from '@/components/type'
 
@@ -37,8 +39,11 @@ export function SpendingView(): JSX.Element {
   return (
     <>
       <Stepper month={month} onStep={(delta) => setMonth((current) => addMonths(current, delta))} />
-      {error !== null || !loaded || spending.data === undefined ? (
-        <ListStatus error={error} retry={retry} />
+      {error !== null && loaded && (
+        <OfflineBanner updatedAt={oldestUpdatedAt([me, spending])} retry={retry} />
+      )}
+      {!loaded || spending.data === undefined ? (
+        <ListStatus error={loaded ? null : error} retry={retry} />
       ) : slices.length === 0 ? (
         <ListStatus
           error={null}

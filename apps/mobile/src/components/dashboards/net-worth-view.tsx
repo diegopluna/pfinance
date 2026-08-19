@@ -3,11 +3,13 @@ import type { InferResponseType } from 'hono/client'
 import type { JSX } from 'react'
 import { ScrollView, View } from 'react-native'
 import { queryFailure } from '@/api/errors'
+import { oldestUpdatedAt } from '@/api/staleness'
 import { useNetWorth } from '@/api/use-dashboards'
 import { useHousehold } from '@/api/use-me'
 import { monthLabel } from '@/charts/months'
 import { NetWorthChart } from '@/components/charts/net-worth-chart'
 import { ListStatus } from '@/components/list-screen'
+import { OfflineBanner } from '@/components/offline-banner'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
 import { Body } from '@/components/type'
 
@@ -30,8 +32,11 @@ export function NetWorthView(): JSX.Element {
 
   return (
     <>
-      {error !== null || !loaded || netWorth.data === undefined ? (
-        <ListStatus error={error} retry={retry} />
+      {error !== null && loaded && (
+        <OfflineBanner updatedAt={oldestUpdatedAt([me, netWorth])} retry={retry} />
+      )}
+      {!loaded || netWorth.data === undefined ? (
+        <ListStatus error={loaded ? null : error} retry={retry} />
       ) : netWorth.data.series.length === 0 ? (
         <ListStatus
           error={null}

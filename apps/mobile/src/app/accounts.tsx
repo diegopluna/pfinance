@@ -6,6 +6,7 @@ import type { InferResponseType } from 'hono/client'
 import { useState, type JSX } from 'react'
 import { FlatList, View } from 'react-native'
 import { queryFailure } from '@/api/errors'
+import { oldestUpdatedAt } from '@/api/staleness'
 import { useAccounts } from '@/api/use-accounts'
 import { useHousehold } from '@/api/use-me'
 import { railBars, type RailBar } from '@/charts/rail'
@@ -13,6 +14,7 @@ import { AdjustBalanceSheet } from '@/components/adjust-balance-sheet'
 import { Figure } from '@/components/amount'
 import { Chevron } from '@/components/chevron'
 import { ListScreen, ListStatus } from '@/components/list-screen'
+import { OfflineBanner } from '@/components/offline-banner'
 import { MagBar } from '@/components/rail'
 import { Touchable } from '@/components/touchable'
 import { Badge, Body } from '@/components/type'
@@ -86,8 +88,11 @@ export default function AccountsScreen(): JSX.Element {
 
   return (
     <ListScreen title="Accounts" eyebrow="Balances">
-      {error !== null || !loaded || accounts.data === undefined ? (
-        <ListStatus error={error} retry={retry} />
+      {error !== null && loaded && (
+        <OfflineBanner updatedAt={oldestUpdatedAt([me, accounts])} retry={retry} />
+      )}
+      {!loaded || accounts.data === undefined ? (
+        <ListStatus error={loaded ? null : error} retry={retry} />
       ) : entries.length === 0 ? (
         <ListStatus
           error={null}

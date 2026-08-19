@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
 import { focusManager, MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { AppState, type AppStateStatus } from 'react-native'
@@ -24,6 +26,9 @@ export const createQueryClient = (): QueryClient =>
     defaultOptions: {
       queries: {
         retry: (count, failure) => !isUnauthorized(failure) && count < 2,
+        // Cached rows must outlive the persister's window or a restart
+        // would garbage-collect what it just restored (issue #83).
+        gcTime: OFFLINE_CACHE_MAX_AGE,
         // A household checks its numbers, switches away, and comes back —
         // refetchOnWindowFocus needs the React Native bridge below to mean
         // anything, and with it the ledger is current on every return.
@@ -34,6 +39,28 @@ export const createQueryClient = (): QueryClient =>
     queryCache: new QueryCache({ onError: signInOnUnauthorized }),
     mutationCache: new MutationCache({ onError: signInOnUnauthorized }),
   })
+
+// Offline reads (issue #83, ADR 0007): the query cache persists to device
+// storage so the last-known dashboards, Accounts and Transactions render
+// with no connectivity — reads may serve from cache. Mutations are
+// deliberately NEVER dehydrated: a persisted write replayed later could
+// land on a Server whose apiVersion changed while the phone was offline,
+// which is exactly the queue ADR 0007 forbids. Note also what is absent:
+// no NetInfo/onlineManager wiring — with it, TanStack would PAUSE offline
+// mutations into a silent retry queue; without it every write fires,
+// fails fast, and speaks (api-client's ConnectionError).
+export const OFFLINE_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 14
+
+export const queryPersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'pfinance-query-cache',
+})
+
+export const persistOptions = {
+  persister: queryPersister,
+  maxAge: OFFLINE_CACHE_MAX_AGE,
+  dehydrateOptions: { shouldDehydrateMutation: () => false },
+}
 
 // React Query's focus tracking is written for a browser; on a phone the
 // equivalent signal is the app returning to the foreground.

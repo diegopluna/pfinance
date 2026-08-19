@@ -1,6 +1,6 @@
 import type { ClientResponse } from 'hono/client'
 import { expect, test } from 'vite-plus/test'
-import { ApiError, call, isForbidden } from '../src/index.ts'
+import { ApiError, call, isForbidden, ConnectionError } from '../src/index.ts'
 
 // --- The shared client error seam (@pfinance/api-client) ---
 // call() is the one place the ok-check, the server's uniform { error } body,
@@ -47,4 +47,12 @@ test('isForbidden reads exactly the 403 ApiError', () => {
   expect(isForbidden(new ApiError('Not found', 404))).toBe(false)
   expect(isForbidden(new Error('forbidden'))).toBe(false)
   expect(isForbidden(undefined)).toBe(false)
+})
+
+test('a request that never reaches the server fails in the designed voice', async () => {
+  const dead = Promise.reject(new TypeError('Network request failed'))
+  await expect(call(dead as never, 'Could not save.')).rejects.toThrow(
+    'Needs a connection — the Server was unreachable.',
+  )
+  await expect(call(dead as never)).rejects.toBeInstanceOf(ConnectionError)
 })
