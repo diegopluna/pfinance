@@ -1,7 +1,8 @@
 import { getCurrency, isSupportedCurrency } from '@pfinance/currency'
+import * as LocalAuthentication from 'expo-local-authentication'
 import { useQueryClient } from '@tanstack/react-query'
 import { Redirect, router } from 'expo-router'
-import { Button } from 'heroui-native'
+import { Button, Switch } from 'heroui-native'
 import { useState, type JSX, type ReactNode } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import { useMe } from '@/api/use-me'
@@ -9,6 +10,7 @@ import { authClientFor } from '@/auth/client'
 import { ListScreen } from '@/components/list-screen'
 import { Body, SectionTitle } from '@/components/type'
 import { queryPersister } from '@/api/query-client'
+import { appLockEnabled, rememberAppLock } from '@/shell/lock-store'
 import { forgetServerUrl, storedServerUrl } from '@/connect/store'
 
 // The settings shell (issue #77): the connection is never a black box — the
@@ -33,6 +35,28 @@ export default function SettingsScreen(): JSX.Element {
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lockEnabled, setLockEnabled] = useState(appLockEnabled)
+  const [lockError, setLockError] = useState<string | null>(null)
+
+  // Flipping the switch EITHER WAY authenticates first (issue #84):
+  // turning the lock off is exactly what a phone thief would want to do.
+  // A device with no passcode or biometrics has nothing to lock with, so
+  // the switch stays where it was and says why.
+  const toggleLock = async () => {
+    setLockError(null)
+    const level = await LocalAuthentication.getEnrolledLevelAsync()
+    if (level === LocalAuthentication.SecurityLevel.NONE) {
+      setLockError('Set a device passcode or Face ID on this phone first.')
+      return
+    }
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: lockEnabled ? 'Turn off the app lock' : 'Turn on the app lock',
+    })
+    if (!result.success) return
+    const next = !lockEnabled
+    rememberAppLock(next)
+    setLockEnabled(next)
+  }
 
   if (apiUrl === null) return <Redirect href="/" />
 
@@ -85,6 +109,25 @@ export default function SettingsScreen(): JSX.Element {
               </Body>
             </Section>
           )}
+
+          <Section label="App lock">
+            <View className="flex-row items-center gap-3">
+              <Body className="flex-1">Require Face ID or passcode</Body>
+              <Switch
+                isSelected={lockEnabled}
+                onSelectedChange={() => void toggleLock()}
+                aria-label="Require Face ID or passcode"
+              />
+            </View>
+            <Body size="sm" tone="muted">
+              Asks again whenever the app opens or comes back from the background.
+            </Body>
+            {lockError !== null && (
+              <Body size="sm" tone="danger">
+                {lockError}
+              </Body>
+            )}
+          </Section>
 
           <View className="gap-3 border-separator border-t pt-6">
             <Body size="sm" tone="muted">

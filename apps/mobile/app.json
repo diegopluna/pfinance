@@ -39,7 +39,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "pfinance uses Face ID to unlock the app when the app lock is on."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
