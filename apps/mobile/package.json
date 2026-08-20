@@ -4,9 +4,11 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start": "expo start --dev-client",
+    "ios": "expo start --dev-client --ios",
+    "android": "expo start --dev-client --android",
+    "run:ios": "expo run:ios",
+    "run:android": "expo run:android",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
     "expo": "~57.0.0",
     "expo-camera": "~57.0.3",
     "expo-constants": "~57.0.2",
+    "expo-dev-client": "~57.0.11",
     "expo-font": "~57.0.1",
     "expo-linking": "~57.0.1",
     "expo-local-authentication": "~57.0.2",
@@ -51,5 +54,12 @@
   "devDependencies": {
     "@types/react": "~19.2.15",
     "typescript": "catalog:"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript"
+      ]
+    }
   }
 }

@@ -8,14 +8,33 @@ Scaffolded with `create-heroui-native-app` — Expo Router + HeroUI Native,
 styled via Uniwind + Tailwind v4 (independent of the web-only `@pfinance/ui`
 package). Metro picks up the pnpm workspace automatically.
 
-## Running it
+## Running it — development builds, not Expo Go
 
-From this directory (or with `pnpm --filter mobile run <script>`):
+The app runs in a **development build** (expo-dev-client). Expo Go cannot
+run it: the config plugins in app.json (the camera permission string, the
+Face ID entitlement for the app lock) and Face ID itself only exist in a
+build that includes them. The native projects are generated, never
+committed (/ios and /android are gitignored — continuous native
+generation).
+
+**Once per machine/device, build the dev client:**
 
 ```bash
-pnpm start   # Metro bundler
-pnpm ios     # iOS simulator
-pnpm android # Android emulator
+pnpm run:ios      # local build → iOS simulator (needs Xcode)
+pnpm run:android  # local build → Android emulator (needs Android Studio)
+# or, without local toolchains, on EAS:
+npx eas build --profile development --platform ios
+```
+
+Rebuild it only when native config changes — a new native module, a
+changed plugin, an SDK upgrade. JS-only changes never need it.
+
+**Every day after that:**
+
+```bash
+pnpm start   # Metro, serving the dev client
+pnpm ios     # …and open it on the iOS simulator
+pnpm android # …and open it on the Android emulator
 ```
 
 ## What's here so far
