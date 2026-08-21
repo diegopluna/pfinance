@@ -42,9 +42,6 @@ jobs:
           cache: true
       - run: vp install
       - run: vp check
-      - name: Docs build
-        run: vp run build
-        working-directory: apps/docs
       - name: Integration tests
         run: vp test
         env:
@@ -81,7 +78,6 @@ jobs:
           PROD_STAGE: ${{ github.event_name == 'push' && github.ref_name || '' }}
           WEB_DOMAIN: ${{ github.event_name == 'push' && vars.WEB_DOMAIN || '' }}
           API_DOMAIN: ${{ github.event_name == 'push' && vars.API_DOMAIN || '' }}
-          DOCS_DOMAIN: ${{ github.event_name == 'push' && vars.DOCS_DOMAIN || '' }}
   cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest

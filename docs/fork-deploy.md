@@ -2,10 +2,10 @@
 
 The deploy path contains no hardcoded repository or account values: a fork
 deploys without editing source. This page records the defaults and the knobs
-that override them (issue #20). The user-facing presentation lives in the
-docs site (issue #21): `apps/docs/src/content/docs/guides/quickstart.md`,
-`reference/environment-variables.md`, and `guides/ci-pipeline.md` — when a
-default or knob changes, update those pages alongside this one.
+that override them (issue #20). The user-facing presentation lives beside it
+(issue #21): `docs/quickstart.md`, `docs/environment-variables.md`, and
+`docs/ci-pipeline.md` — when a default or knob changes, update those pages
+alongside this one.
 
 ## Hosting only (no CI, no previews)
 
@@ -30,11 +30,11 @@ affect hosting.
 | PR preview comment     | Skipped (with a logged warning if `PULL_REQUEST` is set but no repository is detectable) | Set `PULL_REQUEST=<pr-number>` and provide a GitHub token (`GITHUB_TOKEN` / `GITHUB_ACCESS_TOKEN`, or `alchemy login`) |
 | Alchemy auth profile   | `default`                                                                                | `ALCHEMY_PROFILE=<name>`, or `--profile <name>` on any `alchemy` command (the flag wins)                               |
 | Trusted browser origin | Unset — the API trusts `*.workers.dev` broadly (fine for dev/previews)                   | `WEB_ORIGIN=https://your-web-host` on production deploys (defaults to `https://$WEB_DOMAIN` when that is set)          |
-| Production URLs        | Unset — each worker serves on its generated `*.workers.dev` URL                          | `WEB_DOMAIN` / `API_DOMAIN` / `DOCS_DOMAIN`, each a hostname attached to its worker as a Cloudflare custom domain      |
+| Production URLs        | Unset — each worker serves on its generated `*.workers.dev` URL                          | `WEB_DOMAIN` / `API_DOMAIN`, each a hostname attached to its worker as a Cloudflare custom domain                      |
 | Production stage       | `prod` — the stage the `*_DOMAIN` variables are allowed on                               | `PROD_STAGE=<stage>` (CI sets it to the branch name on push deploys, for CI-hosted production via Actions variables)   |
 | Deploy stage           | None — always passed explicitly                                                          | `--stage <name>` (`prod`, `pr-N` previews, `test-*` for the integration suite)                                         |
 
-The three `*_DOMAIN` variables set a worker's custom domain in
+The two `*_DOMAIN` variables set a worker's custom domain in
 `alchemy.run.ts` — Alchemy manages the DNS record and edge certificate, and
 infers the Cloudflare zone from the hostname, so the domain's zone must
 already exist in the deploying account. When set, `https://<domain>` becomes
