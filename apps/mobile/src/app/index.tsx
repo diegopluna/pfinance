@@ -14,7 +14,7 @@ import { launchTarget } from '@/shell/route'
 // so the gate must not re-fire then.
 let launchGateDone = false
 
-// The connect entry (issue #76): pfinance is self-hosted, so before anything
+// The connect entry (issue #76): Goblin is self-hosted, so before anything
 // else the app must be pointed at a Server — typed by hand or scanned from
 // the QR code the web app shows under Settings. Both paths land on /status,
 // which runs the shared probe.
@@ -41,7 +41,7 @@ export default function ConnectScreen(): JSX.Element {
       <View className="gap-2.5">
         <Title size="lg">Connect to your Server</Title>
         <Body tone="muted">
-          pfinance is self-hosted: this app talks to your own Server and nobody else&apos;s.
+          Goblin is self-hosted: this app talks to your own Server and nobody else&apos;s.
         </Body>
       </View>
 

@@ -36,7 +36,7 @@ import { useMe } from '@/hooks/use-me'
 import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/accounts')({
-  head: () => ({ meta: [{ title: 'Accounts · pfinance' }] }),
+  head: () => ({ meta: [{ title: 'Accounts · Goblin' }] }),
   component: AccountsScreen,
 })
 

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "pfinance",
-    "slug": "pfinance",
+    "name": "Goblin",
+    "slug": "goblin",
     "version": "0.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "pfinance",
+    "scheme": "goblin",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.diegopluna.pfinance",
+      "bundleIdentifier": "com.diegopluna.goblin",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -21,14 +21,14 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
-      "package": "com.diegopluna.pfinance"
+      "package": "com.diegopluna.goblin"
     },
     "plugins": [
       "expo-router",
       [
         "expo-camera",
         {
-          "cameraPermission": "pfinance uses the camera to scan your Server's pairing QR code."
+          "cameraPermission": "Goblin uses the camera to scan your Server's pairing QR code."
         }
       ],
       [
@@ -43,7 +43,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "pfinance uses Face ID to unlock the app when the app lock is on."
+          "faceIDPermission": "Goblin uses Face ID to unlock the app when the app lock is on."
         }
       ]
     ],
@@ -52,10 +52,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "73bb7f81-87d6-47da-b15f-d95e2af6d924"
-      }
+      "router": {}
     },
     "owner": "diegopluna"
   }

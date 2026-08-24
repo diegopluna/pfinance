@@ -11,7 +11,7 @@ export const supportedApiVersions: SupportedApiVersions = {
   maxApiVersion: 1,
 }
 
-// Where "Server too old" sends the user: pfinance is fork-and-deploy, so the
+// Where "Server too old" sends the user: Goblin is fork-and-deploy, so the
 // one URL that exists for every install is the canonical repository. Its
 // "Host your own" section links on to the quickstart that walks through
 // pulling and redeploying.
@@ -49,13 +49,13 @@ export const connectStateContent = (state: ConnectionState): ConnectStateContent
       }
     case 'not-a-server':
       return {
-        title: 'Not a pfinance Server',
-        body: 'Something answered, but it isn’t pfinance. Enter your Server’s address — or your web app’s address, which also works.',
+        title: 'Not a Goblin Server',
+        body: 'Something answered, but it isn’t Goblin. Enter your Server’s address — or your web app’s address, which also works.',
       }
     case 'server-too-old':
       return {
         title: 'Your Server needs updating',
-        body: 'This app needs a newer Server. Pull the latest pfinance and redeploy — the self-hosting guide walks through it.',
+        body: 'This app needs a newer Server. Pull the latest Goblin and redeploy — the self-hosting guide walks through it.',
         detail: versionDetail(state.meta),
         docsUrl: SELF_HOSTING_DOCS_URL,
       }

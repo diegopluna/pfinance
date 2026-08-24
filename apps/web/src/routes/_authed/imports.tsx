@@ -43,7 +43,7 @@ import { useImportMutations, useImportPreview, useImports } from '@/hooks/use-im
 import { useMe } from '@/hooks/use-me'
 
 export const Route = createFileRoute('/_authed/imports')({
-  head: () => ({ meta: [{ title: 'Imports · pfinance' }] }),
+  head: () => ({ meta: [{ title: 'Imports · Goblin' }] }),
   component: ImportsScreen,
 })
 
