@@ -13,6 +13,11 @@
 const apiUrl = (process.env.DEMO_API_URL ?? '').replace(/\/+$/, '')
 const email = process.env.DEMO_EMAIL ?? 'demo@example.com'
 const password = process.env.DEMO_PASSWORD ?? 'try-the-demo'
+// The Origin the requests present. Better Auth's CSRF check rejects
+// origin-less requests, so one is always sent: on a WEB_ORIGIN-pinned demo
+// (custom domains) this must be that exact origin; unpinned stages trust
+// any *.workers.dev origin, so the API's own falls out as the default.
+const origin = process.env.DEMO_WEB_ORIGIN || apiUrl
 
 if (apiUrl === '') {
   console.error(
@@ -29,6 +34,7 @@ const request = async (method, path, body) => {
   const response = await fetch(apiUrl + path, {
     method,
     headers: {
+      origin,
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(cookie === '' ? {} : { cookie }),
     },
@@ -45,7 +51,7 @@ const request = async (method, path, body) => {
 
 const signUp = await fetch(apiUrl + '/api/auth/sign-up/email', {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', origin },
   body: JSON.stringify({
     name: 'Demo',
     email,

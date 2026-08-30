@@ -71,7 +71,7 @@ export const withCookie = (cookie: string) => HttpClientRequest.setHeader('cooki
 // the server-side Expo plugin promotes it to the Origin the CSRF check
 // validates. The literal scheme here is the test's own source of truth for
 // what the server must trust (issue #75).
-export const nativeOrigin = HttpClientRequest.setHeader('expo-origin', 'pfinance://')
+export const nativeOrigin = HttpClientRequest.setHeader('expo-origin', 'goblin://')
 
 export const signUpRequest = (
   apiUrl: string,

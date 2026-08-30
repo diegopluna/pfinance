@@ -10,12 +10,14 @@ export const trustedOrigins = (env: { WEB_ORIGIN: string }) =>
     ? ['http://localhost:3000', env.WEB_ORIGIN]
     : ['http://localhost:3000', 'https://*.workers.dev']
 
-// The mobile app's custom URL scheme (issue #75). The future Expo app must
-// register this exact scheme. It joins Better Auth's trustedOrigins in
-// auth.ts but deliberately NOT trustedOrigins() above: that list also drives
-// CORS reflection (index.ts), and the CORS surface must stay browser-only —
-// a browser never legitimately sends a custom-scheme Origin.
-export const appScheme = 'pfinance://'
+// The mobile app's custom URL scheme (issue #75) — `goblin`, matching the
+// app.json scheme since the app-level rename (PR #111; the /api/meta wire id
+// stays pfinance, this is an app identifier). It joins Better Auth's
+// trustedOrigins in auth.ts but deliberately NOT trustedOrigins() above:
+// that list also drives CORS reflection (index.ts), and the CORS surface
+// must stay browser-only — a browser never legitimately sends a
+// custom-scheme Origin.
+export const appScheme = 'goblin://'
 
 export const matchesTrustedOrigin = (origin: string, patterns: string[]) =>
   patterns.some((pattern) =>

@@ -4,10 +4,11 @@
 // only the URL and the shared credentials — "Try the demo" runs the same
 // probe → sign-in path as any other Server, just with these values.
 //
-// The URL is stamped after the demo stage's first deploy (it is that
-// deployment's workers.dev address). While it is empty, the connect screen
-// simply doesn't offer the demo — a dead button would be worse than none.
-export const DEMO_SERVER_URL = ''
+// The demo API's custom domain — stable across the nightly destroy →
+// recreate cycle, which a workers.dev URL is not (its worker-name suffix is
+// per-create). Were this ever empty again, the connect screen simply
+// wouldn't offer the demo — a dead button would be worse than none.
+export const DEMO_SERVER_URL: string = 'https://goblin-demo-api.dpeter.dev'
 
 export const DEMO_EMAIL = 'demo@example.com'
 export const DEMO_PASSWORD = 'try-the-demo'
