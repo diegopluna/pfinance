@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { Button, FieldError, Input, Label, TextField } from 'heroui-native'
-import { useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { Text, View } from 'react-native'
 import { authClientFor } from '@/auth/client'
 import { Screen } from '@/components/screen'
 import { Body, Title } from '@/components/type'
+import { DEMO_EMAIL, DEMO_PASSWORD } from '@/connect/demo'
 import { rememberServerUrl, storedServerUrl } from '@/connect/store'
 
 // Real sign-in (issue #77): the same email+password as the web, against the
@@ -14,13 +15,28 @@ import { rememberServerUrl, storedServerUrl } from '@/connect/store'
 // auth client puts the session cookie in the device secure store; remembering
 // the Server only on success is what makes this Server the app's connection.
 export default function SignInScreen(): JSX.Element {
-  const { apiUrl: probed } = useLocalSearchParams<{ apiUrl?: string }>()
+  const { apiUrl: probed, demo } = useLocalSearchParams<{ apiUrl?: string; demo?: string }>()
   const apiUrl = probed ?? storedServerUrl()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  // The demo path (issue #85) arrives with the shared credentials prefilled
+  // and submits itself once below; the fields stay real and editable, so a
+  // failed auto-attempt degrades into the ordinary sign-in screen.
+  const isDemo = demo === '1'
+  const [email, setEmail] = useState(isDemo ? DEMO_EMAIL : '')
+  const [password, setPassword] = useState(isDemo ? DEMO_PASSWORD : '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  // The demo's one auto-submit, after the first render with a Server in
+  // hand. A ref to the submit closure keeps the hook above the early
+  // return; the once-guard keeps a failed attempt from looping.
+  const submitRef = useRef<(() => Promise<void>) | null>(null)
+  const autoSubmitted = useRef(false)
+  useEffect(() => {
+    if (!isDemo || autoSubmitted.current || apiUrl === null || apiUrl === '') return
+    autoSubmitted.current = true
+    void submitRef.current?.()
+  }, [isDemo, apiUrl])
 
   // Only reachable with a Server in hand (from /status or the launch gate).
   if (apiUrl === null || apiUrl === '') return <Redirect href="/" />
@@ -54,6 +70,7 @@ export default function SignInScreen(): JSX.Element {
     if (router.canDismiss()) router.dismissAll()
     router.replace('/home')
   }
+  submitRef.current = submit
 
   return (
     <Screen>

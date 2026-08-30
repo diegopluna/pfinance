@@ -1,0 +1,46 @@
+name: Demo reset
+
+# The demo Server (issue #85, docs/demo-server.md): destroy → deploy → seed
+# nightly, so the sample Household is fresh every morning no matter what
+# visitors did to it — writes, renames, even a changed demo password. The
+# stage's workers.dev URLs are name-derived and survive the cycle, so the
+# URL embedded in the mobile app stays valid.
+on:
+  schedule:
+    # 06:00 UTC — overnight for the Americas and Europe.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp install
+      - name: Destroy demo stage
+        # The first ever run has nothing to destroy; that's fine.
+        continue-on-error: true
+        run: vpx alchemy destroy --stage demo --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy demo stage
+        run: vpx alchemy deploy --stage demo --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Seed the demo Household
+        # DEMO_API_URL is a repository Actions variable, set once after the
+        # first demo deploy from that deploy's printed apiUrl — the script
+        # fails with instructions while it is unset (docs/demo-server.md).
+        run: node scripts/seed-demo.mjs
+        env:
+          DEMO_API_URL: ${{ vars.DEMO_API_URL }}
