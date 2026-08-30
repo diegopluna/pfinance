@@ -11,7 +11,7 @@ import * as SecureStore from 'expo-secure-store'
 // The base URL is a runtime value — whichever Server the user connected —
 // so this is a factory, not a module-level client. Memoized on the URL: the
 // app holds one Server at a time, and the client caches session state.
-const scheme = 'pfinance' // app.json's scheme; getOrigin() turns it into pfinance://
+const scheme = 'goblin' // app.json's scheme; getOrigin() turns it into goblin://
 
 const buildClient = (apiUrl: string) =>
   createAuthClient({

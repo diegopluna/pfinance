@@ -53,7 +53,7 @@ export const OFFLINE_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 14
 
 export const queryPersister = createAsyncStoragePersister({
   storage: AsyncStorage,
-  key: 'pfinance-query-cache',
+  key: 'goblin-query-cache',
 })
 
 export const persistOptions = {

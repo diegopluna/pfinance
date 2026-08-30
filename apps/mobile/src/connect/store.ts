@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store'
 // client keeps there. Written only after a successful sign-in — a probe that
 // merely reached a Server doesn't bind the app to it — and cleared by
 // sign-out and switch-Server, which return the app to the connect flow.
-const SERVER_URL_KEY = 'pfinance_server_url'
+const SERVER_URL_KEY = 'goblin_server_url'
 
 export const storedServerUrl = (): string | null => SecureStore.getItem(SERVER_URL_KEY)
 
