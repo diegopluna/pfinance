@@ -8,7 +8,7 @@
 // recreate cycle, which a workers.dev URL is not (its worker-name suffix is
 // per-create). Were this ever empty again, the connect screen simply
 // wouldn't offer the demo — a dead button would be worse than none.
-export const DEMO_SERVER_URL: string = 'https://goblin-demo-api.dpeter.dev'
+export const DEMO_SERVER_URL: string = 'https://pfinance-demo-api.dpeter.dev'
 
 export const DEMO_EMAIL = 'demo@example.com'
 export const DEMO_PASSWORD = 'try-the-demo'

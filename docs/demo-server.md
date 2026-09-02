@@ -18,7 +18,7 @@ Server is configured in the app.
   carry a per-create suffix and do NOT survive destroy → recreate (verified
   empirically), so the URL the mobile app embeds must be a custom domain.
   The demo deploy passes `WEB_DOMAIN` / `API_DOMAIN` (this repo:
-  `goblin-demo.dpeter.dev` / `goblin-demo-api.dpeter.dev`) with
+  `pfinance-demo.dpeter.dev` / `pfinance-demo-api.dpeter.dev`) with
   `PROD_STAGE=demo` to satisfy the stack's production-stage guard; Alchemy
   reattaches the hostnames — DNS record and certificate — to the fresh
   workers on every cycle. Setting `WEB_DOMAIN` also pins `WEB_ORIGIN`, so
@@ -47,16 +47,16 @@ Server is configured in the app.
 
    ```sh
    PROD_STAGE=demo \
-   WEB_DOMAIN=goblin-demo.dpeter.dev \
-   API_DOMAIN=goblin-demo-api.dpeter.dev \
+   WEB_DOMAIN=pfinance-demo.dpeter.dev \
+   API_DOMAIN=pfinance-demo-api.dpeter.dev \
      vpx alchemy deploy --stage demo --yes
    ```
 
 2. Seed it:
 
    ```sh
-   DEMO_API_URL=https://goblin-demo-api.dpeter.dev \
-   DEMO_WEB_ORIGIN=https://goblin-demo.dpeter.dev \
+   DEMO_API_URL=https://pfinance-demo-api.dpeter.dev \
+   DEMO_WEB_ORIGIN=https://pfinance-demo.dpeter.dev \
      node scripts/seed-demo.mjs
    ```
 
