@@ -5,7 +5,7 @@ design project has no motion spec; this is the one both clients are built
 to until it does.
 
 The direction is Emil Kowalski's: the animations in Sonner and Vaul, and
-the principles behind them. Motion in Goblin exists to make a change feel
+the principles behind them. Motion in pfinance exists to make a change feel
 caused — a button feels pressed, a surface arrives from where it was
 summoned, a number rolls to its next value — and to be over before anyone
 has to wait for it. Nothing animates to be noticed. Everything animates

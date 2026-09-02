@@ -19,7 +19,7 @@ import { railBars } from '@/lib/rail'
 import { addMonths, currentUtcMonth, monthLabel } from '@/lib/month'
 
 export const Route = createFileRoute('/_authed/')({
-  head: () => ({ meta: [{ title: 'Dashboard · Goblin' }] }),
+  head: () => ({ meta: [{ title: 'Dashboard · pfinance' }] }),
   component: Dashboard,
 })
 

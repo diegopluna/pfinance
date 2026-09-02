@@ -80,7 +80,7 @@ export function AuthForm({
           </CardTitle>
           <CardDescription>
             {mode === 'sign-in'
-              ? 'Welcome back to Goblin.'
+              ? 'Welcome back to pfinance.'
               : invite
                 ? "You've been invited — create your account to join the household."
                 : "You're the first user — this sign-up claims the instance and makes you the owner."}

@@ -65,7 +65,7 @@ import { useTransactionMutations, useTransactions } from '@/hooks/use-transactio
 import { useTransferMutations } from '@/hooks/use-transfers'
 
 export const Route = createFileRoute('/_authed/transactions')({
-  head: () => ({ meta: [{ title: 'Transactions · Goblin' }] }),
+  head: () => ({ meta: [{ title: 'Transactions · pfinance' }] }),
   // ?new=true (the dashboard's "New transaction") opens the create dialog on
   // arrival; the param is consumed and stripped so refresh doesn't reopen it.
   validateSearch: (search: Record<string, unknown>) =>

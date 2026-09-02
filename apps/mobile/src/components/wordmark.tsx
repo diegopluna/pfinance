@@ -14,7 +14,7 @@ export function Wordmark(): JSX.Element {
         className="font-medium text-body text-foreground lowercase"
         style={{ letterSpacing: 0.5 }}
       >
-        goblin
+        pfinance
       </Text>
       <View className="h-[3px] w-24 flex-row">
         <View style={{ width: '50%', backgroundColor: palette.expense }} />
