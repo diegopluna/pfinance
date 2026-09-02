@@ -17,7 +17,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#171717"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
