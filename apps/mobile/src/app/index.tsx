@@ -1,10 +1,13 @@
+import * as Linking from 'expo-linking'
 import { Redirect, router } from 'expo-router'
 import { Button, Description, Input, Label, TextField } from 'heroui-native'
 import { useState, type JSX } from 'react'
-import { View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { sessionCookie } from '@/auth/client'
 import { Screen } from '@/components/screen'
-import { Body, Title } from '@/components/type'
+import { Body, SectionTitle, Title } from '@/components/type'
+import { SELF_HOSTING_DOCS_URL } from '@/connect/content'
+import { DEMO_SERVER_URL, demoConfigured } from '@/connect/demo'
 import { storedServerUrl } from '@/connect/store'
 import { launchTarget } from '@/shell/route'
 
@@ -72,6 +75,38 @@ export default function ConnectScreen(): JSX.Element {
           The QR code is in the web app, under Settings → Mobile app.
         </Body>
       </View>
+
+      {/* The demo entry (issue #85): a quiet plate that must not compete
+          with the self-hoster's primary path — Connect keeps the accent.
+          Hidden entirely while no demo Server is configured (demo.ts). */}
+      {demoConfigured() && (
+        <View className="gap-3 rounded-xl bg-surface-secondary px-4 py-3.5">
+          <View className="gap-1">
+            <SectionTitle>Just looking?</SectionTitle>
+            <Body size="sm" tone="muted">
+              The demo is a sample Household you can poke around — add entries, browse the charts.
+              It resets every night.
+            </Body>
+          </View>
+          <Button
+            variant="outline"
+            className="bg-background"
+            onPress={() =>
+              router.push({ pathname: '/status', params: { input: DEMO_SERVER_URL, demo: '1' } })
+            }
+          >
+            Try the demo
+          </Button>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(SELF_HOSTING_DOCS_URL)}
+          >
+            <Body size="sm" className="text-center text-accent">
+              Ready to own your data? Read the self-hosting guide
+            </Body>
+          </Pressable>
+        </View>
+      )}
     </Screen>
   )
 }

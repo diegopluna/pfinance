@@ -1,0 +1,56 @@
+name: Demo reset
+
+# The demo Server (issue #85, docs/demo-server.md): destroy → deploy → seed
+# nightly, so the sample Household is fresh every morning no matter what
+# visitors did to it — writes, renames, even a changed demo password.
+#
+# The stage's workers.dev URLs do NOT survive the cycle (worker names carry
+# a per-create suffix — verified empirically), so the stable address the
+# mobile app embeds is a custom domain: the DEMO_WEB_DOMAIN / DEMO_API_DOMAIN
+# repository variables ride the deploy as WEB_DOMAIN / API_DOMAIN with
+# PROD_STAGE=demo satisfying the stack's production-stage guard, and Alchemy
+# reattaches the hostnames to the fresh workers every night.
+on:
+  schedule:
+    # 06:00 UTC — overnight for the Americas and Europe.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp install
+      - name: Destroy demo stage
+        # The first ever run has nothing to destroy; that's fine.
+        continue-on-error: true
+        run: vpx alchemy destroy --stage demo --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy demo stage
+        run: vpx alchemy deploy --stage demo --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROD_STAGE: demo
+          WEB_DOMAIN: ${{ vars.DEMO_WEB_DOMAIN }}
+          API_DOMAIN: ${{ vars.DEMO_API_DOMAIN }}
+      - name: Seed the demo Household
+        # DEMO_API_URL is a repository Actions variable — the demo API's
+        # stable custom-domain URL; the script fails with instructions while
+        # it is unset (docs/demo-server.md). The Origin presented must be the
+        # pinned web origin when DEMO_WEB_DOMAIN is set.
+        run: node scripts/seed-demo.mjs
+        env:
+          DEMO_API_URL: ${{ vars.DEMO_API_URL }}
+          DEMO_WEB_ORIGIN: ${{ vars.DEMO_WEB_DOMAIN && format('https://{0}', vars.DEMO_WEB_DOMAIN) || '' }}

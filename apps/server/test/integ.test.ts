@@ -89,7 +89,7 @@ test(
     // so trusting the scheme widened no CORS surface.
     const scheme = yield* Test.executeWhenReady(
       HttpClientRequest.get(`${apiUrl}/api/meta`).pipe(
-        HttpClientRequest.setHeader('origin', 'pfinance://'),
+        HttpClientRequest.setHeader('origin', 'goblin://'),
       ),
     )
     expect(scheme.status).toBe(200)

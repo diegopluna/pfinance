@@ -27,7 +27,7 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
 // connection states (issue #73) each render as their own designed screen;
 // the copy lives in src/connect/content.ts, tested in apps/mobile/test.
 export default function StatusScreen(): JSX.Element {
-  const { input } = useLocalSearchParams<{ input?: string }>()
+  const { input, demo } = useLocalSearchParams<{ input?: string; demo?: string }>()
   const [result, setResult] = useState<ConnectionState | null>(null)
   const [attempt, setAttempt] = useState(0)
 
@@ -44,9 +44,21 @@ export default function StatusScreen(): JSX.Element {
     }
   }, [input, attempt])
 
+  // The demo path (issue #85): a connected demo Server goes straight on to
+  // the auto-signing sign-in screen — no button press between "the Server
+  // answered" and "you're in". Every non-connected state renders its normal
+  // designed screen; the demo differs only in skipping the tap.
+  const demoConnected = demo === '1' && result?.state === 'connected'
+  const demoApiUrl = demoConnected && 'apiUrl' in result ? result.apiUrl : null
+  useEffect(() => {
+    if (demoApiUrl !== null) {
+      router.replace({ pathname: '/sign-in', params: { apiUrl: demoApiUrl, demo: '1' } })
+    }
+  }, [demoApiUrl])
+
   return (
     <Screen>
-      {result === null ? (
+      {result === null || demoConnected ? (
         <Probing input={input ?? ''} />
       ) : (
         <StateScreen result={result} retry={() => setAttempt((n) => n + 1)} />
