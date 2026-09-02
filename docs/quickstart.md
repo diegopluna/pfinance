@@ -1,20 +1,17 @@
----
-title: Fork & host quickstart
-description: From a fresh Cloudflare account to a running, claimed pfinance instance.
----
+# Fork & host quickstart
 
 pfinance is forked and self-hosted: your Household's ledger runs in **your**
 Cloudflare account, deployed from **your** fork. This guide takes you from a
 fresh Cloudflare account to a running, claimed instance. No source edits are
 needed — the deploy path carries no hardcoded repository or account values.
 
-:::danger[A fresh instance is claimable by whoever reaches it first]
-Self-serve sign-up is permanently locked, with one exception: while an
-instance has **zero Users**, the first sign-up is accepted and that User
-becomes the owner of the first Household. That exception is how _you_ claim
-your deployment — but until you do, anyone who finds the URL can claim it
-instead. **Sign up immediately after deploying** (step 6).
-:::
+> [!CAUTION]
+> **A fresh instance is claimable by whoever reaches it first.** Self-serve
+> sign-up is permanently locked, with one exception: while an instance has
+> **zero Users**, the first sign-up is accepted and that User becomes the
+> owner of the first Household. That exception is how _you_ claim your
+> deployment — but until you do, anyone who finds the URL can claim it
+> instead. **Sign up immediately after deploying** (step 6).
 
 ## 1. Prerequisites
 
@@ -34,7 +31,7 @@ instead. **Sign up immediately after deploying** (step 6).
   shell afterwards, then check the install with `vp help`.
 
 Hosting does **not** require any GitHub credentials or CI setup — the
-[CI pipeline](/guides/ci-pipeline/) is optional.
+[CI pipeline](ci-pipeline.md) is optional.
 
 ## 2. Fork and clone
 
@@ -86,17 +83,15 @@ CLOUDFLARE_API_TOKEN=<your-token> CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
 ```
 
 The first deploy creates the D1 database, applies the schema migrations, and
-deploys the API worker, the web app, and this docs site. When it finishes it
-prints three URLs:
+deploys the API worker and the web app. When it finishes it prints two URLs:
 
 - `webUrl` — the app itself
 - `apiUrl` — the API worker
-- `docsUrl` — this documentation
 
 There is no session secret to manage: `BETTER_AUTH_SECRET` is minted on the
 first deploy and persisted in Alchemy's state, so it survives redeploys
 without any env var (see the
-[environment reference](/reference/environment-variables/)).
+[environment reference](environment-variables.md)).
 
 ## 6. Claim your instance immediately
 
@@ -115,11 +110,10 @@ CLOUDFLARE_API_TOKEN=<your-token> CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
   vpx alchemy destroy --stage prod --yes
 ```
 
-:::caution
-`destroy` deletes the stage's D1 database along with everything else in it.
-It is the right move on a just-deployed instance with no data of yours in it,
-and the wrong one on an instance you have been using.
-:::
+> [!WARNING]
+> `destroy` deletes the stage's D1 database along with everything else in it.
+> It is the right move on a just-deployed instance with no data of yours in
+> it, and the wrong one on an instance you have been using.
 
 ## 7. Harden for production
 
@@ -147,7 +141,6 @@ instance on stable production URLs by passing a hostname per app:
 CLOUDFLARE_API_TOKEN=<your-token> CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
   WEB_DOMAIN=pfinance.example.com \
   API_DOMAIN=api.pfinance.example.com \
-  DOCS_DOMAIN=docs.pfinance.example.com \
   vpx alchemy deploy --stage prod --yes
 ```
 
@@ -158,13 +151,12 @@ app is rebuilt against the API's new URL on the same deploy, and `WEB_ORIGIN`
 defaults to `https://$WEB_DOMAIN`, so a custom-domain deploy is
 origin-pinned without step 7's variable.
 
-All three are independent — set only the ones you want (`DOCS_DOMAIN` is
-often worth skipping). Like `WEB_ORIGIN`, pass them on every subsequent
-deploy. A deploy without them leaves already-attached domains in place
-(Alchemy treats the omitted setting as unmanaged, not as a detach), but the
-web app would be rebuilt against the API's `workers.dev` URL and the
-`WEB_ORIGIN` default would revert — so exporting the variables in the shell
-you deploy from is the safest habit.
+Both are independent — set only the ones you want. Like `WEB_ORIGIN`, pass
+them on every subsequent deploy. A deploy without them leaves
+already-attached domains in place (Alchemy treats the omitted setting as
+unmanaged, not as a detach), but the web app would be rebuilt against the
+API's `workers.dev` URL and the `WEB_ORIGIN` default would revert — so
+exporting the variables in the shell you deploy from is the safest habit.
 
 The variables only work on the production stage (`--stage prod` here): a
 custom domain attaches to exactly one worker, so any other stage deploying
@@ -172,13 +164,13 @@ with them set would pull the domain off your production instance. The deploy
 refuses with a clear error instead — if you hit it, unset the `*_DOMAIN`
 variables for that deploy. (Hosting your production from CI instead of a
 manual `prod` stage? Set them as repository Actions variables — see
-[custom domains in the CI pipeline](/guides/ci-pipeline/#custom-domains-for-a-ci-hosted-production).)
+[custom domains in the CI pipeline](ci-pipeline.md#custom-domains-for-a-ci-hosted-production).)
 
 ## Next steps
 
 - Every deploy-time knob and its default:
-  [environment reference](/reference/environment-variables/).
+  [environment reference](environment-variables.md).
 - Want per-PR preview deployments on your fork? Set up the **optional**
-  [CI pipeline](/guides/ci-pipeline/). Hosting works fine without it.
+  [CI pipeline](ci-pipeline.md). Hosting works fine without it.
 - To update your instance later, pull the latest changes and run the same
   deploy command — migrations are generated and applied automatically.
