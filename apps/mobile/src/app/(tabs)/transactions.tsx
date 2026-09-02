@@ -19,6 +19,7 @@ import { CleanupSheet } from '@/components/cleanup-sheet'
 import { IconButton } from '@/components/icon-button'
 import { ListScreen, ListStatus } from '@/components/list-screen'
 import { OfflineBanner } from '@/components/offline-banner'
+import { PlateTouchable } from '@/components/plate'
 import { QuickAddSheet } from '@/components/quick-add-sheet'
 import { MagBar } from '@/components/rail'
 import { TransactionForm } from '@/components/transaction-form'
@@ -363,19 +364,19 @@ export default function TransactionsScreen(): JSX.Element {
         />
       )}
       {pending.length > 0 && (
-        <Touchable
+        <PlateTouchable
           feedback="dim"
           accessibilityRole="button"
           accessibilityLabel={`Clean up ${pending.length} uncategorized transactions`}
           onPress={() => setCleanup(pending)}
-          className="flex-row items-center gap-3 rounded-xl bg-surface-secondary px-4 py-3"
+          className="flex-row items-center gap-3 px-4 py-3"
         >
           <Body className="flex-1">Clean up</Body>
           <Body size="sm" tone="muted">
             {pending.length} uncategorized
           </Body>
           <Chevron direction="right" size={14} />
-        </Touchable>
+        </PlateTouchable>
       )}
       {!loaded || transactions.data === undefined ? (
         <ListStatus error={loaded ? null : error} retry={retry} />

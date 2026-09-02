@@ -47,6 +47,8 @@ Two things to carry over carefully:
 
 1280px frame. A 232px sidebar — logo, nav (Dashboard, Transactions, Accounts, Imports, Settings), household footer with initials avatar, name, and `BRL · 2 members`. Cards are 12px radius, 1px border, on a `--card` background.
 
+_Amended 2026-09-02 (`LOOK.md`): the card keeps its 12px radius and `--card` fill but the edge is a lift shadow rather than a 1px border, on an off-white page. Proposed to the design project alongside `MOBILE.md` and `MOTION.md`._
+
 ## Flows
 
 **Auth** (`Flows.dc.html`) covers the three ADR-0004 states: normal sign-in; the zero-users bootstrap where the first sign-up claims the instance, names the household and picks the currency; and the locked state once the instance is claimed, which points the visitor at an invite link. Sign-ups stay closed permanently — the `SIGNUPS_ENABLED` switch was dropped when ADR 0004 was revised (2026-08-05).

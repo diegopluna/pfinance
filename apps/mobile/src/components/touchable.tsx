@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from 'react'
-import { Pressable, type PressableProps } from 'react-native'
+import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { duration, timing } from '@/motion'
 
@@ -26,15 +26,18 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
 export function Touchable({
   feedback = 'scale',
   className,
+  style,
   children,
   ...props
 }: Omit<PressableProps, 'style' | 'children'> & {
   feedback?: 'scale' | 'dim'
   className?: string
+  /** Static style — a plate's lift, say — under the press animation. */
+  style?: StyleProp<ViewStyle>
   children: ReactNode
 }): JSX.Element {
   const pressed = useSharedValue(0)
-  const style = useAnimatedStyle(() =>
+  const animated = useAnimatedStyle(() =>
     feedback === 'scale'
       ? { opacity: 1 - 0.3 * pressed.value, transform: [{ scale: 1 - 0.04 * pressed.value }] }
       : { opacity: 1 - 0.45 * pressed.value },
@@ -43,7 +46,7 @@ export function Touchable({
     <AnimatedPressable
       {...props}
       className={className}
-      style={style}
+      style={[style, animated]}
       onPressIn={(event) => {
         pressed.value = withTiming(1, timing(duration.pressIn))
         props.onPressIn?.(event)

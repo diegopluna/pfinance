@@ -35,13 +35,10 @@ export function MagBar({
   /** Stagger position, so a short list draws in as one gesture. */
   index = 0,
   animate = false,
-  /** 'secondary' on the page background; 'background' on a tinted plate. */
-  track = 'secondary',
 }: {
   bar: RailBar
   index?: number
   animate?: boolean
-  track?: 'secondary' | 'background'
 }): JSX.Element {
   const palette = chartPalette(useColorScheme())
   const reduceMotion = useReducedMotion()
@@ -56,15 +53,15 @@ export function MagBar({
     width: (bar.fraction * COLUMN_WIDTH * progress.value) / 2,
   }))
 
-  const trackClass = track === 'background' ? 'bg-background' : 'bg-surface-secondary'
-
   return (
     <View
       pointerEvents="none"
       style={{ width: COLUMN_WIDTH, height: BAND_HEIGHT }}
       className="relative"
     >
-      <View className={`absolute inset-0 ${trackClass}`} style={{ borderRadius: RADIUS }} />
+      {/* One track fill everywhere: on the ground and on a white plate
+          alike, the secondary surface is the step below whatever it sits on. */}
+      <View className="absolute inset-0 bg-surface-secondary" style={{ borderRadius: RADIUS }} />
       {/* The axis passes a hair beyond the track so it reads as a rule the
           track sits on, not a seam inside it. */}
       <View

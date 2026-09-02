@@ -71,12 +71,15 @@
 @layer theme {
   :root {
     @variant light {
-      --background: oklch(1 0 0);
+      /* The look (docs/design/LOOK.md, after Emil Kowalski): an off-white
+         ground — his #fafafa — that white plates lift off
+         (components/plate.tsx). Fills one step darker so they still read. */
+      --background: oklch(0.985 0 0);
       --foreground: oklch(0.145 0 0);
 
       --surface: oklch(1 0 0);
       --surface-foreground: oklch(0.145 0 0);
-      --surface-secondary: oklch(0.97 0 0);
+      --surface-secondary: oklch(0.955 0 0);
       --surface-secondary-foreground: oklch(0.145 0 0);
       --surface-tertiary: oklch(0.922 0 0);
       --surface-tertiary-foreground: oklch(0.145 0 0);
@@ -90,17 +93,14 @@
       --default: oklch(0.97 0 0);
       --default-foreground: oklch(0.205 0 0);
 
-      /* One step darker than --s1's #2a78d6 (L 0.575 → 0.55, C and H
-         untouched). At #2a78d6 the accent measured 4.42:1 as text on the
-         background and 4.31:1 under heroui's near-white Button label — both
-         under the 4.5:1 AA needs for the app's primary action and its tab
-         labels. At L 0.55 they are 4.91:1 and 4.79:1.
-
-         The chart palette is deliberately NOT changed with it: --s1 stays
-         #2a78d6 in src/charts/palette.ts, where it is a data colour on a
-         plain background and where the CVD validation was actually run
-         (docs/design/DECISIONS.md). This token is the chrome sibling. */
-      --accent: oklch(0.55 0.163 255.532);
+      /* The chrome is monochrome (docs/design/LOOK.md): the primary
+         action, the selected tab, a primary chip are the foreground,
+         inverted. Colour is for data — the money-in blue stays exactly
+         where the CVD validation was run, in src/charts/palette.ts and the
+         rail — and never for a control. This also retires the darkened-blue
+         accent (L 0.55) that existed only to clear 4.5:1 as a button fill;
+         black on the ground is 17:1. */
+      --accent: oklch(0.145 0 0);
       --accent-foreground: oklch(0.985 0 0);
 
       --success: oklch(0.433 0.147 142.495);
@@ -119,15 +119,18 @@
          below, where the line is not structure but the edge of a control. */
       --border: oklch(0.922 0 0);
       --separator: oklch(0.922 0 0);
+      /* Focus keeps a hue — the one place a colour means "the system is
+         pointing", and Emil's own rings are blue. Links are the foreground,
+         underlined (a link on a monochrome page is told by its rule). */
       --focus: oklch(0.55 0.163 255.532);
-      --link: oklch(0.55 0.163 255.532);
+      --link: oklch(0.145 0 0);
 
-      /* Fields are outlined, not floated: on a white page a shadow reads as
-         a card, and this design has no cards. The outline is deliberately
-         darker than --border: with the shadow gone it is the only thing
-         identifying an input, which WCAG 1.4.11 asks to clear 3:1 against
-         its own fill. The hairline at oklch(0.922) measured 1.26:1; this is
-         3.23:1. Structure is a hairline, an interactive edge is not. */
+      /* Fields are outlined, not floated: a white field on the off-white
+         ground is already a step up, and the outline is deliberately
+         darker than --border — it is the only thing identifying an input,
+         which WCAG 1.4.11 asks to clear 3:1 against its own fill. The
+         hairline at oklch(0.922) measured 1.26:1; this is 3.23:1.
+         Structure is a hairline, an interactive edge is not. */
       --field-background: oklch(1 0 0);
       --field-foreground: oklch(0.145 0 0);
       --field-placeholder: oklch(0.556 0 0);
@@ -158,11 +161,8 @@
       --default: oklch(0.269 0 0);
       --default-foreground: oklch(0.985 0 0);
 
-      /* Dark keeps the mirror's #3987e5 — 5.44:1 as text on the dark
-         background — and flips its foreground instead: near-white on that
-         blue is 3.55:1, near-black on it is 5.44:1. heroui does the same
-         thing for --success-foreground in this theme. */
-      --accent: oklch(0.622 0.161 255.053);
+      /* Monochrome chrome, inverted (docs/design/LOOK.md). */
+      --accent: oklch(0.985 0 0);
       --accent-foreground: oklch(0.145 0 0);
 
       --success: oklch(0.621 0.207 142.564);
@@ -180,7 +180,7 @@
       --border: oklch(1 0 0 / 10%);
       --separator: oklch(1 0 0 / 10%);
       --focus: oklch(0.622 0.161 255.053);
-      --link: oklch(0.622 0.161 255.053);
+      --link: oklch(0.985 0 0);
 
       --field-background: oklch(0.205 0 0);
       --field-foreground: oklch(0.985 0 0);

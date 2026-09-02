@@ -12,9 +12,10 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        // 12px radius, 1px border, whisper shadow — the Claude Design card
-        // surface (docs/design/DECISIONS.md "Shell").
-        'group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl border border-border bg-card py-(--card-spacing) text-sm text-card-foreground shadow-xs [--card-spacing:--spacing(5)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl',
+        // 12px radius on the Claude Design card geometry (DECISIONS.md
+        // "Shell"); the edge is the lift shadow, not a border — a white
+        // surface raised off the off-white ground (docs/design/LOOK.md).
+        'group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground shadow-lift [--card-spacing:--spacing(5)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl',
         className,
       )}
       {...props}

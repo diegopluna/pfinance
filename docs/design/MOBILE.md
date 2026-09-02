@@ -63,6 +63,8 @@ No numbering anywhere. None of these screens is a sequence.
 
 ## Color
 
+**Superseded in part by `LOOK.md` (2026-09-02):** the chrome is monochrome now — `accent` is the foreground, inverted, and the darkened-blue accent below (and the contrast argument for it) is history. The data colours in this table are unchanged.
+
 No new hues. The neutrals are the web's shadcn tokens from `packages/ui/src/styles/globals.css`, so the two clients of one Household read as one product, and every colored value is one the design project already decided (`DECISIONS.md`):
 
 | Token     | Source                | Light     | Dark      |
@@ -106,7 +108,7 @@ The root layout wraps the app in react-navigation's `ThemeProvider` carrying the
 
 ## Layout
 
-- **No cards.** A phone screen is already a card; drawing another one inside it only narrows the ledger. Structure is carried by hairlines (one weight, `--separator`, for borders and separators alike) and by the rail.
+- **No cards.** A phone screen is already a card; drawing another one inside it only narrows the ledger. Structure is carried by hairlines (one weight, `--separator`, for borders and separators alike) and by the rail. _(Amended by `LOOK.md`, 2026-09-02: the few plates — Home's Kept line and Accounts, the Ledger's cleanup entry, the connect screen's demo — are now white surfaces lifted off an off-white ground rather than grey fills on white. The ledger itself is still not boxed.)_
 - **One exception to the single hairline: `--field-border`.** With `--field-shadow` zeroed, a field's outline is the only thing identifying it as a control, which WCAG 1.4.11 asks to clear 3:1 against its own fill. The hairline measured 1.26:1; the field border is `oklch(0.65)` / `white 35%` at 3.23:1. Structure is a hairline; the edge of a control is not.
 - **A control never looks like a caption.** The Insights switcher was an underline under three bare labels — the same type as the section eyebrows above it — and read as a caption row. It is a segmented track now: neutral fill, raised thumb, both labels at full contrast (muted on the track measured 4.34:1, under the 4.5:1 an 11px label needs). Concentric radii: an 8px track with 4px padding takes a 4px thumb.
 - Screen padding 20px (`px-5`); connect-flow screens 24px.
