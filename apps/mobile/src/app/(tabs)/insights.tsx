@@ -1,11 +1,13 @@
 import { Redirect, useLocalSearchParams } from 'expo-router'
 import { useState, type JSX } from 'react'
+import Animated from 'react-native-reanimated'
 import { IncomeExpenseView } from '@/components/dashboards/income-expense-view'
 import { NetWorthView } from '@/components/dashboards/net-worth-view'
 import { SpendingView } from '@/components/dashboards/spending-view'
 import { ListScreen } from '@/components/list-screen'
 import { Segmented } from '@/components/segmented'
 import { storedServerUrl } from '@/connect/store'
+import { rise } from '@/motion'
 
 // The three dashboards (issue #79) behind one tab. They were three
 // destinations when the home screen was a menu; a tab bar can't carry three
@@ -43,9 +45,15 @@ export default function InsightsScreen(): JSX.Element {
   return (
     <ListScreen title="Insights" back={false}>
       <Segmented choices={VIEWS} value={view} onChange={setView} />
-      {view === 'net-worth' && <NetWorthView />}
-      {view === 'spending' && <SpendingView />}
-      {view === 'income-expense' && <IncomeExpenseView />}
+      {/* Keyed by view: a switch is the next dashboard arriving under the
+          same chrome (docs/design/MOTION.md), the same rise as the forms.
+          The outgoing one just leaves — two dashboards in the same slot
+          would fight for the height. */}
+      <Animated.View key={view} entering={rise} style={{ flex: 1 }}>
+        {view === 'net-worth' && <NetWorthView />}
+        {view === 'spending' && <SpendingView />}
+        {view === 'income-expense' && <IncomeExpenseView />}
+      </Animated.View>
     </ListScreen>
   )
 }

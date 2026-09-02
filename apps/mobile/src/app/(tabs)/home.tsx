@@ -1,7 +1,8 @@
 import type { ApiClient } from '@pfinance/api-client'
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
 import { Redirect, router } from 'expo-router'
-import { Button, Spinner } from 'heroui-native'
+import { Spinner } from 'heroui-native'
+import { Button } from '@/components/button'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX, type ReactNode } from 'react'
 import { ScrollView, View } from 'react-native'
@@ -18,6 +19,7 @@ import { Figure } from '@/components/amount'
 import { TrendWash } from '@/components/charts/trend-wash'
 import { Chevron } from '@/components/chevron'
 import { IconButton } from '@/components/icon-button'
+import { PlateTouchable } from '@/components/plate'
 import { NetWorthHeadline } from '@/components/net-worth-headline'
 import { OfflineBanner } from '@/components/offline-banner'
 import { QuickAddSheet } from '@/components/quick-add-sheet'
@@ -197,18 +199,18 @@ function KeptPlate({
 }): JSX.Element {
   const kept = month.income - month.expense
   return (
-    <Touchable
+    <PlateTouchable
       accessibilityRole="button"
       accessibilityHint="Opens income versus expense by month"
       onPress={() => router.push('/insights?view=income-expense')}
-      className="flex-row items-center gap-3 rounded-xl bg-surface-secondary px-4 py-3.5"
+      className="flex-row items-center gap-3 px-4 py-3.5"
     >
       <Body className="flex-1">Kept in {monthLabel(month.month, 'name')}</Body>
       <Figure tone={kept < 0 ? 'negative' : 'positive'}>
         {`${kept > 0 ? '+' : ''}${formatAmount(kept, currency)}`}
       </Figure>
       <Chevron direction="right" size={14} />
-    </Touchable>
+    </PlateTouchable>
   )
 }
 
@@ -227,11 +229,11 @@ function AccountsPlate({
     .slice(0, ACCOUNTS_SHOWN)
   const bars = railBars(shown.map((entry) => ({ amount: entry.balance, neutral: false })))
   return (
-    <Touchable
+    <PlateTouchable
       accessibilityRole="button"
       accessibilityHint="Opens every account with its balance"
       onPress={() => router.push('/accounts')}
-      className="rounded-xl bg-surface-secondary px-4 pt-3.5 pb-2"
+      className="px-4 pt-3.5 pb-2"
     >
       <View className="flex-row items-center gap-2 pb-1">
         <SectionTitle>Accounts</SectionTitle>
@@ -248,11 +250,11 @@ function AccountsPlate({
                 {entry.name}
               </Body>
               <Figure>{formatAmount(entry.balance, currency)}</Figure>
-              <MagBar bar={bar} index={index} animate track="background" />
+              <MagBar bar={bar} index={index} animate />
             </View>
           )
         )
       })}
-    </Touchable>
+    </PlateTouchable>
   )
 }

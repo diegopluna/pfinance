@@ -17,6 +17,14 @@
 @theme {
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+
+  /* The motion vocabulary (docs/design/MOTION.md). `out` for anything
+     entering or anything the user caused; `sheet` for a surface travelling
+     its own size (Vaul's drawer curve); `move` for something already on
+     screen changing size or position. There is deliberately no ease-in. */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-move: cubic-bezier(0.45, 0, 0.55, 1);
 }
 
 @layer base {
@@ -31,7 +39,11 @@
   /* 0.5rem lands the derived scale exactly on the Claude Design prototype
      geometry: md 6px (logomark), lg 8px (controls), xl 12px (cards). */
   --radius: 0.5rem;
-  --background: oklch(1 0 0);
+  /* The look (docs/design/LOOK.md, after Emil Kowalski): an off-white
+     ground — his #fafafa — that white surfaces LIFT off, instead of white
+     on white held apart by borders. Fills one step darker than before so
+     they still read on the new ground. */
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -39,12 +51,21 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
+  --secondary: oklch(0.955 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
+  --muted: oklch(0.955 0 0);
   --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --accent: oklch(0.955 0 0);
   --accent-foreground: oklch(0.205 0 0);
+  /* Depth, Emil's way: a hairline drawn as a 6% ring plus four shadows
+     that each halve — the recipe lifted from his sites. Surfaces wear it
+     instead of a border. The field shadow is the matching inset. */
+  --lift:
+    0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 0 0 rgba(0, 0, 0, 0.08), 0 2px 2px 0 rgba(0, 0, 0, 0.04),
+    0 3px 3px 0 rgba(0, 0, 0, 0.02), 0 4px 4px 0 rgba(0, 0, 0, 0.01);
+  --field-shadow: inset 0 1px 1px 0 rgba(0, 0, 0, 0.04);
+  /* The inset highlight a dark button wears along its top edge. */
+  --highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
   /* --crit in docs/design/DECISIONS.md (#d03b3b), exact conversion. */
   --destructive: oklch(0.575 0.186 25.234);
   --border: oklch(0.922 0 0);
@@ -93,6 +114,10 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
+  /* In the dark a surface is told apart by its edge, not its shadow. */
+  --lift: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --field-shadow: 0 0 #0000;
+  --highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
@@ -120,6 +145,9 @@
 }
 
 @theme inline {
+  --shadow-lift: var(--lift);
+  --shadow-field: var(--field-shadow);
+  --shadow-highlight: var(--highlight);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -1,5 +1,6 @@
 import { router } from 'expo-router'
-import { Button, Spinner } from 'heroui-native'
+import { Spinner } from 'heroui-native'
+import { Button } from '@/components/button'
 import type { JSX, ReactNode } from 'react'
 import { View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'

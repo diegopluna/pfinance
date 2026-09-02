@@ -21,6 +21,7 @@ import {
 } from '@pfinance/ui/components/card'
 import { InitialsAvatar } from '@pfinance/ui/components/initials-avatar'
 import { Separator } from '@pfinance/ui/components/separator'
+import { toast } from '@pfinance/ui/components/sonner'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { isForbidden } from '@pfinance/api-client'
 import { useDateFormat } from '@/hooks/use-date-format'
@@ -111,7 +112,8 @@ function MembersScreen() {
             // Creating an Invite is for handing its link to someone — copy it
             // right away so the owner can paste it without hunting for the row.
             createInvite.mutate(undefined, {
-              onSuccess: ({ invite }) => copyLink(invite.id, invite.token),
+              onSuccess: ({ invite }) =>
+                copyLink(invite.id, invite.token).then(() => toast('Invite link copied')),
             })
           }
         >
@@ -253,7 +255,9 @@ function MembersScreen() {
               variant="destructive"
               onClick={() => {
                 if (removeTarget !== null) {
-                  removeMember.mutate(removeTarget.id)
+                  removeMember.mutate(removeTarget.id, {
+                    onSuccess: () => toast('Member removed'),
+                  })
                 }
                 setRemoveDialogOpen(false)
               }}

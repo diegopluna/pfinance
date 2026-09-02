@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
-import { Button, FieldError, Input, Label, TextField } from 'heroui-native'
+import { FieldError, Input, Label, TextField } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { Text, View } from 'react-native'
 import { authClientFor } from '@/auth/client'

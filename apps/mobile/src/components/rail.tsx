@@ -6,10 +6,10 @@ import Animated, {
   useSharedValue,
   withDelay,
   withTiming,
-  type WithTimingConfig,
 } from 'react-native-reanimated'
 import { chartPalette } from '@/charts/palette'
 import type { RailBar } from '@/charts/rail'
+import { timing } from '@/motion'
 
 // The rail, drawn (the geometry and its reasoning live in charts/rail.ts).
 // Each row carries its own 72px measurement column: a faint full-length
@@ -25,21 +25,20 @@ const COLUMN_WIDTH = 72
 const BAND_HEIGHT = 6
 const RADIUS = BAND_HEIGHT / 2
 
-const DRAW: WithTimingConfig = { duration: 420 }
-const STAGGER_MS = 45
+// Ease out (docs/design/MOTION.md): a bar leaves the rule at speed and
+// settles at its length, rather than winding up and coasting in.
+const DRAW = timing(380)
+const STAGGER_MS = 35
 
 export function MagBar({
   bar,
   /** Stagger position, so a short list draws in as one gesture. */
   index = 0,
   animate = false,
-  /** 'secondary' on the page background; 'background' on a tinted plate. */
-  track = 'secondary',
 }: {
   bar: RailBar
   index?: number
   animate?: boolean
-  track?: 'secondary' | 'background'
 }): JSX.Element {
   const palette = chartPalette(useColorScheme())
   const reduceMotion = useReducedMotion()
@@ -54,15 +53,15 @@ export function MagBar({
     width: (bar.fraction * COLUMN_WIDTH * progress.value) / 2,
   }))
 
-  const trackClass = track === 'background' ? 'bg-background' : 'bg-surface-secondary'
-
   return (
     <View
       pointerEvents="none"
       style={{ width: COLUMN_WIDTH, height: BAND_HEIGHT }}
       className="relative"
     >
-      <View className={`absolute inset-0 ${trackClass}`} style={{ borderRadius: RADIUS }} />
+      {/* One track fill everywhere: on the ground and on a white plate
+          alike, the secondary surface is the step below whatever it sits on. */}
+      <View className="absolute inset-0 bg-surface-secondary" style={{ borderRadius: RADIUS }} />
       {/* The axis passes a hair beyond the track so it reads as a rule the
           track sits on, not a seam inside it. */}
       <View

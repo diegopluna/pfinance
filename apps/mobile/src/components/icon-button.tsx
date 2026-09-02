@@ -1,6 +1,7 @@
 import { useThemeColor } from 'heroui-native'
 import type { JSX } from 'react'
 import Svg, { Circle, Path } from 'react-native-svg'
+import { useControlDepth } from '@/components/plate'
 import { Touchable } from '@/components/touchable'
 
 // The header's action buttons, drawn as the circles iOS 26 gives native bar
@@ -34,6 +35,9 @@ export function IconButton({
   onPress: () => void
 }): JSX.Element {
   const [accentForeground, foreground] = useThemeColor(['accent-foreground', 'foreground'])
+  // The prominent one is the foreground inverted with a highlight along
+  // its top edge; the quiet one lifts like a plate (docs/design/LOOK.md).
+  const depth = useControlDepth(prominent ? 'dark' : 'light')
   return (
     <Touchable
       accessibilityRole="button"
@@ -41,8 +45,9 @@ export function IconButton({
       hitSlop={4}
       onPress={onPress}
       className={`h-9 w-9 items-center justify-center rounded-full ${
-        prominent ? 'bg-accent' : 'border border-separator bg-background'
+        prominent ? 'bg-accent' : 'bg-surface'
       }`}
+      style={depth}
     >
       <Svg
         width={glyph === 'plus' ? 18 : 16}

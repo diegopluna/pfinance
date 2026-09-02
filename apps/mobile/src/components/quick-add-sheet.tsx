@@ -1,14 +1,16 @@
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
-import { Button, useThemeColor } from 'heroui-native'
+import { useThemeColor } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useState, type JSX } from 'react'
 import { Modal, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTransactionMutations } from '@/api/use-transactions'
 import { useTransferMutations } from '@/api/use-transfers'
-import { Figure } from '@/components/amount'
 import { ChoiceChips } from '@/components/form-fields'
 import { Keypad } from '@/components/keypad'
+import { RollingFigure } from '@/components/rolling-figure'
 import { Segmented } from '@/components/segmented'
+import { notify } from '@/components/toaster'
 import { Body, Eyebrow } from '@/components/type'
 import { previousCalendarDay, todayCalendarString } from '@/ledger/dates'
 import { validateDraft } from '@/ledger/draft'
@@ -38,6 +40,12 @@ const SUBMIT: Record<Kind, string> = {
   out: 'Add expense',
   in: 'Add income',
   transfer: 'Add transfer',
+}
+
+const SAVED: Record<Kind, string> = {
+  out: 'Expense added',
+  in: 'Income added',
+  transfer: 'Transfer added',
 }
 
 interface Choice {
@@ -90,6 +98,12 @@ export function QuickAddSheet({
     reset()
     onClose()
   }
+  // The sheet closes on success; the confirmation lands on the screen
+  // behind it, where the ledger is already refetching.
+  const saved = () => {
+    notify(SAVED[kind])
+    close()
+  }
 
   const today = todayCalendarString()
   const date = day === 'today' ? today : previousCalendarDay(today)
@@ -115,7 +129,7 @@ export function QuickAddSheet({
       }
       transfers.save.mutate(
         { id: null, fields: validation.value },
-        { onSuccess: close, onError: (failure) => setError(failure.message) },
+        { onSuccess: saved, onError: (failure) => setError(failure.message) },
       )
       return
     }
@@ -137,7 +151,7 @@ export function QuickAddSheet({
     }
     transactions.save.mutate(
       { id: null, fields: validation.value },
-      { onSuccess: close, onError: (failure) => setError(failure.message) },
+      { onSuccess: saved, onError: (failure) => setError(failure.message) },
     )
   }
 
@@ -160,10 +174,13 @@ export function QuickAddSheet({
               }}
             />
 
-            {/* The amount, growing from the right as the keypad types. */}
-            <Figure size="hero" tone={minor === 0 ? 'muted' : 'plain'}>
-              {formatAmount(minor, currency)}
-            </Figure>
+            {/* The amount, growing from the right as the keypad types — its
+                digits roll rather than blink (docs/design/MOTION.md). */}
+            <RollingFigure
+              text={formatAmount(minor, currency)}
+              value={minor}
+              tone={minor === 0 ? 'muted' : 'plain'}
+            />
 
             {kind !== 'transfer' && (
               <TextInput

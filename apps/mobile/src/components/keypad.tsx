@@ -4,6 +4,7 @@ import { View } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 import { Figure } from '@/components/amount'
 import { Touchable } from '@/components/touchable'
+import { tick } from '@/haptics'
 
 // The cash-register keypad, shared by the quick-add sheet (issue #80) and
 // the adjust-balance sheet (issue #81) — the keypad IS the amount input
@@ -51,9 +52,14 @@ export function Keypad({
                     ? cornerLabel
                     : String(key)
               }
-              onPress={() =>
-                key === 'delete' ? onDelete() : key === 'corner' ? onCorner() : onDigit(key)
-              }
+              onPress={() => {
+                // Every key ticks (docs/design/MOTION.md): the keypad has no
+                // system keyboard to borrow its feedback from.
+                tick()
+                if (key === 'delete') onDelete()
+                else if (key === 'corner') onCorner()
+                else onDigit(key)
+              }}
               className="h-12 flex-1 items-center justify-center rounded-lg"
             >
               {key === 'delete' ? (

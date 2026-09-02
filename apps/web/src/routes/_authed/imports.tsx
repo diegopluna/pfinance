@@ -33,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '@pfinance/ui/components/table'
+import { toast } from '@pfinance/ui/components/sonner'
 import { useDateFormat } from '@/hooks/use-date-format'
 import { guessMapping } from '@/lib/csv-mapping'
 import { formatCalendarDate, formatDayDate } from '@/lib/dates'
@@ -183,6 +184,7 @@ function ImportsScreen() {
                   setActive(null)
                   setMapping(null)
                   setOverrides(new Set())
+                  toast('Transactions imported')
                 },
               },
             )
@@ -270,7 +272,9 @@ function ImportsScreen() {
               variant="destructive"
               onClick={() => {
                 if (pendingDelete !== null) {
-                  deleteImport.mutate(pendingDelete.id)
+                  deleteImport.mutate(pendingDelete.id, {
+                    onSuccess: () => toast('Import reverted'),
+                  })
                 }
                 setPendingDelete(null)
               }}

@@ -31,12 +31,14 @@ Geometry: `apps/mobile/src/charts/rail.ts` (pure, tested). Drawing: `apps/mobile
 
 Two families, three roles.
 
-| Role                                        | Face                    |
-| ------------------------------------------- | ----------------------- |
-| Prose                                       | Spline Sans 400/500/600 |
-| Figures, eyebrows, screen titles, addresses | Spline Sans Mono 400/500/600 |
+| Role                                            | Face                 |
+| ----------------------------------------------- | -------------------- |
+| Prose, figures, eyebrows, titles, tab labels    | Geist 400/500/600    |
+| Operational identifiers (a Server address, a path) | Geist Mono 400    |
 
-The mono is the display voice, not a code accent: a ledger is a column of aligned digits, and a monospaced face aligns them by construction — `font-variant-numeric: tabular-nums` only does anything if the loaded face ships the feature, while a mono has nothing to opt into. Anything that is a **key** (a Server address, a month label, a category label above a chart) is set in it; anything a person **reads as a sentence** is set in the sans.
+_(Corrected 2026-09-02: this table said Spline Sans / Spline Sans Mono, with the mono as the display voice for figures and eyebrows. The shipped app moved to Geist — the web's face — with figures in the sans on `tabular-nums` (Geist's static TTFs carry `tnum`, verified against the shipped files) and the mono reserved for identifiers; see `components/type.tsx` and `components/amount.tsx`. The paragraph below is the original reasoning, kept because the tabular point still governs.)_
+
+The mono was the display voice, not a code accent: a ledger is a column of aligned digits, and a monospaced face aligns them by construction — `font-variant-numeric: tabular-nums` only does anything if the loaded face ships the feature, while a mono has nothing to opt into. Anything that is a **key** (a Server address, a month label, a category label above a chart) is set in it; anything a person **reads as a sentence** is set in the sans.
 
 `--font-normal` … `--font-bold` in `apps/mobile/src/global.css` bind the sans, so heroui-native's own component CSS picks it up, and `font-medium` / `font-semibold` resolve to the weight's own font file (React Native does not synthesize weights on static TTFs).
 
@@ -60,6 +62,8 @@ Letterspacing: eyebrow `1.1`, title `-0.3` (`lg` `-0.6`), hero `-1.2`, badge `0.
 No numbering anywhere. None of these screens is a sequence.
 
 ## Color
+
+**Superseded in part by `LOOK.md` (2026-09-02):** the chrome is monochrome now — `accent` is the foreground, inverted, and the darkened-blue accent below (and the contrast argument for it) is history. The data colours in this table are unchanged.
 
 No new hues. The neutrals are the web's shadcn tokens from `packages/ui/src/styles/globals.css`, so the two clients of one Household read as one product, and every colored value is one the design project already decided (`DECISIONS.md`):
 
@@ -104,7 +108,7 @@ The root layout wraps the app in react-navigation's `ThemeProvider` carrying the
 
 ## Layout
 
-- **No cards.** A phone screen is already a card; drawing another one inside it only narrows the ledger. Structure is carried by hairlines (one weight, `--separator`, for borders and separators alike) and by the rail.
+- **No cards.** A phone screen is already a card; drawing another one inside it only narrows the ledger. Structure is carried by hairlines (one weight, `--separator`, for borders and separators alike) and by the rail. _(Amended by `LOOK.md`, 2026-09-02: the few plates — Home's Kept line and Accounts, the Ledger's cleanup entry, the connect screen's demo — are now white surfaces lifted off an off-white ground rather than grey fills on white. The ledger itself is still not boxed.)_
 - **One exception to the single hairline: `--field-border`.** With `--field-shadow` zeroed, a field's outline is the only thing identifying it as a control, which WCAG 1.4.11 asks to clear 3:1 against its own fill. The hairline measured 1.26:1; the field border is `oklch(0.65)` / `white 35%` at 3.23:1. Structure is a hairline; the edge of a control is not.
 - **A control never looks like a caption.** The Insights switcher was an underline under three bare labels — the same type as the section eyebrows above it — and read as a caption row. It is a segmented track now: neutral fill, raised thumb, both labels at full contrast (muted on the track measured 4.34:1, under the 4.5:1 an 11px label needs). Concentric radii: an 8px track with 4px padding takes a 4px thumb.
 - Screen padding 20px (`px-5`); connect-flow screens 24px.
@@ -120,11 +124,10 @@ The tab icons went through two rounds before landing on the system set. Drawn fr
 
 ## Motion
 
-One moment: the home screen's rail bars draw out from the rule on mount, staggered 45ms, 420ms. Nothing else animates — a scrolling ledger that redraws its bars per row is noise. `useReducedMotion()` skips it entirely.
+Superseded by `MOTION.md`, which holds the vocabulary (curves, durations, the one spring), the full inventory of what animates in both clients, and the haptics. Two earlier stances recorded here are worth keeping as history:
 
-## Motion, second pass
-
-The form no longer replaces the ledger as a jump cut: both forms crossfade in at 160ms and out at 110ms (exits shorter than enters), skipped entirely under the system's reduced-motion setting. That and the home rail's draw-in are the only two animations in the app. Press feedback is deliberately instant — a press is the highest-frequency interaction there is, and an easing ramp on every tap of every row spends attention it cannot earn back.
+- **"Nothing else animates."** The first two passes allowed exactly two animations — the home rail's draw-in and the forms' crossfade — on the argument that a scrolling ledger redrawing its bars is noise. The restraint survives (the ledger still never animates per row, refetched numbers still swap rather than count); what changed is that a change a person *caused* now moves like it was caused.
+- **"Press feedback is deliberately instant."** The argument was that an easing ramp on every tap spends attention it cannot earn back, and that instant is uninterruptible by construction. The resolution in `MOTION.md`: the press still lands within a frame (90ms in, which is the first frame or two of the touch), and only the *release* eases — short enough that a second tap never fights a ramp. The attention cost was the ramp on the way down; there isn't one.
 
 ## Still open
 

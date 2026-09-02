@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@pfinance/ui/components/dialog'
 import { FieldGroup } from '@pfinance/ui/components/field'
+import { toast } from '@pfinance/ui/components/sonner'
 import type { DateFormat } from '@pfinance/db/date-formats'
 import { api } from '@/lib/api'
 import { focusFirstInvalid, useAppForm } from '@/hooks/form'
@@ -128,7 +129,10 @@ function AccountsScreen() {
             // dialog's error line, so swallow the rejection so the form
             // doesn't also throw.
             .then(
-              () => setDialogOpen(false),
+              () => {
+                setDialogOpen(false)
+                toast(target.entry ? 'Account saved' : 'Account added')
+              },
               () => undefined,
             )
         }

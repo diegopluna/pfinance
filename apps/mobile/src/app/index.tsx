@@ -1,9 +1,11 @@
 import * as Linking from 'expo-linking'
 import { Redirect, router } from 'expo-router'
-import { Button, Description, Input, Label, TextField } from 'heroui-native'
+import { Description, Input, Label, TextField } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useState, type JSX } from 'react'
 import { Pressable, View } from 'react-native'
 import { sessionCookie } from '@/auth/client'
+import { Plate } from '@/components/plate'
 import { Screen } from '@/components/screen'
 import { Body, SectionTitle, Title } from '@/components/type'
 import { SELF_HOSTING_DOCS_URL } from '@/connect/content'
@@ -80,7 +82,7 @@ export default function ConnectScreen(): JSX.Element {
           with the self-hoster's primary path — Connect keeps the accent.
           Hidden entirely while no demo Server is configured (demo.ts). */}
       {demoConfigured() && (
-        <View className="gap-3 rounded-xl bg-surface-secondary px-4 py-3.5">
+        <Plate className="gap-3 px-4 py-3.5">
           <View className="gap-1">
             <SectionTitle>Just looking?</SectionTitle>
             <Body size="sm" tone="muted">
@@ -90,7 +92,6 @@ export default function ConnectScreen(): JSX.Element {
           </View>
           <Button
             variant="outline"
-            className="bg-background"
             onPress={() =>
               router.push({ pathname: '/status', params: { input: DEMO_SERVER_URL, demo: '1' } })
             }
@@ -101,11 +102,11 @@ export default function ConnectScreen(): JSX.Element {
             accessibilityRole="link"
             onPress={() => void Linking.openURL(SELF_HOSTING_DOCS_URL)}
           >
-            <Body size="sm" className="text-center text-accent">
+            <Body size="sm" className="text-center text-foreground underline">
               Ready to own your data? Read the self-hosting guide
             </Body>
           </Pressable>
-        </View>
+        </Plate>
       )}
     </Screen>
   )

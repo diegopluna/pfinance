@@ -186,7 +186,7 @@ function AccountsCard({
   const accounts = query.data?.accounts ?? []
   return (
     <section aria-labelledby="accounts-heading">
-      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+      <div className="flex flex-col rounded-xl bg-card px-4 py-3.5 shadow-lift">
         <h2 id="accounts-heading" className="text-[13px] font-semibold tracking-tight">
           Accounts
         </h2>
@@ -252,7 +252,7 @@ function IncomeExpenseCard({ currency }: { currency: CurrencyCode | undefined })
   const latest = months.at(-1)
   return (
     <section aria-labelledby="income-expense-heading">
-      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+      <div className="flex flex-col rounded-xl bg-card px-4 py-3.5 shadow-lift">
         <h2 id="income-expense-heading" className="text-[13px] font-semibold tracking-tight">
           In vs out
         </h2>
@@ -381,7 +381,7 @@ function SpendingCard({ currency }: { currency: CurrencyCode | undefined }) {
   const slices = query.data?.slices ?? []
   return (
     <section aria-labelledby="spending-heading">
-      <div className="flex flex-col rounded-xl bg-muted px-4 py-3.5">
+      <div className="flex flex-col rounded-xl bg-card px-4 py-3.5 shadow-lift">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="spending-heading" className="text-[13px] font-semibold tracking-tight">
             Spending

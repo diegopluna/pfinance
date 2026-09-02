@@ -38,7 +38,7 @@ export function OfflineBanner({
         hitSlop={12}
         onPress={retry}
       >
-        <Body size="sm" className="font-medium text-accent">
+        <Body size="sm" className="font-medium text-foreground underline">
           Retry
         </Body>
       </Touchable>

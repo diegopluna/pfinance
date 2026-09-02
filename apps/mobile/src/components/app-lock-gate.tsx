@@ -1,10 +1,12 @@
 import * as LocalAuthentication from 'expo-local-authentication'
-import { Button } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
 import { AppState, View, type AppStateStatus } from 'react-native'
+import Animated from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Wordmark } from '@/components/wordmark'
 import { Body } from '@/components/type'
+import { fade } from '@/motion'
 import { coverVisible, nextLockState, type LockState } from '@/shell/lock'
 import { appLockEnabled } from '@/shell/lock-store'
 
@@ -60,8 +62,11 @@ export function AppLockGate({ children }: { children: ReactNode }): JSX.Element 
   return (
     <View style={{ flex: 1 }}>
       {children}
+      {/* The cover appears instantly — it is a privacy cover, and a fade-in
+          would show the numbers for its duration — and fades out on unlock
+          (docs/design/MOTION.md), so the ledger returns rather than pops. */}
       {coverVisible(state, appLockEnabled(), status) && (
-        <View className="absolute inset-0 bg-background">
+        <Animated.View exiting={fade} className="absolute inset-0 bg-background">
           <SafeAreaView style={{ flex: 1 }}>
             <View className="flex-1 justify-end gap-7 px-6 pb-8">
               <View className="gap-3">
@@ -73,7 +78,7 @@ export function AppLockGate({ children }: { children: ReactNode }): JSX.Element 
               <Button onPress={() => void unlock()}>Unlock</Button>
             </View>
           </SafeAreaView>
-        </View>
+        </Animated.View>
       )}
     </View>
   )

@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { View } from 'react-native'
 import { Touchable } from '@/components/touchable'
 import { Body } from '@/components/type'
+import { tick } from '@/haptics'
 
 // One row of mutually exclusive views: a bordered track with the selected
 // segment inverted — foreground fill, background text — the design's
@@ -29,7 +30,13 @@ export function Segmented<Value extends string>({
             key={choice.value}
             accessibilityRole="tab"
             accessibilityState={{ selected: open }}
-            onPress={() => onChange(choice.value)}
+            onPress={() => {
+              // A switch that actually switches ticks; re-tapping the open
+              // segment is not a change and stays silent.
+              if (open) return
+              tick()
+              onChange(choice.value)
+            }}
             className={`flex-1 items-center rounded-[5px] py-1.5 ${open ? 'bg-foreground' : ''}`}
           >
             <Body
