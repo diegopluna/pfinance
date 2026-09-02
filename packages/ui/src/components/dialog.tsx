@@ -26,7 +26,7 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        'fixed inset-0 isolate z-50 bg-black/30 duration-100 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
+        'fixed inset-0 isolate z-50 bg-black/30 transition-opacity duration-200 ease-out-quart supports-backdrop-filter:backdrop-blur-sm data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:duration-150 motion-reduce:transition-none',
         className,
       )}
       {...props}
@@ -45,10 +45,14 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
+      {/* Enter (docs/design/MOTION.md): opacity, a touch of scale and a few
+          pixels of blur — depth of field on a surface arriving — 200ms in,
+          150ms out, driven by Base UI's starting/ending styles rather than
+          keyframes so an interrupted close is a reversal, not a restart. */}
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 duration-100 outline-none sm:max-w-md dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+          'fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 outline-none transition-[opacity,scale,filter] duration-200 ease-out-quart sm:max-w-md dark:ring-foreground/10 data-starting-style:scale-[0.96] data-starting-style:opacity-0 data-starting-style:blur-[4px] data-ending-style:scale-[0.96] data-ending-style:opacity-0 data-ending-style:blur-[4px] data-ending-style:duration-150 motion-reduce:transition-none',
           className,
         )}
         {...props}

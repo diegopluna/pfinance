@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@pfinance/ui/components/select'
+import { toast } from '@pfinance/ui/components/sonner'
 import { useHouseholdMutations, useMe } from '@/hooks/use-me'
 import { formatDayDate } from '@/lib/dates'
 
@@ -83,7 +84,10 @@ function SettingsScreen() {
                 value={me.household.dateFormat}
                 onValueChange={(value: string | null) => {
                   if (isDateFormat(value) && value !== me.household.dateFormat) {
-                    saveDateFormat.mutate({ dateFormat: value })
+                    saveDateFormat.mutate(
+                      { dateFormat: value },
+                      { onSuccess: () => toast('Date format saved') },
+                    )
                   }
                 }}
               >

@@ -1,6 +1,7 @@
 import * as Linking from 'expo-linking'
 import { Redirect, router } from 'expo-router'
-import { Button, Description, Input, Label, TextField } from 'heroui-native'
+import { Description, Input, Label, TextField } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useState, type JSX } from 'react'
 import { Pressable, View } from 'react-native'
 import { sessionCookie } from '@/auth/client'

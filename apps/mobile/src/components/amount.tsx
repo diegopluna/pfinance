@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { Text, type TextProps } from 'react-native'
+import { Text, type StyleProp, type TextProps, type TextStyle } from 'react-native'
 import { useLineHeight } from '@/components/type'
 import type { LedgerAmount } from '@/ledger/display'
 
@@ -31,6 +31,31 @@ const TONES = {
   muted: 'text-muted',
 } as const
 
+export type FigureSize = keyof typeof SIZES
+export type FigureTone = keyof typeof TONES
+
+// The figure's dress, separable from the Text so the rolling variant
+// (components/rolling-figure.tsx) can wear it one glyph at a time.
+export function useFigureStyle(
+  size: FigureSize,
+  tone: FigureTone,
+  className = '',
+): { className: string; style: StyleProp<TextStyle> } {
+  // The hero is the only figure with enough leading to crush itself if the
+  // line height stayed put while the text size grew (components/type.tsx).
+  const heroLineHeight = useLineHeight(HERO_SIZE, 1.16)
+  const leading = size === 'hero' || size === 'lg'
+  return {
+    className: `${leading ? 'font-semibold' : 'font-medium'} ${SIZES[size]} ${TONES[tone]} ${className}`,
+    style: [
+      { fontVariant: ['tabular-nums'] },
+      size === 'hero'
+        ? { letterSpacing: -1.2, lineHeight: heroLineHeight }
+        : { letterSpacing: size === 'lg' ? -0.34 : -0.15 },
+    ],
+  }
+}
+
 export function Figure({
   children,
   size = 'base',
@@ -39,24 +64,12 @@ export function Figure({
   ...props
 }: TextProps & {
   children: string
-  size?: keyof typeof SIZES
-  tone?: keyof typeof TONES
+  size?: FigureSize
+  tone?: FigureTone
 }): JSX.Element {
-  // The hero is the only figure with enough leading to crush itself if the
-  // line height stayed put while the text size grew (components/type.tsx).
-  const heroLineHeight = useLineHeight(HERO_SIZE, 1.16)
-  const leading = size === 'hero' || size === 'lg'
+  const dress = useFigureStyle(size, tone, className)
   return (
-    <Text
-      className={`${leading ? 'font-semibold' : 'font-medium'} ${SIZES[size]} ${TONES[tone]} ${className}`}
-      style={[
-        { fontVariant: ['tabular-nums'] },
-        size === 'hero'
-          ? { letterSpacing: -1.2, lineHeight: heroLineHeight }
-          : { letterSpacing: size === 'lg' ? -0.34 : -0.15 },
-      ]}
-      {...props}
-    >
+    <Text className={dress.className} style={dress.style} {...props}>
       {children}
     </Text>
   )
@@ -67,7 +80,7 @@ export function Amount({
   size = 'base',
 }: {
   amount: LedgerAmount
-  size?: keyof typeof SIZES
+  size?: FigureSize
 }): JSX.Element {
   return (
     <Figure size={size} tone={amount.tone} className="text-right">

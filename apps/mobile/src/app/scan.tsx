@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { router } from 'expo-router'
-import { Button } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useRef, type JSX } from 'react'
 import { Linking, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'

@@ -16,6 +16,7 @@ import { useColorScheme } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { createQueryClient, persistOptions, trackAppStateFocus } from '@/api/query-client'
 import { AppLockGate } from '@/components/app-lock-gate'
+import { Toaster } from '@/components/toaster'
 
 import '../global.css'
 
@@ -60,6 +61,9 @@ export default function RootLayout(): JSX.Element | null {
                 navigator renders, cached data included. */}
             <AppLockGate>
               <Stack screenOptions={{ headerShown: false }} />
+              {/* Above the navigator, under the lock cover: a confirmation
+                  never outranks the privacy cover. */}
+              <Toaster />
             </AppLockGate>
           </NavigationTheme>
         </HeroUINativeProvider>

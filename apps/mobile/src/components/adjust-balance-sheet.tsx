@@ -1,15 +1,19 @@
 import { formatAmount, type CurrencyCode } from '@pfinance/currency'
-import { Button } from 'heroui-native'
+import { Button } from '@/components/button'
 import { useState, type JSX } from 'react'
 import { Modal, View } from 'react-native'
+import Animated from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTransactionMutations } from '@/api/use-transactions'
 import { Figure } from '@/components/amount'
 import { Keypad } from '@/components/keypad'
+import { RollingFigure } from '@/components/rolling-figure'
+import { notify } from '@/components/toaster'
 import { Body, Eyebrow, SectionTitle } from '@/components/type'
 import { adjustmentFields, signedActual } from '@/ledger/adjust'
 import { todayCalendarString } from '@/ledger/dates'
 import { pressDelete, pressDigit } from '@/ledger/keypad'
+import { rise } from '@/motion'
 
 // The adjust-balance sheet (issue #81): when the app and the bank disagree,
 // the user states what the Account ACTUALLY holds — the number their bank
@@ -61,7 +65,13 @@ export function AdjustBalanceSheet({
     if (fields === null) return
     save.mutate(
       { id: null, fields },
-      { onSuccess: close, onError: (failure) => setError(failure.message) },
+      {
+        onSuccess: () => {
+          notify('Adjustment recorded')
+          close()
+        },
+        onError: (failure) => setError(failure.message),
+      },
     )
   }
 
@@ -90,27 +100,38 @@ export function AdjustBalanceSheet({
 
               <View className="gap-1">
                 <Eyebrow>What the account actually holds</Eyebrow>
-                <Figure size="hero" tone={touched ? 'plain' : 'muted'}>
-                  {formatAmount(actual, currency)}
-                </Figure>
+                <RollingFigure
+                  text={formatAmount(actual, currency)}
+                  value={actual}
+                  tone={touched ? 'plain' : 'muted'}
+                />
                 {/* The consequence, stated before the button: what tapping
-                    Record will write — or that there is nothing to write. */}
+                    Record will write — or that there is nothing to write.
+                    Keyed by which of the three it is, so the line rises in
+                    when its meaning changes and holds still while only the
+                    figure inside it ticks. */}
                 {touched && fields === null ? (
-                  <Body size="sm" tone="muted">
-                    No drift — the app already agrees with this balance.
-                  </Body>
+                  <Animated.View key="agrees" entering={rise}>
+                    <Body size="sm" tone="muted">
+                      No drift — the app already agrees with this balance.
+                    </Body>
+                  </Animated.View>
                 ) : fields !== null ? (
-                  <Body size="sm" tone="muted">
-                    Records a{' '}
-                    <Figure size="sm" tone={fields.amount < 0 ? 'negative' : 'positive'}>
-                      {`${fields.amount > 0 ? '+' : ''}${formatAmount(fields.amount, currency)}`}
-                    </Figure>{' '}
-                    balance adjustment
-                  </Body>
+                  <Animated.View key="records" entering={rise}>
+                    <Body size="sm" tone="muted">
+                      Records a{' '}
+                      <Figure size="sm" tone={fields.amount < 0 ? 'negative' : 'positive'}>
+                        {`${fields.amount > 0 ? '+' : ''}${formatAmount(fields.amount, currency)}`}
+                      </Figure>{' '}
+                      balance adjustment
+                    </Body>
+                  </Animated.View>
                 ) : (
-                  <Body size="sm" tone="muted">
-                    Enter the balance your bank shows.
-                  </Body>
+                  <Animated.View key="prompt" entering={rise}>
+                    <Body size="sm" tone="muted">
+                      Enter the balance your bank shows.
+                    </Body>
+                  </Animated.View>
                 )}
               </View>
 

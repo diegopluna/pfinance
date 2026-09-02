@@ -17,6 +17,14 @@
 @theme {
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+
+  /* The motion vocabulary (docs/design/MOTION.md). `out` for anything
+     entering or anything the user caused; `sheet` for a surface travelling
+     its own size (Vaul's drawer curve); `move` for something already on
+     screen changing size or position. There is deliberately no ease-in. */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-move: cubic-bezier(0.45, 0, 0.55, 1);
 }
 
 @layer base {

@@ -49,6 +49,7 @@ import {
   TableHeader,
   TableRow,
 } from '@pfinance/ui/components/table'
+import { toast } from '@pfinance/ui/components/sonner'
 import { CalendarDatePicker } from '@/components/date-picker'
 import { MagBar } from '@/components/mag-bar'
 import { useDateFormat } from '@/hooks/use-date-format'
@@ -247,7 +248,10 @@ function TransactionsScreen() {
             // dialog's error line, so swallow the rejection so the form
             // doesn't also throw.
             .then(
-              () => setDialogOpen(false),
+              () => {
+                setDialogOpen(false)
+                toast(target.entry ? 'Transaction saved' : 'Transaction added')
+              },
               () => undefined,
             )
         }
@@ -263,7 +267,10 @@ function TransactionsScreen() {
         error={saveTransfer.isError ? saveTransfer.error.message : null}
         onSubmit={(fields) =>
           saveTransfer.mutateAsync({ id: transferTarget.entry?.transferId ?? null, fields }).then(
-            () => setTransferDialogOpen(false),
+            () => {
+              setTransferDialogOpen(false)
+              toast(transferTarget.entry ? 'Transfer saved' : 'Transfer added')
+            },
             () => undefined,
           )
         }
@@ -434,9 +441,13 @@ function TransactionsScreen() {
               onClick={() => {
                 if (deleteTarget !== null) {
                   if (deleteTarget.transferId !== null) {
-                    deleteTransfer.mutate(deleteTarget.transferId)
+                    deleteTransfer.mutate(deleteTarget.transferId, {
+                      onSuccess: () => toast('Transfer deleted'),
+                    })
                   } else {
-                    deleteTransaction.mutate(deleteTarget.id)
+                    deleteTransaction.mutate(deleteTarget.id, {
+                      onSuccess: () => toast('Transaction deleted'),
+                    })
                   }
                 }
                 setDeleteDialogOpen(false)

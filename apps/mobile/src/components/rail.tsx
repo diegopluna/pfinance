@@ -6,10 +6,10 @@ import Animated, {
   useSharedValue,
   withDelay,
   withTiming,
-  type WithTimingConfig,
 } from 'react-native-reanimated'
 import { chartPalette } from '@/charts/palette'
 import type { RailBar } from '@/charts/rail'
+import { timing } from '@/motion'
 
 // The rail, drawn (the geometry and its reasoning live in charts/rail.ts).
 // Each row carries its own 72px measurement column: a faint full-length
@@ -25,8 +25,10 @@ const COLUMN_WIDTH = 72
 const BAND_HEIGHT = 6
 const RADIUS = BAND_HEIGHT / 2
 
-const DRAW: WithTimingConfig = { duration: 420 }
-const STAGGER_MS = 45
+// Ease out (docs/design/MOTION.md): a bar leaves the rule at speed and
+// settles at its length, rather than winding up and coasting in.
+const DRAW = timing(380)
+const STAGGER_MS = 35
 
 export function MagBar({
   bar,

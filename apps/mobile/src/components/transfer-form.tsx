@@ -1,11 +1,14 @@
 import type { ApiClient } from '@pfinance/api-client'
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { Button, Dialog, FieldError, Input, Label, TextField } from 'heroui-native'
+import { Dialog, FieldError, Input, Label, TextField } from 'heroui-native'
+import { Button } from '@/components/button'
 import type { InferResponseType } from 'hono/client'
 import { useState, type JSX } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
-import Animated, { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated'
+import Animated from 'react-native-reanimated'
+import { notify } from '@/components/toaster'
+import { fade, rise } from '@/motion'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { errorMessage } from '@/api/errors'
 import { useTransferMutations } from '@/api/use-transfers'
@@ -102,14 +105,24 @@ export function TransferForm({
     setInvalid(null)
     saveTransfer.mutate(
       { id: entry?.transferId ?? null, fields: parsed.value },
-      { onSuccess: onDone },
+      {
+        onSuccess: () => {
+          notify(entry === null ? 'Transfer added' : 'Transfer saved')
+          onDone()
+        },
+      },
     )
   }
 
   const remove = () => {
     if (entry === null) return
     setInvalid(null)
-    removeTransfer.mutate(entry.transferId, { onSuccess: onDone })
+    removeTransfer.mutate(entry.transferId, {
+      onSuccess: () => {
+        notify('Transfer deleted')
+        onDone()
+      },
+    })
   }
 
   const dateValid = isCalendarDate(draft.date)
@@ -117,17 +130,10 @@ export function TransferForm({
   return (
     <View className="flex-1 bg-background">
       {/* Rendered in place of the Ledger, so the tab bar is still below it
-          and already owns the bottom inset. The crossfade is the one place
-          this app animates besides the home rail: swapping a whole screen
-          for another under the same chrome is a staged change, and a jump
-          cut there reads as a glitch rather than a transition. Exits stay
-          shorter than enters, and the system's reduced-motion setting skips
-          both. */}
-      <Animated.View
-        style={{ flex: 1 }}
-        entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
-        exiting={FadeOut.duration(110).reduceMotion(ReduceMotion.System)}
-      >
+          and already owns the bottom inset. The same rise-in and fade-out
+          as the Transaction form (docs/design/MOTION.md): the two are
+          siblings and must move as one. */}
+      <Animated.View style={{ flex: 1 }} entering={rise} exiting={fade}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
           <KeyboardAvoidingView
             style={{ flex: 1 }}

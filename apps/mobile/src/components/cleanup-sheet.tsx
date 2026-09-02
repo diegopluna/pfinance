@@ -1,8 +1,10 @@
 import type { CurrencyCode } from '@pfinance/currency'
 import type { DateFormat } from '@pfinance/db/date-formats'
-import { Button, useThemeColor } from 'heroui-native'
-import { useState, type JSX } from 'react'
+import { useThemeColor } from 'heroui-native'
+import { Button } from '@/components/button'
+import { useEffect, useState, type JSX } from 'react'
 import { Modal, ScrollView, View } from 'react-native'
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTransactionMutations } from '@/api/use-transactions'
 import { Figure } from '@/components/amount'
@@ -11,6 +13,7 @@ import { Body, Eyebrow, SectionTitle } from '@/components/type'
 import { assignedFields, type CleanupEntry } from '@/ledger/cleanup'
 import { formatCalendarDate } from '@/ledger/dates'
 import { ledgerAmount } from '@/ledger/display'
+import { duration, ease, timing } from '@/motion'
 
 // The cleanup sheet (issue #82): the couch-time triage. One Transaction at
 // a time — description, date · account, amount — with the Household's
@@ -44,6 +47,15 @@ export function CleanupSheet({
   const [error, setError] = useState<string | null>(null)
   const [accent] = useThemeColor(['accent'])
   const { save } = useTransactionMutations()
+
+  // The bar moves to its next width rather than jumping (docs/design/
+  // MOTION.md, `move`: it is already on screen, only its size changes).
+  const fraction = queue.length === 0 ? 0 : (index + 1) / queue.length
+  const progress = useSharedValue(fraction)
+  useEffect(() => {
+    progress.value = withTiming(fraction, timing(duration.move, ease.move))
+  }, [fraction, progress])
+  const filled = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }))
 
   const entry = queue[index]
   const close = () => {
@@ -87,12 +99,9 @@ export function CleanupSheet({
                 </Eyebrow>
               </View>
               <View className="h-1 rounded-full bg-surface-secondary">
-                <View
+                <Animated.View
                   className="h-1 rounded-full"
-                  style={{
-                    width: `${((index + 1) / queue.length) * 100}%`,
-                    backgroundColor: accent,
-                  }}
+                  style={[filled, { backgroundColor: accent }]}
                 />
               </View>
 
