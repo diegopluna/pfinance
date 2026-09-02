@@ -30,7 +30,7 @@ import { useMe } from '@/hooks/use-me'
 import { formatMonthYear } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/members')({
-  head: () => ({ meta: [{ title: 'Members · Goblin' }] }),
+  head: () => ({ meta: [{ title: 'Members · pfinance' }] }),
   component: MembersScreen,
 })
 

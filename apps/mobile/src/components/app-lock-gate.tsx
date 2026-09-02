@@ -45,7 +45,7 @@ export function AppLockGate({ children }: { children: ReactNode }): JSX.Element 
     prompting.current = true
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock Goblin',
+        promptMessage: 'Unlock pfinance',
       })
       if (result.success) {
         setState((current) => nextLockState(current, appLockEnabled(), { kind: 'unlocked' }))

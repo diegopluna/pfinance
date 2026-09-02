@@ -1,4 +1,4 @@
-// The demo Server (issue #85): a stock Goblin deployment on its own stage,
+// The demo Server (issue #85): a stock pfinance deployment on its own stage,
 // seeded with a sample Household and reset nightly by CI
 // (.github/workflows/demo-reset.yml, docs/demo-server.md). The app embeds
 // only the URL and the shared credentials — "Try the demo" runs the same

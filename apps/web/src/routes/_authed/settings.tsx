@@ -15,7 +15,7 @@ import { useHouseholdMutations, useMe } from '@/hooks/use-me'
 import { formatDayDate } from '@/lib/dates'
 
 export const Route = createFileRoute('/_authed/settings')({
-  head: () => ({ meta: [{ title: 'Settings · Goblin' }] }),
+  head: () => ({ meta: [{ title: 'Settings · pfinance' }] }),
   component: SettingsScreen,
 })
 
@@ -122,7 +122,7 @@ function SettingsScreen() {
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-medium">Mobile app</h2>
               <p className="text-sm text-muted-foreground">
-                Scan with the Goblin app on your phone to connect it to this server.
+                Scan with the pfinance app on your phone to connect it to this server.
               </p>
             </div>
             <img

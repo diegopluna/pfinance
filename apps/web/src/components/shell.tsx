@@ -54,7 +54,7 @@ export function Shell() {
       <Sidebar>
         <SidebarHeader>
           <div className="flex flex-col gap-1 px-2 py-1">
-            <span className="text-[15px] font-semibold tracking-tight">goblin</span>
+            <span className="text-[15px] font-semibold tracking-tight">pfinance</span>
             <span aria-hidden className="flex h-[3px] w-18">
               <span className="w-1/2 bg-(--chart-2)" />
               <span className="w-1/2 bg-(--chart-1)" />

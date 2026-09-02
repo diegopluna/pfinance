@@ -1,6 +1,6 @@
 # The demo Server
 
-The demo Server (issue #85) is a stock Goblin deployment on its own `demo`
+The demo Server (issue #85) is a stock pfinance deployment on its own `demo`
 stage in the maintainer's Cloudflare account, seeded with a sample Household
 and reset nightly. It exists for two audiences: store browsers who tap **Try
 the demo** on the mobile connect screen, and App Review, whose notes carry

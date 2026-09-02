@@ -1,7 +1,7 @@
 # The look
 
 **Status: proposed, ours to edit, not mirrored** — like `MOBILE.md` and
-`MOTION.md`. Adopted 2026-09-02 from direction **A · Mono** on the Goblin
+`MOTION.md`. Adopted 2026-09-02 from direction **A · Mono** on the pfinance
 Mobile canvas (Directions page), where B · Quiet accent and C · Paper
 remain as the roads not taken.
 
