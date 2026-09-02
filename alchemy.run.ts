@@ -52,7 +52,7 @@ export const database = Cloudflare.D1.Database(
 // The guard is a standalone step (not folded into the domain props) because
 // the worker provider reads `domain` structurally — an Effect-valued prop is
 // not resolved, it is mistaken for a WorkerDomainConfig.
-const domainVars = ['WEB_DOMAIN', 'API_DOMAIN', 'DOCS_DOMAIN'] as const
+const domainVars = ['WEB_DOMAIN', 'API_DOMAIN'] as const
 const prodStage = process.env.PROD_STAGE || 'prod'
 export const assertDomainsProdOnly = Effect.gen(function* () {
   const stage = yield* Alchemy.Stage
@@ -71,9 +71,7 @@ export const assertDomainsProdOnly = Effect.gen(function* () {
     }
   }
 })
-const [webDomain, apiDomain, docsDomain] = domainVars.map(
-  (envVar) => process.env[envVar] || undefined,
-)
+const [webDomain, apiDomain] = domainVars.map((envVar) => process.env[envVar] || undefined)
 
 export const server = Cloudflare.Worker('Server', {
   main: './apps/server/src/index.ts',
@@ -128,20 +126,6 @@ export default Alchemy.Stack(
         port: 3000,
       },
     })
-    const docs = yield* Cloudflare.Website.StaticSite('Docs', {
-      cwd: './apps/docs',
-      command: 'vp run build',
-      outdir: 'dist',
-      domain: docsDomain,
-      compatibility: {
-        flags: ['nodejs_compat'],
-      },
-      dev: {
-        cwd: './apps/docs',
-        command: 'vp run dev',
-      },
-    })
-
     // PR preview comments are optional: they need PULL_REQUEST (set by the
     // deploy workflow) plus a detectable repository (GITHUB_REPOSITORY or
     // the clone's origin remote — see stacks/repository.ts and
@@ -165,7 +149,6 @@ export default Alchemy.Stack(
 
 **Web Deployment URL:** ${web.url}
 **Server Deployment URL:** ${api.url}
-**Docs Deployment URL:** ${docs.url}
 `,
         })
       }
@@ -174,7 +157,6 @@ export default Alchemy.Stack(
     return {
       webUrl: web.url,
       apiUrl: api.url,
-      docsUrl: docs.url,
     }
   }),
 )
